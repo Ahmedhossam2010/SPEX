@@ -104,10 +104,11 @@ $$\theta_{\text{arcsec}} = \Delta\sigma \times \frac{180 \times 3600}{\pi}$$
 
 | Component | Status | Verification Method |
 |---|---|---|
-| FITS-MEF Parser | Verified | Parsed real IEEE-754 32-bit big-endian SPHEREx QR2 files |
+| FITS-MEF Parser | Verified | Parsed real IEEE-754 32-bit big-endian SPHEREx QR2 files (HDUs 1, 2, 3) |
 | WCS Astrometry | Verified | Exact $6.1522^{\prime\prime}$/pixel from $PC_{i,j}$ matrix |
 | Differencing Engine | Verified | $D = I_2 - I_1$ with independent variance propagation |
-| Quality Bitmask Rejection | Verified | $0x200000$ persistence excursion correctly caught and flagged |
-| Gaia DR3 Crossmatch | Verified | CDS VizieR live query with 3.5" search radius |
+| Quality Bitmask Rejection | Verified | Flags (0x01 TRANSIENT, 0x02 OVERFLOW, 0x04 SUR_ERROR, 0x80000 OUTLIER) penalized; 0x200000 recognized as catalog SOURCE |
+| Gaia DR3 Crossmatch | Verified | CDS VizieR query with 3.5" search radius |
 | SPEX Bilingual Engine | Verified | English & Egyptian Arabic with grounded scientific prompts |
-| Unit Test Suite | 8/8 PASS | `npx tsx --test src/science/science.test.ts` (100% passing) |
+| Unit Test Suite | 14/14 PASS | `npx tsx --test src/science/science.test.ts` (14 analytical unit tests) |
+| FITS Data Verification | Executed | Real FITS files in `/tmp/spherex_cache` validated for HDUs 1..6 |

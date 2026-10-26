@@ -81,7 +81,7 @@ export class ScientificPipeline {
   }
 
   /**
-   * Align Epoch 1 onto Epoch 2 using WCS projection and normalized cross-correlation
+   * Align Epoch 1 onto Epoch 2 using rigid translation (WCS center projection offset + normalized cross-correlation refinement)
    */
   public static computeRegistration(
     fits1: FITSImageData,
@@ -154,7 +154,7 @@ export class ScientificPipeline {
     return {
       dx: totalDx,
       dy: totalDy,
-      method: 'WCS Celestial Projection + Normalized Cross-Correlation Peak',
+      method: 'Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)',
       quality: bestScore > 0.8 ? 'Excellent (r > 0.8)' : bestScore > 0.4 ? 'Good (r > 0.4)' : 'Nominal WCS',
     };
   }
@@ -216,6 +216,79 @@ export class ScientificPipeline {
   }
 
   /**
+   * Resample variance array with fractional pixel translation (dx, dy)
+   * propagating variance using squared interpolation weights: Var(F') = sum(w_i^2 * Var(F_i)).
+   * If weights are normalized by weightTotal (when missing/NaN pixels occur):
+   * Var(F') = sum(w_i^2 * Var(F_i)) / (weightTotal^2).
+   */
+  public static resampleVarianceBilinear(
+    varData: Float32Array,
+    width: number,
+    height: number,
+    dx: number,
+    dy: number
+  ): Float32Array {
+    if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) {
+      return new Float32Array(varData);
+    }
+
+    const output = new Float32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const srcX = x + dx;
+        const srcY = y + dy;
+
+        const x0 = Math.floor(srcX);
+        const y0 = Math.floor(srcY);
+        const x1 = x0 + 1;
+        const y1 = y0 + 1;
+
+        if (x0 >= 0 && x1 < width && y0 >= 0 && y1 < height) {
+          const fx = srcX - x0;
+          const fy = srcY - y0;
+
+          const w00 = (1 - fx) * (1 - fy);
+          const w10 = fx * (1 - fy);
+          const w01 = (1 - fx) * fy;
+          const w11 = fx * fy;
+
+          const v00 = varData[y0 * width + x0];
+          const v10 = varData[y0 * width + x1];
+          const v01 = varData[y1 * width + x0];
+          const v11 = varData[y1 * width + x1];
+
+          let weightedVarSum = 0;
+          let weightTotal = 0;
+
+          if (Number.isFinite(v00) && v00 >= 0) {
+            weightedVarSum += (w00 * w00) * v00;
+            weightTotal += w00;
+          }
+          if (Number.isFinite(v10) && v10 >= 0) {
+            weightedVarSum += (w10 * w10) * v10;
+            weightTotal += w10;
+          }
+          if (Number.isFinite(v01) && v01 >= 0) {
+            weightedVarSum += (w01 * w01) * v01;
+            weightTotal += w01;
+          }
+          if (Number.isFinite(v11) && v11 >= 0) {
+            weightedVarSum += (w11 * w11) * v11;
+            weightTotal += w11;
+          }
+
+          output[y * width + x] = weightTotal > 0
+            ? Math.max(1e-12, weightedVarSum / (weightTotal * weightTotal))
+            : NaN;
+        } else {
+          output[y * width + x] = NaN;
+        }
+      }
+    }
+    return output;
+  }
+
+  /**
    * Execute full difference image generation: D = I2 - I1, variance propagation, candidate detection
    */
   public static processDifference(
@@ -234,11 +307,11 @@ export class ScientificPipeline {
     // Resample Epoch 1 onto Epoch 2 grid
     const alignedEpoch1 = this.resampleBilinear(fits1.data, width, height, reg.dx, reg.dy);
 
-    // Variance maps
+    // Variance maps with rigorous squared-weight propagation under translation
     const var1 = fits1.variance ?? new Float32Array(size).fill(fits1.stats.robustNoise ** 2);
     const var2 = fits2.variance ?? new Float32Array(size).fill(fits2.stats.robustNoise ** 2);
     const alignedVar1 = fits1.variance
-      ? this.resampleBilinear(fits1.variance, width, height, reg.dx, reg.dy)
+      ? this.resampleVarianceBilinear(fits1.variance, width, height, reg.dx, reg.dy)
       : var1;
 
     const diff = new Float32Array(size);
@@ -407,7 +480,8 @@ export class ScientificPipeline {
               flags1,
               flags2,
               width,
-              height
+              height,
+              noiseSigma
             );
 
             // Sky coordinates
@@ -421,12 +495,12 @@ export class ScientificPipeline {
             } else if (apertureSnr < 3.0 && absS >= 4.0) {
               // High single-pixel residual without significant integrated aperture flux is an unmodeled PSF/registration artifact
               status = 'Possible artifact';
-              if (!artifact.flags.includes('REGISTRATION_OR_PSF_DIPOLE')) {
-                artifact.flags.push('REGISTRATION_OR_PSF_DIPOLE');
+              if (!artifact.flags.includes('LOW_APERTURE_SIGNIFICANCE')) {
+                artifact.flags.push('LOW_APERTURE_SIGNIFICANCE');
               }
               artifact.whyFlagged = (artifact.whyFlagged ? artifact.whyFlagged + ' ' : '') +
                 'High single-pixel difference is not confirmed by integrated aperture photometry (aperture S/N < 3.0σ), consistent with pointing jitter or PSF breathing.';
-              artifact.artifactScore = Math.max(artifact.artifactScore, 0.75);
+              artifact.artifactScore = Math.max(artifact.artifactScore, 0.70);
             } else if (apertureSnr >= 3.5 && artifact.artifactScore < 0.35) {
               status = 'Candidate';
             } else {
@@ -440,6 +514,7 @@ export class ScientificPipeline {
               ra: sky.ra,
               dec: sky.dec,
               peakSignificance: Number(s.toFixed(2)),
+              apertureSignificance: Number(apertureSnr.toFixed(2)),
               deltaFlux: Number(phot.deltaFlux.toFixed(4)),
               deltaFluxUncertainty: Number(phot.deltaUncertainty.toFixed(4)),
               apertureFluxEpoch1: Number(phot.flux1.toFixed(4)),
@@ -459,9 +534,10 @@ export class ScientificPipeline {
       }
     }
 
-    // Sort candidates by descending absolute significance and return top 6
+    // Sort candidates by descending absolute significance
     candidates.sort((a, b) => Math.abs(b.peakSignificance) - Math.abs(a.peakSignificance));
-    return candidates.slice(0, 6);
+    // Return all genuine candidates meeting statistical significance and isolation criteria (safe memory cap: 50)
+    return candidates.slice(0, 50);
   }
 
   /**
@@ -504,12 +580,12 @@ export class ScientificPipeline {
     let sumVar = 0;
     let apPixels = 0;
 
-    // Background annulus in difference image
-    let bkgDiffSum = 0;
-    let bkgPixels = 0;
-    let bkg1Sum = 0;
-    let bkg2Sum = 0;
+    // Background annulus in difference image (collect for robust median)
+    const bkgDiffValues: number[] = [];
+    const bkg1Values: number[] = [];
+    const bkg2Values: number[] = [];
     let bkgVarSum = 0;
+    let bkgPixels = 0;
 
     const maxR = Math.ceil(rOut);
     for (let dy = -maxR; dy <= maxR; dy++) {
@@ -535,9 +611,9 @@ export class ScientificPipeline {
             }
           } else if (dist >= rIn && dist <= rOut) {
             if (Number.isFinite(dVal)) {
-              bkgDiffSum += dVal;
-              if (Number.isFinite(d1)) bkg1Sum += d1;
-              if (Number.isFinite(d2)) bkg2Sum += d2;
+              bkgDiffValues.push(dVal);
+              if (Number.isFinite(d1)) bkg1Values.push(d1);
+              if (Number.isFinite(d2)) bkg2Values.push(d2);
               if (Number.isFinite(vVal)) bkgVarSum += vVal;
               bkgPixels++;
             }
@@ -546,13 +622,24 @@ export class ScientificPipeline {
       }
     }
 
-    const bkgDiffMean = bkgPixels > 0 ? bkgDiffSum / bkgPixels : 0;
-    const bkg1Mean = bkgPixels > 0 ? bkg1Sum / bkgPixels : 0;
-    const bkg2Mean = bkgPixels > 0 ? bkg2Sum / bkgPixels : 0;
+    // Robust median of background annulus pixels prevents bias from nearby stars or cosmetic defects
+    bkgDiffValues.sort((a, b) => a - b);
+    bkg1Values.sort((a, b) => a - b);
+    bkg2Values.sort((a, b) => a - b);
 
-    const netDeltaFlux = apPixels > 0 ? sumDiff - bkgDiffMean * apPixels : 0;
-    const netFlux1 = apPixels > 0 ? sum1 - bkg1Mean * apPixels : 0;
-    const netFlux2 = apPixels > 0 ? sum2 - bkg2Mean * apPixels : 0;
+    const bkgDiffMedian = bkgDiffValues.length > 0
+      ? bkgDiffValues[Math.floor(bkgDiffValues.length / 2)]
+      : 0;
+    const bkg1Median = bkg1Values.length > 0
+      ? bkg1Values[Math.floor(bkg1Values.length / 2)]
+      : 0;
+    const bkg2Median = bkg2Values.length > 0
+      ? bkg2Values[Math.floor(bkg2Values.length / 2)]
+      : 0;
+
+    const netDeltaFlux = apPixels > 0 ? sumDiff - bkgDiffMedian * apPixels : 0;
+    const netFlux1 = apPixels > 0 ? sum1 - bkg1Median * apPixels : 0;
+    const netFlux2 = apPixels > 0 ? sum2 - bkg2Median * apPixels : 0;
 
     const bkgVarMean = bkgPixels > 0 ? bkgVarSum / bkgPixels : sumVar / Math.max(1, apPixels);
     const deltaUncertainty = Math.sqrt(
@@ -580,7 +667,8 @@ export class ScientificPipeline {
     flags1: Int32Array | null,
     flags2: Int32Array | null,
     width: number,
-    height: number
+    height: number,
+    noiseSigma: number = 0
   ): {
     artifactScore: number;
     flags: string[];
@@ -652,10 +740,13 @@ export class ScientificPipeline {
     }
 
     // 4. Astrometric registration residue / dipole check
+    // An authentic registration dipole from sub-pixel pointing jitter exhibits a paired
+    // opposite-sign trough immediately adjacent to the peak (|dx| <= 1, |dy| <= 1).
     let hasDipole = false;
     const centerSign = Math.sign(diff[idx]);
-    let oppositeSignMax = 0;
-    let oppositeSignSum = 0;
+    let oppositeSignAdjacentMax = 0;
+    let oppositeSignNearbyMax = 0;
+
     for (let dy = -2; dy <= 2; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
         if (dx === 0 && dy === 0) continue;
@@ -665,14 +756,21 @@ export class ScientificPipeline {
           const nVal = diff[ny * width + nx];
           if (Number.isFinite(nVal) && Math.sign(nVal) === -centerSign) {
             const absN = Math.abs(nVal);
-            if (absN > oppositeSignMax) oppositeSignMax = absN;
-            oppositeSignSum += absN;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= 1.5) {
+              if (absN > oppositeSignAdjacentMax) oppositeSignAdjacentMax = absN;
+            } else {
+              if (absN > oppositeSignNearbyMax) oppositeSignNearbyMax = absN;
+            }
           }
         }
       }
     }
 
-    if (oppositeSignMax >= peakVal * 0.25 || oppositeSignSum >= peakVal * 0.5) {
+    const minDipoleLobe = noiseSigma > 0 ? Math.max(0.35 * peakVal, 3.0 * noiseSigma) : 0.35 * peakVal;
+    const minNearbyDipole = noiseSigma > 0 ? Math.max(0.50 * peakVal, 3.5 * noiseSigma) : 0.50 * peakVal;
+
+    if ((oppositeSignAdjacentMax >= minDipoleLobe || oppositeSignNearbyMax >= minNearbyDipole) && peakVal > 0) {
       hasDipole = true;
       morphology = 'dipole';
       flags.push('REGISTRATION_OR_PSF_DIPOLE');
@@ -691,6 +789,7 @@ export class ScientificPipeline {
         STATISTICAL_OUTLIER: 'Sigma-clipping statistical outlier detected by pipeline (bit 0x80000).',
         COSMIC_RAY_SPIKE: 'Flux is concentrated in an isolated single-pixel spike without astronomical PSF wings.',
         REGISTRATION_OR_PSF_DIPOLE: 'Symmetric positive/negative residual dipole indicating astrometric sub-pixel pointing jitter.',
+        LOW_APERTURE_SIGNIFICANCE: 'High single-pixel difference is not confirmed by integrated circular aperture photometry (S/N < 3.0σ).',
       };
       whyFlagged = flags.map((f) => reasons[f] || f).join(' ');
     }
@@ -745,7 +844,7 @@ export class ScientificPipeline {
       if (Math.abs(top.peakSignificance) >= 4.0) {
         classification = 'SIGNIFICANT CHANGE DETECTED';
         summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
-        statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}σ, artifact score = ${top.artifactScore.toFixed(2)}).`;
+        statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}σ, heuristic artifact index = ${top.artifactScore.toFixed(2)}/1.00).`;
       } else {
         classification = 'POSSIBLE CHANGE — NEEDS REVIEW';
         summaryProse = `Marginal flux residual detected at S/N = ${top.peakSignificance.toFixed(1)}σ. Additional epochs are required to verify authenticity.`;

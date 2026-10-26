@@ -45,8 +45,8 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
         </div>
         <p className="text-xs text-slate-300 font-mono leading-relaxed mb-4">
           {language === 'ar'
-            ? 'في الإصدار السابق، أظهرت إحدى الحالات مرشحًا بقوة 208σ تم تصنيفه خطأً كجرم فلكي مؤكد من كتالوج غايا. كشف التدقيق الجنائي أن بيكسل (49, 57) في FITS HDU 2 يحمل علم 0x200000 (تأثير Persistence ناتج عن مستشعر الأشعة تحت الحمراء) وعلم 0x80000 (ضوء شارد). الكود السابق كان يفحص فقط الأعلام 0x01 و 0x04. تم تحديث مصفوفة الأعلام لتشمل كافة بتات SPHEREx QR2 وتضييق نطاق المطابقة مع غايا إلى 3.5 ثانية قوسية لمنع المطابقة الخاطئة مع نجوم تبعد 11 ثانية قوسية.'
-            : 'In earlier builds, pixel (49, 57) exhibited a 208σ flux excursion that was misattributed to an unrelated field star 11.13" away. Our deep audit uncovered that FITS HDU 2 carried quality flag 0x200000 (detector persistence contamination) and 0x80000 (stray light). The previous pipeline only checked bits 0x01 and 0x04. By upgrading the bitmask filter to check all SPHEREx QR2 flags and tightening the Gaia crossmatch radius to 3.5" (half pixel), this candidate is now properly identified as an instrumental artifact with an artifact score of 1.0.'}
+            ? 'في الإصدارات الأولية، أظهر فرق البيكسل (49, 57) قفزة ضوئية هائلة بلغت ΔF = 54.14 MJy/sr بقوة 207.64σ صُنفت خطأً كاكتشاف فلكي جديد بعد مطابقتها مع نجم يبعد 11.13 ثانية قوسية في كتالوج غايا. كشف التدقيق الجنائي أن السبب الحقيقي كان طرح كتل غير متطابقة الإحداثيات (حيث طرح نجم حقيقي من سماء فارغة). يحمل البيكسل علم 0x200000 (علم SOURCE الدال على جرم كتالوجي مرجعي) وعلم 0x80000 (علم OUTLIER لقيم الانحراف الإحصائي). تم حل المشكلة بضبط محاذاة WCS، وتطبيق فحص الديبول، وتضييق نطاق غايا إلى 3.5 ثانية قوسية لمنع المطابقات الخاطئة.'
+            : 'In initial builds, pixel (49, 57) exhibited a massive ΔF = 54.14 MJy/sr flux excursion (~207.64σ) that was misclassified as a confirmed discovery due to a loose 12" crossmatch with an unrelated field star 11.13" away. Forensic auditing revealed the physical root cause: unaligned subtraction between mismatched pointings where an authentic catalog star was subtracted against empty sky. In FITS HDU 2, this pixel carries flag 0x200000 (official SPHEREx SOURCE flag denoting cataloged source flux) and 0x80000 (OUTLIER flag denoting statistical sigma-clipping excursion). Rigid translation registration (WCS center offset + cross-correlation refinement), dipole artifact rejection, and tightening the Gaia crossmatch radius to 3.5" (half pixel) completely eliminated this false transient.'}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
           <div className="p-3 rounded-2xl bg-black/50 border border-white/[0.06]">
@@ -54,12 +54,12 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
             <span className="text-slate-200 font-bold block">(49, 57) · ΔF = 54.14 MJy/sr</span>
           </div>
           <div className="p-3 rounded-2xl bg-black/50 border border-white/[0.06]">
-            <span className="text-slate-500 block text-[10px]">FITS DQ Flag</span>
-            <span className="text-amber-400 font-bold block">0x200000 (Persistence)</span>
+            <span className="text-slate-500 block text-[10px]">FITS DQ Flags</span>
+            <span className="text-amber-400 font-bold block">0x200000 (SOURCE) · 0x80000 (OUTLIER)</span>
           </div>
           <div className="p-3 rounded-2xl bg-black/50 border border-white/[0.06]">
-            <span className="text-slate-500 block text-[10px]">Pipeline Resolution</span>
-            <span className="text-emerald-400 font-bold block">Disqualified as Artifact</span>
+            <span className="text-slate-500 block text-[10px]">Physical Resolution</span>
+            <span className="text-emerald-400 font-bold block">Rigid Translation Registered</span>
           </div>
         </div>
       </div>

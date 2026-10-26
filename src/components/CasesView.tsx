@@ -109,6 +109,48 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
             </div>
           );
         })}
+
+        {/* Explore More / Search Sky Card */}
+        <div className="group relative flex flex-col justify-between rounded-3xl border border-dashed border-amber-400/40 bg-gradient-to-br from-amber-500/10 via-sky-500/5 to-purple-500/10 backdrop-blur-2xl p-6 transition-all duration-300 hover:border-amber-400 shadow-xl">
+          <div>
+            <div className="flex items-center justify-between text-xs mb-3 font-mono">
+              <span className="px-2.5 py-0.5 rounded-full border text-[10px] font-bold border-amber-500/40 bg-amber-500/20 text-amber-300 flex items-center gap-1">
+                <Telescope className="h-3 w-3" />
+                <span>Live Archive Query</span>
+              </span>
+              <span className="text-amber-400 text-[11px] font-semibold">
+                All-Sky SPHEREx TAP & IBE
+              </span>
+            </div>
+
+            <h3 className="font-['Outfit'] text-xl font-bold text-slate-100 group-hover:text-amber-300 transition-colors mb-2">
+              {language === 'ar' ? 'استكشاف سماء جديدة / بحث مخصص' : 'Explore More / Search Any Sky Region'}
+            </h3>
+
+            <p className="text-xs font-mono text-slate-300 mb-3 font-medium">
+              {language === 'ar' ? 'استعلام مباشر من قاعدة بيانات NASA/IPAC IRSA' : 'Live Multi-Epoch Celestial Search via IRSA TAP & Cutouts'}
+            </p>
+
+            <p className="text-xs text-slate-400 leading-relaxed mb-6">
+              {language === 'ar'
+                ? 'تجاوز الحالات الأربع الموثقة واستعلم عن أي إحداثيات سماوية (RA/Dec) في حقل القطب الشمالي لمسار الشمس (North Ecliptic Pole). سيقوم المحرك بتحميل كتل FITS الحقيقية وكشف كافة المرشحات وحساب الفروق دون حدود مصطنعة.'
+                : 'Move beyond the curated benchmark cases. Enter any celestial coordinates (RA/Dec) in the SPHEREx North Ecliptic Pole deep survey to retrieve calibrated Level-2B FITS cutouts, extract difference maps, and detect all genuine candidates.'}
+            </p>
+
+            <div className="flex items-center gap-2 text-xs font-mono text-slate-400 border-t border-white/[0.06] pt-3 mb-6">
+              <span className="text-slate-500">Coverage:</span>
+              <span className="text-amber-300 font-semibold">RA 275.5°–276.8°, Dec 64.5°–65.2° (QR2)</span>
+            </div>
+          </div>
+
+          <button
+            onClick={() => onSelectCase(cases[0]?.id || 'case-transient-sn-01')}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs tracking-wider uppercase transition-all duration-200 active:scale-98 shadow-[0_0_20px_rgba(245,158,11,0.25)]"
+          >
+            <span>{language === 'ar' ? 'فتح مستكشف السماء' : 'Launch Sky Search in Explorer'}</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

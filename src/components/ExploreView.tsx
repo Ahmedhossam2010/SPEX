@@ -1,39 +1,43 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
   Sparkles,
-  Layers,
-  Info,
-  Send,
-  ExternalLink,
   ShieldCheck,
   Search,
-  CheckCircle2,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
   Crosshair,
-  Flame,
-  Palette,
+  Binary,
   Play,
   Pause,
   Telescope,
-  Binary,
-  Eye,
-  SlidersHorizontal,
-  Compass,
   X,
+  Sliders,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  ArrowUpDown,
+  Compass,
+  Radio,
+  ExternalLink,
+  Layers,
+  ChevronDown,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  Grid,
+  Database,
 } from 'lucide-react';
 import {
   CandidateDetection,
   InvestigationResult,
+  SPHERExObservation,
 } from '../science/types';
 import { AstronomyRenderer, ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { WCS } from '../science/wcs';
-import { SPEX_ASSETS, SPEXMood } from '../spex/spexAssets';
 import { ProvenanceModal } from './ProvenanceModal';
+import { SpexPopup } from './SpexPopup';
 import { Language, translations } from '../utils/translations';
 
 interface ExploreViewProps {
@@ -46,6 +50,8 @@ interface ExploreViewProps {
 }
 
 export type ViewMode = 'difference' | 'significance' | 'epoch1' | 'epoch2' | 'split' | 'blink';
+export type CandidateFilter = 'all' | 'candidates' | 'known' | 'artifacts';
+export type CandidateSort = 'significance' | 'aperture' | 'flux';
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
   currentResult,
@@ -60,9 +66,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // Viewport states
   const [viewMode, setViewMode] = useState<ViewMode>('difference');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('presentation');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('science');
   const [stretch, setStretch] = useState<StretchMode>('asinh');
-  const [colormap, setColormap] = useState<ColormapMode>('spherex_cosmic');
+  const [colormap, setColormap] = useState<ColormapMode>('diff_diverging');
   const [zoom, setZoom] = useState<number>(1.2);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
@@ -79,31 +85,48 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     ra?: number;
     dec?: number;
     val?: number;
-    variance?: number;
-    flags?: number;
   } | null>(null);
 
+  // Secondary popovers & dialogs
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetection | null>(null);
+  const [showCandidateDrawer, setShowCandidateDrawer] = useState<boolean>(false);
   const [showMarkers, setShowMarkers] = useState<boolean>(true);
+  const [showGrid, setShowGrid] = useState<boolean>(false);
   const [showProvenance, setShowProvenance] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
-  const [customRa, setCustomRa] = useState<string>('276.2500');
-  const [customDec, setCustomDec] = useState<string>('64.8300');
-  const [isCandidateDrawerCollapsed, setIsCandidateDrawerCollapsed] = useState<boolean>(false);
-  const [isCandidateDetailsOpen, setIsCandidateDetailsOpen] = useState<boolean>(true);
-  const [isSpexCollapsed, setIsSpexCollapsed] = useState<boolean>(false);
+  const [isMobileControlsOpen, setIsMobileControlsOpen] = useState<boolean>(false);
 
-  // SPEX Chat state
-  const [spexMessage, setSpexMessage] = useState<string>('');
-  const [spexReply, setSpexReply] = useState<string>('');
-  const [spexMood, setSpexMood] = useState<SPEXMood>('explaining');
-  const [isSpexThinking, setIsSpexThinking] = useState<boolean>(false);
+  // Candidate Explorer pagination & filtering
+  const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
+  const [candidateSort, setCandidateSort] = useState<CandidateSort>('significance');
+  const [candidatePage, setCandidatePage] = useState<number>(1);
+  const CANDIDATES_PER_PAGE = 4;
+
+  // Search Sky modal state
+  const [customRa, setCustomRa] = useState<string>('276.2614');
+  const [customDec, setCustomDec] = useState<string>('64.8258');
+  const [customRadius, setCustomRadius] = useState<string>('0.5');
+  const [searchModeTab, setSearchModeTab] = useState<'direct' | 'tap'>('direct');
+  const [isQueryingTap, setIsQueryingTap] = useState<boolean>(false);
+  const [tapObservations, setTapObservations] = useState<SPHERExObservation[]>([]);
+  const [tapError, setTapError] = useState<string | null>(null);
+  const [tapQueryExecuted, setTapQueryExecuted] = useState<boolean>(false);
 
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Synchronize candidate selection and default SPEX voice upon case change
+  // Automatically adapt default colormap when switching viewMode
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    if (mode === 'difference' || mode === 'significance') {
+      setColormap('diff_diverging');
+    } else if (colormap === 'diff_diverging') {
+      setColormap('grayscale');
+    }
+  };
+
+  // Synchronize candidate selection and default viewport on case change
   useEffect(() => {
     if (currentResult) {
       if (currentResult.candidates.length > 0) {
@@ -111,41 +134,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       } else {
         setSelectedCandidate(null);
       }
-
-      // Reset pan and set balanced initial zoom
       setPan({ x: 0, y: 0 });
       setZoom(1.2);
-
-      // Default SPEX greeting based on classification and language
-      if (currentResult.evidence.classification === 'SIGNIFICANT CHANGE DETECTED') {
-        setSpexMood('eureka');
-        setSpexReply(
-          language === 'ar'
-            ? `يا خبر كوني! 🚀 رصدنا تغير حقيقي في تدفق النجم بنسبة S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ عبر فارق زمني ${currentResult.compatibility.timeBaselineDays.toFixed(1)} يوم. بص على كارت المرشح!`
-            : `Verified astrophysical flux variation! 🚀 Peak residual significance S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ across ${currentResult.compatibility.timeBaselineDays.toFixed(1)} days. Check the candidate card!`
-        );
-      } else if (currentResult.evidence.classification === 'NO SIGNIFICANT CHANGE DETECTED') {
-        setSpexMood('serious');
-        setSpexReply(
-          language === 'ar'
-            ? 'ثبات ضوئي ممتاز! 🔭 قياس الفتحة الضوئية (Aperture Photometry) يؤكد ثبات التدفق تمامًا، والفروق تقع ضمن الضوضاء الطبيعية للأجهزة. ده معيار استقرار أساسي لسماء SPHEREx.'
-            : 'Photometric baseline verified stable! 🔭 Difference residuals and aperture photometry are strictly consistent with the Gaussian instrumental noise floor.'
-        );
-      } else if (currentResult.evidence.classification === 'POSSIBLE ARTIFACT') {
-        setSpexMood('sassy');
-        setSpexReply(
-          language === 'ar'
-            ? 'استنى هنا! ده مش كائن فضائي يا باشا 😂 الإشارة دي ناتجة عن تشبع البيكسل (Saturation) أو استمرار شحنة المستشعر (Persistence)، وتم كشفها واستبعادها بدقة عبر FITS Quality Bitmask عشان نمنع الاكتشافات الوهمية.'
-            : 'Hold your horses! That spike is an instrumental artifact (saturation / detector persistence) cleanly caught and disqualified by our quality bitmask!'
-        );
-      } else {
-        setSpexMood('investigator');
-        setSpexReply(currentResult.evidence.summaryProse);
-      }
+      setCandidatePage(1);
     }
-  }, [currentResult, language]);
+  }, [currentResult?.caseId]);
 
-  // Blink interval timer
+  // Blink cadence timer
   useEffect(() => {
     if (viewMode !== 'blink' || !isBlinking) return;
     const interval = setInterval(() => {
@@ -163,8 +158,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
     if (viewMode === 'epoch1' || (viewMode === 'blink' && blinkEpoch === 'epoch1')) {
       dataToRender = currentResult.epoch1.flux;
+      if (cm === 'diff_diverging') cm = 'grayscale';
     } else if (viewMode === 'epoch2' || (viewMode === 'blink' && blinkEpoch === 'epoch2')) {
       dataToRender = currentResult.epoch2.flux;
+      if (cm === 'diff_diverging') cm = 'grayscale';
     } else if (viewMode === 'difference') {
       dataToRender = currentResult.difference.diff;
       cm = 'diff_diverging';
@@ -184,6 +181,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         }
       }
       dataToRender = Array.from(composite);
+      if (cm === 'diff_diverging') cm = 'grayscale';
     }
 
     AstronomyRenderer.renderToCanvas(
@@ -227,13 +225,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         ra: sky.ra,
         dec: sky.dec,
         val,
-        variance: currentResult.difference.variance[idx],
       });
     } else {
       setCursorPos(null);
     }
 
-    // Pan drag
     if (isDragging) {
       setPan({
         x: pan.x + (e.clientX - dragStart.x),
@@ -254,45 +250,31 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     setIsDragging(false);
   };
 
-  // Ask SPEX a question
-  const askSpex = async (msg: string) => {
-    if (!msg.trim() || !currentResult || isSpexThinking) return;
-    setIsSpexThinking(true);
-    setSpexReply(t.spexThinking);
-
-    try {
-      const res = await fetch('/api/spex/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userMessage: msg,
-          evidence: currentResult.evidence,
-          topCandidate: selectedCandidate || currentResult.candidates[0] || null,
-          provenance: currentResult.provenance,
-          compatibility: currentResult.compatibility,
-          targetCoords: currentResult.targetCoords,
-          lang: language,
-        }),
-      });
-      const data = await res.json();
-      setSpexReply(data.reply);
-      if (data.mood) setSpexMood(data.mood);
-    } catch (err) {
-      console.error('SPEX AI chat error:', err);
-      setSpexReply(
-        language === 'ar'
-          ? 'عفوًا يا نجم، الاتصال بالمرصد اتأخر ثانية بس البيانات واضحة قدامك في الجدول!'
-          : 'Network glitch with the ground station, astronomer! Please ask again in a moment.'
-      );
-    } finally {
-      setIsSpexThinking(false);
-      setSpexMessage('');
+  // Touch event handlers for mobile panning & dragging
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
     }
   };
 
-  // Center canvas on candidate pixel
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isDragging && e.touches.length === 1) {
+      setPan((p) => ({
+        x: p.x + (e.touches[0].clientX - dragStart.x),
+        y: p.y + (e.touches[0].clientY - dragStart.y),
+      }));
+      setDragStart({ x: e.touches[0].clientX, y: e.touches[0].clientY });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsDragging(false);
+  };
+
   const centerOnCandidate = (cand: CandidateDetection) => {
     setSelectedCandidate(cand);
+    setShowCandidateDrawer(true);
     if (!currentResult) return;
     const w = currentResult.epoch1.width;
     const h = currentResult.epoch1.height;
@@ -301,40 +283,97 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     setPan({ x: offsetX, y: offsetY });
   };
 
+  // Candidate filtering & sorting
+  const filteredCandidates = useMemo(() => {
+    if (!currentResult?.candidates) return [];
+    let list = [...currentResult.candidates];
+
+    if (candidateFilter === 'candidates') {
+      list = list.filter((c) => c.status === 'Candidate');
+    } else if (candidateFilter === 'known') {
+      list = list.filter((c) => c.status === 'Likely known source' || c.catalogMatches.length > 0);
+    } else if (candidateFilter === 'artifacts') {
+      list = list.filter((c) => c.status === 'Possible artifact' || c.artifactScore >= 0.5);
+    }
+
+    if (candidateSort === 'significance') {
+      list.sort((a, b) => Math.abs(b.peakSignificance) - Math.abs(a.peakSignificance));
+    } else if (candidateSort === 'aperture') {
+      list.sort((a, b) => Math.abs(b.apertureSignificance || 0) - Math.abs(a.apertureSignificance || 0));
+    } else if (candidateSort === 'flux') {
+      list.sort((a, b) => Math.abs(b.deltaFlux) - Math.abs(a.deltaFlux));
+    }
+
+    return list;
+  }, [currentResult?.candidates, candidateFilter, candidateSort]);
+
+  const totalCandidatePages = Math.max(1, Math.ceil(filteredCandidates.length / CANDIDATES_PER_PAGE));
+  const paginatedCandidates = useMemo(() => {
+    const start = (candidatePage - 1) * CANDIDATES_PER_PAGE;
+    return filteredCandidates.slice(start, start + CANDIDATES_PER_PAGE);
+  }, [filteredCandidates, candidatePage]);
+
+  // Execute IRSA TAP archive catalog query
+  const executeTapQuery = async () => {
+    const ra = parseFloat(customRa);
+    const dec = parseFloat(customDec);
+    const radius = parseFloat(customRadius) || 0.5;
+
+    if (Number.isNaN(ra) || Number.isNaN(dec)) return;
+
+    setIsQueryingTap(true);
+    setTapError(null);
+    setTapQueryExecuted(true);
+
+    try {
+      const res = await fetch(`/api/spherex/query?ra=${ra}&dec=${dec}&radius=${radius}`);
+      if (!res.ok) {
+        throw new Error(`IRSA TAP service returned HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setTapObservations(data.observations || []);
+    } catch (err: any) {
+      setTapError(err.message || 'Failed to query NASA/IPAC IRSA TAP catalog');
+      setTapObservations([]);
+    } finally {
+      setIsQueryingTap(false);
+    }
+  };
+
   const getStatusBadge = (classification: string) => {
     switch (classification) {
       case 'SIGNIFICANT CHANGE DETECTED':
         return {
           label: t.statusSignificant,
-          border: 'border-emerald-500/30',
-          bg: 'bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.25)]',
+          border: 'border-emerald-500/40',
+          bg: 'bg-emerald-500/15 text-emerald-200',
           dot: 'bg-emerald-400',
         };
       case 'NO SIGNIFICANT CHANGE DETECTED':
         return {
           label: t.statusStable,
-          border: 'border-cyan-500/30',
-          bg: 'bg-cyan-500/15 text-cyan-200 shadow-[0_0_20px_rgba(6,182,212,0.25)]',
+          border: 'border-cyan-500/40',
+          bg: 'bg-cyan-500/15 text-cyan-200',
           dot: 'bg-cyan-400',
         };
       case 'POSSIBLE ARTIFACT':
         return {
           label: t.statusArtifact,
-          border: 'border-amber-500/30',
-          bg: 'bg-amber-500/15 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.25)]',
+          border: 'border-amber-500/40',
+          bg: 'bg-amber-500/15 text-amber-200',
           dot: 'bg-amber-400',
         };
       case 'INSUFFICIENT DATA':
         return {
           label: t.statusIncompatible,
-          border: 'border-rose-500/30',
-          bg: 'bg-rose-500/15 text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.25)]',
+          border: 'border-rose-500/40',
+          bg: 'bg-rose-500/15 text-rose-200',
           dot: 'bg-rose-400',
         };
       default:
         return {
           label: t.statusUnknown,
-          border: 'border-slate-500/30',
+          border: 'border-slate-500/40',
           bg: 'bg-slate-800/80 text-slate-300',
           dot: 'bg-slate-400',
         };
@@ -343,22 +382,19 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   if (isLoading || !currentResult) {
     return (
-      <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-[#02040a] text-slate-200 overflow-hidden">
-        {/* Subtle radial space glow */}
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(14,165,233,0.15),rgba(255,255,255,0))]" />
-        <div className="relative flex flex-col items-center gap-5 p-8 rounded-3xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] max-w-md text-center">
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-500/20 via-sky-500/15 to-indigo-500/20 text-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.25)]">
-            <Telescope className="h-8 w-8 animate-pulse text-amber-300" />
-            <div className="absolute inset-0 rounded-2xl border border-amber-400/40 animate-ping opacity-30" />
+      <div className="relative w-full h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-[#02040a] text-slate-200 overflow-hidden px-4">
+        <div className="relative flex flex-col items-center gap-4 sm:gap-5 p-6 sm:p-8 rounded-3xl border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] max-w-sm sm:max-w-md text-center">
+          <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/20 to-sky-500/20 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+            <Telescope className="h-6 w-6 sm:h-7 sm:w-7 animate-pulse text-amber-300" />
           </div>
           <div>
-            <h3 className="font-['Outfit'] text-lg font-bold text-slate-100">
+            <h3 className="font-['Outfit'] text-sm sm:text-base font-bold text-slate-100">
               {language === 'ar' ? 'جاري الاتصال بأرشيف IRSA ومرصد SPHEREx...' : 'Accessing NASA/IPAC IRSA SPHEREx Archive...'}
             </h3>
-            <p className="text-xs font-mono text-slate-400 mt-2 leading-relaxed">
+            <p className="text-[11px] sm:text-xs font-mono text-slate-400 mt-1.5 leading-relaxed">
               {language === 'ar'
-                ? 'استرجاع ملفات FITS الأصلية، محاذاة WCS الدقيقة، وحساب مصفوفات الفروق الضوئية...'
-                : 'Downloading Level-2B calibrated FITS cutouts, computing sub-pixel WCS registration & difference maps...'}
+                ? 'استرجاع ملفات FITS ومحاذاة WCS الدقيقة وحساب خريطة الفروق...'
+                : 'Downloading calibrated FITS cutouts & computing sub-pixel difference maps...'}
             </p>
           </div>
         </div>
@@ -367,19 +403,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   }
 
   const statusBadge = getStatusBadge(currentResult.evidence.classification);
+  const isLiveInvestigation = currentResult.sourceMode === 'live' || currentResult.provenance?.sourceMode === 'live';
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-[#02040a] select-none ${
+      className={`relative w-full h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] overflow-hidden bg-[#02040a] select-none ${
         isRtl ? 'font-cairo' : 'font-sans'
       }`}
     >
       {/* =========================================================================
-          1. DOMINANT HERO TELESCOPE CANVAS (90%+ VIEWPORT)
+          1. DOMINANT HERO TELESCOPE CANVAS (TOUCH + MOUSE DRAG/PAN)
           ========================================================================= */}
       <div
-        className="absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden"
+        className="absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden touch-none"
         onMouseMove={handleCanvasMouseMove}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
@@ -387,22 +424,41 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           setIsDragging(false);
           setCursorPos(null);
         }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <div
-          className="relative transition-transform duration-75 ease-out rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-white/10"
+          className="relative transition-transform duration-75 ease-out rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(0,0,0,0.95)] border border-white/10"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
           }}
         >
           <canvas
             ref={canvasRef}
-            className="block w-[512px] h-[512px] pointer-events-auto"
+            className="block w-[340px] h-[340px] xs:w-[420px] xs:h-[420px] sm:w-[512px] sm:h-[512px] pointer-events-auto"
             style={{
               imageRendering: displayMode === 'science' ? 'pixelated' : 'auto',
             }}
           />
 
-          {/* Interactive Candidate Reticles */}
+          {/* Subtle Detector Pixel Grid Overlay in Science Mode */}
+          {showGrid && displayMode === 'science' && (
+            <svg
+              className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-30"
+              viewBox="0 0 64 64"
+              preserveAspectRatio="none"
+            >
+              <defs>
+                <pattern id="detector-grid" width="1" height="1" patternUnits="userSpaceOnUse">
+                  <path d="M 1 0 L 0 0 0 1" fill="none" stroke="rgba(56, 189, 248, 0.45)" strokeWidth="0.08" />
+                </pattern>
+              </defs>
+              <rect width="64" height="64" fill="url(#detector-grid)" />
+            </svg>
+          )}
+
+          {/* Candidate Reticles */}
           {showMarkers &&
             currentResult &&
             currentResult.candidates.map((cand) => {
@@ -422,211 +478,257 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   style={{ left: `${leftPct}%`, top: `${topPct}%` }}
                 >
                   <div
-                    className={`relative flex items-center justify-center w-7 h-7 rounded-full border transition-all ${
+                    className={`relative flex items-center justify-center w-6 h-6 rounded-full border transition-all ${
                       isSelected
                         ? isArtifact
-                          ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_15px_#f59e0b]'
-                          : 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_15px_#10b981]'
+                          ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_12px_#f59e0b]'
+                          : 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_12px_#10b981]'
                         : isArtifact
-                        ? 'border-amber-500/60 hover:border-amber-400 bg-amber-500/10'
-                        : 'border-sky-400/60 hover:border-sky-400 bg-sky-500/10'
+                        ? 'border-amber-500/50 hover:border-amber-400 bg-amber-500/10'
+                        : 'border-sky-400/50 hover:border-sky-400 bg-sky-500/10'
                     }`}
                   >
                     <div
-                      className={`w-1.5 h-1.5 rounded-full ${
+                      className={`h-1.5 w-1.5 rounded-full ${
                         isArtifact ? 'bg-amber-400' : 'bg-emerald-400'
                       }`}
                     />
-                    <div
-                      className={`absolute inset-0 rounded-full border animate-ping opacity-35 ${
-                        isArtifact ? 'border-amber-400' : 'border-emerald-400'
-                      }`}
-                    />
-                  </div>
-
-                  {/* Candidate Tag Pill on Hover */}
-                  <div className="absolute left-8 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-black/85 backdrop-blur-xl border border-white/10 text-[10px] font-mono text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
-                    <span className="font-bold text-amber-300">{cand.id}</span> ·{' '}
-                    <span>{cand.peakSignificance.toFixed(1)}σ</span> ·{' '}
-                    <span className="text-slate-400">{cand.status}</span>
                   </div>
                 </div>
               );
             })}
         </div>
-      </div>
 
-      {/* =========================================================================
-          2. TOP LIQUID-GLASS INSTRUMENT HUD (SPATIAL FLOATING PILL)
-          ========================================================================= */}
-      <div className="absolute top-3 inset-x-3 pointer-events-none z-30 flex flex-wrap items-center justify-between gap-2.5">
-        {/* Left: Scientific Status Badge & Quick Case Switcher */}
-        <div className="pointer-events-auto flex items-center gap-2">
-          {/* Classification Status Pill */}
-          <div
-            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border ${statusBadge.border} ${statusBadge.bg} backdrop-blur-2xl text-xs font-mono font-semibold tracking-wide`}
-          >
-            <div className={`h-2 w-2 rounded-full ${statusBadge.dot} animate-pulse`} />
-            <span>{statusBadge.label}</span>
-          </div>
-
-          {/* Quick Target Selector Dropdown */}
-          <div className="relative group">
-            <select
-              value={currentResult?.caseId || ''}
-              onChange={(e) => onSelectCase(e.target.value)}
-              className="appearance-none px-3.5 py-1.5 pr-8 rounded-2xl border border-white/10 bg-black/50 hover:bg-black/75 backdrop-blur-2xl text-xs font-mono text-slate-200 transition-colors cursor-pointer outline-none focus:border-amber-400/50 shadow-lg"
-            >
-              {cases.map((c) => (
-                <option key={c.id} value={c.id} className="bg-slate-900 text-slate-200">
-                  {c.title}
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
-          </div>
-
-          {/* Provenance Audit Trigger */}
-          <button
-            onClick={() => setShowProvenance(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-white/10 bg-black/50 hover:bg-white/10 backdrop-blur-2xl text-xs font-mono text-slate-300 hover:text-amber-300 transition-colors shadow-lg active:scale-95"
-            title={t.ctrlProvenance}
-          >
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="hidden md:inline font-semibold">Audit Provenance</span>
-          </button>
-
-          {/* Custom Sky Search Trigger */}
-          <button
-            onClick={() => setIsSearchOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-white/10 bg-black/50 hover:bg-white/10 backdrop-blur-2xl text-xs font-mono text-slate-300 hover:text-amber-300 transition-colors shadow-lg active:scale-95"
-            title="Search Custom Sky Coordinates in IRSA"
-          >
-            <Search className="h-3.5 w-3.5 text-amber-400" />
-            <span className="hidden md:inline font-semibold">Search Coordinates</span>
-          </button>
-        </div>
-
-        {/* Center: View Modes & Science/Presentation Toggle */}
-        <div className="pointer-events-auto flex items-center p-1 rounded-2xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-xl gap-1">
-          {/* Science vs Presentation Toggle Pill */}
-          <button
-            onClick={() => setDisplayMode(displayMode === 'presentation' ? 'science' : 'presentation')}
-            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded-xl font-semibold transition-all ${
-              displayMode === 'presentation'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-sm'
-                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-sm'
-            }`}
-            title={displayMode === 'presentation' ? t.viewPresentation : t.viewScience}
-          >
-            {displayMode === 'presentation' ? (
-              <>
-                <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                <span>Presentation</span>
-              </>
-            ) : (
-              <>
-                <Binary className="h-3.5 w-3.5 text-cyan-300" />
-                <span>Science (Native)</span>
-              </>
-            )}
-          </button>
-
-          <span className="h-4 w-[1px] bg-white/10 mx-0.5" />
-
-          {/* View Mode Pills */}
-          <button
-            onClick={() => setViewMode('difference')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'difference'
-                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewDifference}
-          </button>
-          <button
-            onClick={() => setViewMode('significance')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'significance'
-                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewSignificance}
-          </button>
-          <button
-            onClick={() => setViewMode('epoch1')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'epoch1'
-                ? 'bg-white/15 border border-white/20 text-sky-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewEpoch1}
-          </button>
-          <button
-            onClick={() => setViewMode('epoch2')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'epoch2'
-                ? 'bg-white/15 border border-white/20 text-sky-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewEpoch2}
-          </button>
-          <button
-            onClick={() => setViewMode('split')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'split'
-                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewSplit}
-          </button>
-          <button
-            onClick={() => setViewMode('blink')}
-            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'blink'
-                ? 'bg-white/15 border border-white/20 text-emerald-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-            }`}
-          >
-            {t.viewBlink}
-          </button>
-        </div>
-
-        {/* Right: Telemetry Chips */}
+        {/* Compact Scientific Provenance HUD */}
         {currentResult && (
-          <div className="pointer-events-auto hidden lg:flex items-center gap-3 px-3.5 py-1.5 rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-lg">
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">Δt:</span>
-              <span className="text-amber-300 font-semibold">
-                {currentResult.compatibility.timeBaselineDays.toFixed(1)}d
-              </span>
+          <div className="absolute top-28 sm:top-20 left-2 sm:left-4 z-20 pointer-events-none hidden lg:flex flex-col gap-1 p-2.5 rounded-2xl border border-white/10 bg-[#030712]/85 backdrop-blur-2xl text-[10px] font-mono text-slate-300 shadow-xl max-w-[260px]">
+            <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px] pb-1 border-b border-white/10">
+              <Database className="h-3.5 w-3.5 text-amber-400" />
+              <span>SPHEREx QR2 · Level-2B</span>
             </div>
-            <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">σ_MAD:</span>
-              <span className="text-sky-300 font-semibold">
-                {currentResult.difference.stats.noiseSigma.toFixed(4)}
-              </span>
-            </div>
-            <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">WCS:</span>
-              <span className="text-slate-200 font-medium">~6.15"/px</span>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] pt-0.5">
+              <div><span className="text-slate-500">BUNIT:</span> <span className="text-slate-200">MJy/sr</span></div>
+              <div><span className="text-slate-500">Pixel Scale:</span> <span className="text-slate-200">~6.15"/px</span></div>
+              <div><span className="text-slate-500">Array:</span> <span className="text-slate-200">64 × 64 px</span></div>
+              <div><span className="text-slate-500">Source:</span> <span className="text-sky-300">NASA/IPAC IRSA</span></div>
+              <div className="col-span-2 truncate"><span className="text-slate-500">Registration:</span> <span className="text-slate-200">Rigid Translation</span></div>
+              <div className="col-span-2 truncate"><span className="text-slate-500">Mode:</span> <span className="text-amber-200 uppercase">{viewMode}</span></div>
+              <div className="col-span-2"><span className="text-slate-500">Candidates:</span> <span className="text-emerald-300 font-semibold">{currentResult.candidates.length} detected (|S| ≥ 4σ)</span></div>
             </div>
           </div>
         )}
       </div>
 
+      {/* =========================================================================
+          2. FLOATING TOP HUD (RESPONSIVE DUAL-TIER ON MOBILE, SLEEK ON DESKTOP)
+          ========================================================================= */}
+      <div className="absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 pointer-events-none z-30 flex flex-col gap-1.5 sm:gap-2">
+        {/* Tier 1: Case Switcher + Primary Actions */}
+        <div className="flex items-center justify-between gap-1.5">
+          {/* Left: Case Selector */}
+          <div className="pointer-events-auto flex items-center gap-1 sm:gap-2">
+            <div className="relative">
+              <select
+                value={currentResult.caseId}
+                onChange={(e) => onSelectCase(e.target.value)}
+                className="appearance-none pl-3 pr-7 sm:px-3.5 py-1.5 rounded-full border border-white/15 bg-[#030712]/80 hover:bg-[#030712]/95 backdrop-blur-2xl text-[11px] sm:text-xs font-mono text-slate-200 outline-none cursor-pointer max-w-[135px] xs:max-w-[170px] sm:max-w-xs truncate shadow-lg transition-colors"
+              >
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id} className="bg-slate-900 text-slate-200">
+                    {c.title}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-2 sm:right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+            </div>
+
+            {/* Live vs Benchmark Pill */}
+            <div
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-medium backdrop-blur-2xl ${
+                isLiveInvestigation
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                  : 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+              }`}
+            >
+              <Radio className="h-2.5 w-2.5 animate-pulse" />
+              <span>{isLiveInvestigation ? 'Live IRSA' : 'Benchmark'}</span>
+            </div>
+          </div>
+
+          {/* Desktop Center: Mode Pills (Hidden on Mobile) */}
+          <div className="pointer-events-auto hidden md:flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/70 backdrop-blur-2xl shadow-xl gap-0.5 font-mono text-xs">
+            <button
+              onClick={() => handleViewModeChange('difference')}
+              className={`px-3 py-1 rounded-full transition-all ${
+                viewMode === 'difference'
+                  ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewDifference}
+            </button>
+            <button
+              onClick={() => handleViewModeChange('significance')}
+              className={`px-3 py-1 rounded-full transition-all ${
+                viewMode === 'significance'
+                  ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewSignificance}
+            </button>
+            <button
+              onClick={() => handleViewModeChange('epoch1')}
+              className={`px-2.5 py-1 rounded-full transition-all ${
+                viewMode === 'epoch1'
+                  ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewEpoch1}
+            </button>
+            <button
+              onClick={() => handleViewModeChange('epoch2')}
+              className={`px-2.5 py-1 rounded-full transition-all ${
+                viewMode === 'epoch2'
+                  ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewEpoch2}
+            </button>
+            <button
+              onClick={() => handleViewModeChange('blink')}
+              className={`px-2.5 py-1 rounded-full transition-all ${
+                viewMode === 'blink'
+                  ? 'bg-white/15 text-emerald-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewBlink}
+            </button>
+            <button
+              onClick={() => handleViewModeChange('split')}
+              className={`px-2.5 py-1 rounded-full transition-all ${
+                viewMode === 'split'
+                  ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {t.viewSplit}
+            </button>
+          </div>
+
+          {/* Right: Candidate Explorer, Search Sky & Provenance Action Buttons */}
+          <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5">
+            {/* Candidates Button */}
+            <button
+              onClick={() => setShowCandidateDrawer(!showCandidateDrawer)}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border backdrop-blur-2xl text-[11px] sm:text-xs font-mono transition-all ${
+                showCandidateDrawer
+                  ? 'border-amber-400/50 bg-amber-500/25 text-amber-300'
+                  : 'border-white/15 bg-[#030712]/75 hover:bg-white/10 text-slate-300'
+              }`}
+              title="Detected Candidates Explorer"
+            >
+              <Crosshair className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+              <span className="hidden xs:inline">Candidates</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 text-[10px] font-bold">
+                {currentResult?.candidates.length || 0}
+              </span>
+            </button>
+
+            {/* Search Sky Modal Trigger */}
+            <button
+              onClick={() => setIsSearchOpen(true)}
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border border-white/15 bg-[#030712]/75 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-amber-300 text-[11px] sm:text-xs font-mono transition-colors shadow-md"
+              title="Search Sky / Explore More"
+            >
+              <Search className="h-3.5 w-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Search Sky</span>
+            </button>
+
+            {/* Provenance Audit Trigger */}
+            <button
+              onClick={() => setShowProvenance(true)}
+              className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-white/15 bg-[#030712]/75 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-emerald-400 transition-colors shadow-md"
+              title="Scientific Provenance Audit"
+            >
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tier 2 (Mobile only): Mode Selector Scrollable Strip */}
+        <div className="pointer-events-auto md:hidden flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/80 backdrop-blur-2xl shadow-xl gap-1 font-mono text-[11px] overflow-x-auto no-scrollbar scrollbar-none w-fit mx-auto max-w-full">
+          <button
+            onClick={() => handleViewModeChange('difference')}
+            className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'difference'
+                ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewDifference}
+          </button>
+          <button
+            onClick={() => handleViewModeChange('significance')}
+            className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'significance'
+                ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewSignificance}
+          </button>
+          <button
+            onClick={() => handleViewModeChange('epoch1')}
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'epoch1'
+                ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewEpoch1}
+          </button>
+          <button
+            onClick={() => handleViewModeChange('epoch2')}
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'epoch2'
+                ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewEpoch2}
+          </button>
+          <button
+            onClick={() => handleViewModeChange('blink')}
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'blink'
+                ? 'bg-white/15 text-emerald-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewBlink}
+          </button>
+          <button
+            onClick={() => handleViewModeChange('split')}
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'split'
+                ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {t.viewSplit}
+          </button>
+        </div>
+      </div>
+
       {/* Special Context Slider for Split Wipe */}
       {viewMode === 'split' && (
-        <div className="absolute top-16 inset-x-0 pointer-events-none z-30 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
-            <span className="text-sky-300 font-semibold">{t.viewEpoch1}</span>
+        <div className="absolute top-20 sm:top-16 inset-x-0 pointer-events-none z-30 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+            <span className="text-sky-300 font-semibold text-[11px] sm:text-xs">{t.viewEpoch1}</span>
             <input
               type="range"
               min="0"
@@ -634,320 +736,239 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               step="0.01"
               value={sliderPos}
               onChange={(e) => setSliderPos(parseFloat(e.target.value))}
-              className="w-44 accent-amber-400 cursor-pointer"
+              className="w-28 sm:w-36 accent-amber-400 cursor-pointer"
             />
-            <span className="text-amber-300 font-semibold">{t.viewEpoch2}</span>
+            <span className="text-amber-300 font-semibold text-[11px] sm:text-xs">{t.viewEpoch2}</span>
           </div>
         </div>
       )}
 
       {/* Special Context Control for Blink Cadence */}
       {viewMode === 'blink' && (
-        <div className="absolute top-16 inset-x-0 pointer-events-none z-30 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+        <div className="absolute top-20 sm:top-16 inset-x-0 pointer-events-none z-30 flex justify-center px-4">
+          <div className="pointer-events-auto flex items-center gap-2.5 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
             <button
               onClick={() => setIsBlinking(!isBlinking)}
-              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-amber-300"
+              className="p-1 rounded-full bg-white/10 hover:bg-white/20 text-amber-300"
             >
               {isBlinking ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
             <span className="px-2 py-0.5 rounded bg-white/10 text-amber-300 font-bold uppercase text-[10px]">
               {blinkEpoch === 'epoch1' ? t.viewEpoch1 : t.viewEpoch2}
             </span>
-            <span className="text-slate-400">{t.hudBlinkSpeed}:</span>
-            <input
-              type="range"
-              min="150"
-              max="1000"
-              step="50"
-              value={blinkSpeedMs}
-              onChange={(e) => setBlinkSpeedMs(parseInt(e.target.value, 10))}
-              className="w-28 accent-emerald-400 cursor-pointer"
-            />
-            <span className="text-slate-400">{blinkSpeedMs}ms</span>
+            <span className="text-slate-400 text-[11px]">{blinkSpeedMs}ms</span>
           </div>
         </div>
       )}
 
       {/* =========================================================================
-          3. FLOATING CANDIDATE HUD (GLASS CARD ON LEFT)
+          3. FULL CANDIDATE EXPLORER DRAWER (PAGINATED & FILTERABLE - NO 4 LIMIT)
           ========================================================================= */}
-      <div
-        className={`absolute top-16 left-3 z-30 pointer-events-auto transition-all duration-300 max-w-sm w-full ${
-          isCandidateDrawerCollapsed ? 'h-11 overflow-hidden' : ''
-        }`}
-      >
-        <div className="rounded-3xl border border-white/10 bg-black/70 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] p-4 overflow-hidden">
+      {showCandidateDrawer && (
+        <div className="absolute top-20 sm:top-16 left-2 sm:left-4 z-40 pointer-events-auto w-[calc(100vw-16px)] sm:w-96 max-h-[82vh] overflow-hidden flex flex-col rounded-3xl border border-white/15 bg-[#030712]/90 backdrop-blur-2xl shadow-[0_16px_50px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-150">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3">
+          <div className="p-3.5 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Crosshair className="h-4 w-4 text-amber-400" />
-              <h3 className="text-xs font-mono font-bold tracking-wider text-slate-100 uppercase">
-                {t.candidateTitle}
-              </h3>
-              <span className="px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20 text-[10px] font-mono font-bold">
-                {currentResult?.candidates.length || 0}
-              </span>
+              <div>
+                <h4 className="font-['Outfit'] text-xs font-bold text-slate-100">
+                  {language === 'ar' ? 'المرشحات الفلكية (انحرافات إحصائية)' : 'Candidate Detections (Statistical Anomalies)'}
+                </h4>
+                <p className="text-[10px] font-mono text-slate-400">
+                  {filteredCandidates.length} of {currentResult.candidates.length} sources · Page {candidatePage} of {totalCandidatePages}
+                </p>
+              </div>
             </div>
             <button
-              onClick={() => setIsCandidateDrawerCollapsed(!isCandidateDrawerCollapsed)}
-              className="text-slate-400 hover:text-slate-200 transition-colors p-1"
+              onClick={() => setShowCandidateDrawer(false)}
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-white/10"
             >
-              {isCandidateDrawerCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Candidate selector pills */}
-          {currentResult && currentResult.candidates.length > 0 ? (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                {currentResult.candidates.map((cand) => {
-                  const isSel = selectedCandidate?.id === cand.id;
-                  const isArt = cand.artifactScore >= 0.5;
-                  return (
-                    <button
-                      key={cand.id}
-                      onClick={() => centerOnCandidate(cand)}
-                      className={`px-2.5 py-1 rounded-xl text-xs font-mono font-medium border transition-all ${
-                        isSel
-                          ? isArt
-                            ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
-                            : 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                          : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
-                      }`}
-                    >
-                      {cand.id} ({cand.peakSignificance.toFixed(1)}σ)
-                    </button>
-                  );
-                })}
+          {/* Scientific Guidance Banner */}
+          <div className="px-3.5 py-1.5 bg-black/40 border-b border-white/5 text-[9px] font-mono text-slate-400 leading-tight">
+            Peaks are statistical anomalies (|S| ≥ 4.0σ). Full transient confirmation requires multi-band and multi-epoch verification.
+          </div>
+
+          {/* Filter & Sort Bar */}
+          <div className="p-2 border-b border-white/5 bg-black/30 flex items-center justify-between gap-1 text-[10px] font-mono">
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar scrollbar-none">
+              {(['all', 'candidates', 'known', 'artifacts'] as CandidateFilter[]).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => {
+                    setCandidateFilter(f);
+                    setCandidatePage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded-lg whitespace-nowrap transition-colors ${
+                    candidateFilter === f
+                      ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-400/30'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {f === 'all' ? 'All' : f === 'candidates' ? 'Candidates' : f === 'known' ? 'Gaia' : 'Artifacts'}
+                </button>
+              ))}
+            </div>
+
+            {/* Sort Dropdown */}
+            <select
+              value={candidateSort}
+              onChange={(e) => setCandidateSort(e.target.value as CandidateSort)}
+              className="bg-transparent text-slate-400 border border-white/10 rounded-lg px-1.5 py-0.5 outline-none cursor-pointer"
+            >
+              <option value="significance" className="bg-slate-900 text-slate-200">Peak S/N</option>
+              <option value="aperture" className="bg-slate-900 text-slate-200">Aperture S/N</option>
+              <option value="flux" className="bg-slate-900 text-slate-200">|ΔFlux|</option>
+            </select>
+          </div>
+
+          {/* Candidate List (Scrollable) */}
+          <div className="flex-1 overflow-y-auto p-2.5 space-y-2 scrollbar-thin scrollbar-thumb-white/10">
+            {paginatedCandidates.length === 0 ? (
+              <div className="text-center py-6 text-xs font-mono text-slate-400">
+                No detections matching filter criteria.
               </div>
+            ) : (
+              paginatedCandidates.map((cand) => {
+                const isSelected = selectedCandidate?.id === cand.id;
+                const isArtifact = cand.artifactScore >= 0.5;
+                const hasGaiaMatch = cand.catalogMatches.length > 0;
 
-              {selectedCandidate && (
-                <div className="space-y-2.5 pt-1">
-                  {/* Selected Candidate Metadata Grid: Distinguishes Peak Pixel S/N vs Integrated Aperture S/N */}
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Peak Pixel S/N (ΔI/σ_pix)</span>
-                      <span
-                        className={`text-sm font-bold ${
-                          selectedCandidate.artifactScore >= 0.5 ? 'text-amber-400' : 'text-emerald-400'
-                        }`}
-                      >
-                        {selectedCandidate.peakSignificance.toFixed(2)}σ
-                      </span>
-                      <span className="text-[9px] text-slate-500 block">Single-pixel deviation</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 block font-semibold">Aperture S/N (|ΔF|/σ_ΔF)</span>
-                      {(() => {
-                        const apSnr = selectedCandidate.deltaFluxUncertainty > 0
-                          ? Math.abs(selectedCandidate.deltaFlux) / selectedCandidate.deltaFluxUncertainty
-                          : 0;
-                        const isSig = apSnr >= 3.5;
-                        return (
-                          <div>
-                            <span className={`text-sm font-bold ${isSig ? 'text-emerald-400' : 'text-slate-300'}`}>
-                              {apSnr.toFixed(2)}σ
-                            </span>
-                            <span className="text-[9px] text-slate-500 block">
-                              {isSig ? 'Statistically significant' : 'Noise consistent (<3σ)'}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block font-medium">Net ΔFlux (r=2.5px)</span>
-                      <span className="text-[11px] font-bold text-slate-200 block truncate">
-                        {selectedCandidate.deltaFlux.toFixed(3)} ± {selectedCandidate.deltaFluxUncertainty.toFixed(3)}
-                      </span>
-                      <span className="text-[9px] text-slate-500 block">MJy/sr (nominal uncorrelated σ)</span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block font-medium">Pixel & Coordinates</span>
-                      <span className="text-[10px] text-slate-300 block">
-                        ({selectedCandidate.x}, {selectedCandidate.y})
-                      </span>
-                      <span className="text-[9px] text-slate-400 block truncate">
-                        {selectedCandidate.ra.toFixed(4)}°, {selectedCandidate.dec.toFixed(4)}°
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Scientific Warning / Status Banner */}
-                  <div className={`p-2 rounded-xl text-[10px] font-mono leading-relaxed border ${
-                    selectedCandidate.artifactScore >= 0.5
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
-                      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-                  }`}>
-                    {selectedCandidate.artifactScore >= 0.5 ? (
-                      <div>
-                        <span className="font-bold text-amber-300">⚠️ Astrometric Dipole / Artifact:</span> Peak single-pixel reaches {selectedCandidate.peakSignificance.toFixed(1)}σ due to steep PSF gradient sub-pixel jitter, while integrated aperture photometry confirms only {selectedCandidate.deltaFluxUncertainty > 0 ? (Math.abs(selectedCandidate.deltaFlux) / selectedCandidate.deltaFluxUncertainty).toFixed(2) : '0.00'}σ (&lt;3.0σ). Sources must never be confirmed as transients based on peak-pixel significance alone.
+                return (
+                  <div
+                    key={cand.id}
+                    onClick={() => centerOnCandidate(cand)}
+                    className={`p-2.5 rounded-2xl border transition-all cursor-pointer font-mono text-xs ${
+                      isSelected
+                        ? 'border-amber-400/50 bg-amber-500/15 shadow-sm'
+                        : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/15'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-100">{cand.id}</span>
+                        <span
+                          className={`px-1.5 py-0.2 rounded-full text-[9px] uppercase font-bold border ${
+                            isArtifact
+                              ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                              : hasGaiaMatch
+                              ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                              : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                          }`}
+                        >
+                          {cand.status}
+                        </span>
                       </div>
-                    ) : (
-                      <div>
-                        <span className="font-bold text-emerald-300">✅ Astrophysical Candidate:</span> Both peak-pixel (&gt;4σ) and integrated aperture photometry (|ΔF|/σ_ΔF ≥ 3.5σ) confirm authentic flux variation across epochs.
-                      </div>
-                    )}
-                  </div>
+                      <span className="text-amber-300 font-bold text-xs">
+                        {cand.peakSignificance >= 0 ? '+' : ''}{cand.peakSignificance.toFixed(1)}σ
+                      </span>
+                    </div>
 
-                  {/* Progressive Disclosure: Candidate Verification & Photometry */}
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden text-xs font-mono">
-                    <button
-                      onClick={() => setIsCandidateDetailsOpen(!isCandidateDetailsOpen)}
-                      className="w-full flex items-center justify-between p-2.5 text-slate-300 hover:text-amber-300 transition-colors"
-                    >
-                      <span className="font-semibold">{t.whyMattersTitle}</span>
-                      {isCandidateDetailsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    </button>
-                    {isCandidateDetailsOpen && (
-                      <div className="p-2.5 pt-0 text-[11px] text-slate-400 space-y-2 border-t border-white/5">
-                        {selectedCandidate.artifactScore >= 0.5 ? (
-                          <div className="space-y-1">
-                            <p className="text-amber-300 font-medium">
-                              {language === 'ar' ? '⚠️ استبعاد كـ Artifact:' : '⚠️ Instrumental Artifact Rejected:'}
-                            </p>
-                            <p>
-                              {selectedCandidate.whyFlagged ||
-                                (language === 'ar'
-                                  ? 'هذه الإشارة ناتجة عن تشبع البيكسل أو بقايا توجيه التلسكوب (Dipole) بدلاً من تغير ضوئي حقيقي.'
-                                  : 'Flagged as saturated detector core or astrometric dipole rather than genuine flux change.')}
-                            </p>
-                          </div>
-                        ) : selectedCandidate.catalogMatches.length > 0 ? (
-                          <div className="space-y-1">
-                            <p className="text-emerald-300 font-medium">
-                              {language === 'ar' ? '⭐ جرم سماوي معروف في Gaia DR3:' : '⭐ Matched to known Gaia DR3 catalog star:'}
-                            </p>
-                            <p>
-                              {language === 'ar'
-                                ? `يتطابق الموقع السماوي ضمن نطاق ${selectedCandidate.catalogMatches[0].separationArcsec}" مع ${selectedCandidate.catalogMatches[0].identifier}.`
-                                : `Centroid matches ${selectedCandidate.catalogMatches[0].identifier} within ${selectedCandidate.catalogMatches[0].separationArcsec}".`}
-                            </p>
+                    <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-400 mb-1">
+                      <div>Aperture: <span className="text-slate-200">{cand.apertureSignificance ? `${cand.apertureSignificance.toFixed(1)}σ` : '--'}</span></div>
+                      <div>ΔF: <span className="text-slate-200">{cand.deltaFlux >= 0 ? '+' : ''}{cand.deltaFlux.toFixed(2)} MJy/sr</span></div>
+                    </div>
+
+                    <div className="text-[10px] text-slate-500 truncate">
+                      ICRS: {cand.ra.toFixed(4)}°, {cand.dec.toFixed(4)}°
+                    </div>
+
+                    {/* Scientific details & Heuristic Artifact Index if selected */}
+                    {isSelected && (
+                      <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-slate-300 leading-relaxed space-y-1">
+                        <div className="flex items-center justify-between text-[9px] text-slate-400">
+                          <span>Heuristic Artifact Index:</span>
+                          <span className={isArtifact ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
+                            {cand.artifactScore.toFixed(2)} / 1.00 (Empirical Penalty)
+                          </span>
+                        </div>
+                        {isArtifact ? (
+                          <div className="text-amber-300">⚠️ {cand.whyFlagged || 'Flagged by FITS bitmask or dipole filter.'}</div>
+                        ) : hasGaiaMatch ? (
+                          <div className="text-cyan-300">
+                            ⭐ Gaia DR3: {cand.catalogMatches[0].identifier} ({cand.catalogMatches[0].separationArcsec}" sep)
+                            <span className="block text-[9px] text-slate-400 mt-0.5">Catalog point-source association (not proof of physical variability).</span>
                           </div>
                         ) : (
-                          <div className="space-y-1">
-                            <p className="text-sky-300 font-medium">
-                              {language === 'ar' ? '🌌 مرشح عابر غير مفهرس:' : '🌌 Uncataloged Transient Candidate:'}
-                            </p>
-                            <p>
-                              {language === 'ar'
-                                ? 'إشارة حقيقية تتجاوز عتبة الدلالة الإحصائية بدون أي أعلام تشويش في المستشعر.'
-                                : 'Statistically significant flux residual with clean PSF morphology and no detector defect flags.'}
-                            </p>
+                          <div className="text-emerald-300">
+                            🌌 Statistical anomaly candidate (|S| ≥ 4σ) without detector bitmask flags. Requires multi-band cross-epoch spectroscopic confirmation.
                           </div>
                         )}
-
-                        {/* Aperture Photometry Measurements */}
-                        <div className="pt-1.5 border-t border-white/5 space-y-1">
-                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
-                            {t.photometryTitle}
-                          </span>
-                          <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
-                            <span>Epoch 1 Flux:</span>
-                            <span className="font-semibold text-sky-300">{selectedCandidate.apertureFluxEpoch1.toFixed(3)} MJy/sr</span>
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
-                            <span>Epoch 2 Flux:</span>
-                            <span className="font-semibold text-amber-300">{selectedCandidate.apertureFluxEpoch2.toFixed(3)} MJy/sr</span>
-                          </div>
-                        </div>
                       </div>
                     )}
                   </div>
+                );
+              })
+            )}
+          </div>
 
-                  {/* Gaia DR3 Crossmatch */}
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">
-                      {t.gaiaTitle}
-                    </span>
-                    {selectedCandidate.catalogMatches.length > 0 ? (
-                      <div className="space-y-1">
-                        {selectedCandidate.catalogMatches.map((m, idx) => (
-                          <div
-                            key={idx}
-                            className="p-2 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between text-[11px] font-mono"
-                          >
-                            <div>
-                              <span className="text-amber-300 font-semibold block">{m.identifier}</span>
-                              <span className="text-slate-400 text-[10px]">
-                                Sep: {m.separationArcsec}" · {m.photometry || 'G-band'}
-                              </span>
-                            </div>
-                            <a
-                              href={m.sourceUrl}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-slate-400 hover:text-sky-300 transition-colors p-1"
-                              title="View on VizieR"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] font-mono text-slate-500 italic p-2 rounded-xl bg-white/[0.02] border border-white/5">
-                        {t.noGaiaMatches}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
+          {/* Pagination Controls */}
+          {totalCandidatePages > 1 && (
+            <div className="p-2 border-t border-white/10 bg-white/[0.02] flex items-center justify-between text-xs font-mono">
+              <button
+                onClick={() => setCandidatePage((p) => Math.max(1, p - 1))}
+                disabled={candidatePage === 1}
+                className="px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 flex items-center gap-1"
+              >
+                <ChevronLeft className="h-3 w-3" />
+                <span>Prev</span>
+              </button>
+              <span className="text-[10px] text-slate-400">
+                {candidatePage} / {totalCandidatePages}
+              </span>
+              <button
+                onClick={() => setCandidatePage((p) => Math.min(totalCandidatePages, p + 1))}
+                disabled={candidatePage === totalCandidatePages}
+                className="px-2.5 py-1 rounded-lg border border-white/10 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed text-slate-300 flex items-center gap-1"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-3 w-3" />
+              </button>
             </div>
-          ) : (
-            <p className="text-xs font-mono text-slate-400 py-3 text-center">
-              {t.noCandidates}
-            </p>
           )}
         </div>
-      </div>
+      )}
 
       {/* =========================================================================
-          4. FLOATING BOTTOM GLASS INSTRUMENT DECK (TOOLS, CONTROLS & CURSOR READOUT)
+          4. FLOATING BOTTOM GLASS CONTROL DOCK (DESKTOP DOCK + MOBILE SLIDERS BUTTON)
           ========================================================================= */}
-      <div className="absolute bottom-3 inset-x-3 pointer-events-none z-30 flex flex-wrap items-end justify-between gap-3">
-        {/* Left: Pixel & Celestial Live Cursor Inspector */}
-        <div className="pointer-events-auto hidden sm:flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-xl text-[11px] font-mono text-slate-300">
+      <div className="absolute bottom-3 sm:bottom-4 inset-x-2 sm:inset-x-4 pointer-events-none z-30 flex items-center justify-between">
+        {/* Desktop Left: Live Cursor Inspector Pill */}
+        <div className="pointer-events-auto hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-[#030712]/75 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-lg">
           <Crosshair className="h-3.5 w-3.5 text-amber-400" />
           {cursorPos ? (
-            <div className="flex items-center gap-2.5">
-              <span>
-                Pix: <strong className="text-slate-100">[{cursorPos.x}, {cursorPos.y}]</strong>
-              </span>
-              <span className="text-slate-700">|</span>
-              <span>
-                RA: <strong className="text-amber-300">{cursorPos.ra?.toFixed(4)}°</strong>
-              </span>
-              <span>
-                Dec: <strong className="text-amber-300">{cursorPos.dec != null ? (cursorPos.dec >= 0 ? `+${cursorPos.dec.toFixed(4)}°` : `${cursorPos.dec.toFixed(4)}°`) : '--'}</strong>
-              </span>
-              <span className="text-slate-700">|</span>
-              <span>
-                Val: <strong className="text-sky-300">{cursorPos.val != null && Number.isFinite(cursorPos.val) ? cursorPos.val.toFixed(3) : '--'}</strong>
-              </span>
+            <div className="flex items-center gap-2">
+              <span>[{cursorPos.x}, {cursorPos.y}]</span>
+              <span className="text-slate-600">·</span>
+              <span className="text-amber-300 font-semibold">{cursorPos.ra?.toFixed(4)}°, {cursorPos.dec?.toFixed(4)}°</span>
+              <span className="text-slate-600">·</span>
+              <span className="text-sky-300">{cursorPos.val != null ? cursorPos.val.toFixed(3) : '--'} MJy/sr</span>
             </div>
           ) : (
-            <span className="text-slate-500">Hover canvas to inspect pixel astrometry</span>
+            <span className="text-slate-500">Hover canvas for celestial coordinates</span>
           )}
         </div>
 
-        {/* Center: Image Controls (Zoom, Reticles, Palette, Stretch) */}
-        <div className="pointer-events-auto flex items-center p-1.5 rounded-2xl border border-white/10 bg-black/70 backdrop-blur-2xl shadow-2xl gap-1">
+        {/* Center: Image Controls (Desktop: full bar; Mobile: compact bar with drawer button) */}
+        <div className="pointer-events-auto flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl gap-1 font-mono text-xs mx-auto md:mx-auto">
           {/* Zoom Out */}
           <button
             onClick={() => setZoom((z) => Math.max(0.6, z - 0.25))}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
-            title={t.ctrlZoomOut}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors"
+            title="Zoom Out"
           >
             <ZoomOut className="h-3.5 w-3.5" />
           </button>
-          <span className="text-[11px] font-mono text-slate-400 px-1">{zoom.toFixed(2)}x</span>
+          <span className="text-[11px] text-slate-400 px-1">{zoom.toFixed(1)}x</span>
           {/* Zoom In */}
           <button
             onClick={() => setZoom((z) => Math.min(6.0, z + 0.25))}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
-            title={t.ctrlZoomIn}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors"
+            title="Zoom In"
           >
             <ZoomIn className="h-3.5 w-3.5" />
           </button>
@@ -957,281 +978,496 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               setPan({ x: 0, y: 0 });
               setZoom(1.2);
             }}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
-            title={t.ctrlReset}
+            className="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors"
+            title="Reset Pan/Zoom"
           >
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
 
-          <span className="h-4 w-[1px] bg-white/10 mx-1" />
+          {/* Desktop Controls (Hidden on Mobile) */}
+          <span className="hidden md:inline-block h-3.5 w-[1px] bg-white/10 mx-0.5" />
 
-          {/* Toggle Markers */}
+          {/* Science vs Presentation Toggle (Desktop) */}
           <button
-            onClick={() => setShowMarkers(!showMarkers)}
-            className={`p-1.5 rounded-xl transition-colors ${
-              showMarkers ? 'text-amber-400 bg-amber-400/15' : 'text-slate-400 hover:text-slate-200 hover:bg-white/10'
+            onClick={() => setDisplayMode(displayMode === 'science' ? 'presentation' : 'science')}
+            className={`hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+              displayMode === 'science'
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 font-semibold'
+                : 'bg-white/10 text-slate-300'
             }`}
-            title={t.ctrlMarkers}
+            title={displayMode === 'science' ? 'Science Mode: Native 6.15"/px detector sampling' : 'Presentation Mode: Smoothed Visualization'}
           >
-            <Crosshair className="h-3.5 w-3.5" />
+            <Binary className="h-3 w-3" />
+            <span>{displayMode === 'science' ? 'Science (Native)' : 'Presentation (Smooth)'}</span>
           </button>
 
-          {/* Stretch Mode Select */}
+          {/* Grid Toggle (Desktop, Science Mode only) */}
+          {displayMode === 'science' && (
+            <button
+              onClick={() => setShowGrid(!showGrid)}
+              className={`hidden md:flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                showGrid
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40 font-semibold'
+                  : 'bg-white/5 text-slate-400 hover:text-slate-200'
+              }`}
+              title="Toggle native SPHEREx 64x64 detector pixel grid"
+            >
+              <Grid className="h-3 w-3" />
+              <span>Grid</span>
+            </button>
+          )}
+
+          {/* Stretch Select (Desktop) */}
           <select
             value={stretch}
             onChange={(e) => setStretch(e.target.value as StretchMode)}
-            className="px-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono border border-white/10 outline-none cursor-pointer"
-            title={t.ctrlStretch}
+            className="hidden md:block px-2 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] border border-white/10 outline-none cursor-pointer"
           >
-            <option value="asinh" className="bg-slate-900">asinh (Photometric)</option>
+            <option value="asinh" className="bg-slate-900">asinh</option>
             <option value="sqrt" className="bg-slate-900">sqrt</option>
-            <option value="log" className="bg-slate-900">log10</option>
+            <option value="log" className="bg-slate-900">log</option>
             <option value="linear" className="bg-slate-900">linear</option>
           </select>
 
-          {/* Colormap Select */}
+          {/* Colormap Select (Desktop) */}
           <select
             value={colormap}
             onChange={(e) => setColormap(e.target.value as ColormapMode)}
-            className="px-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono border border-white/10 outline-none cursor-pointer"
-            title={t.ctrlColormap}
+            className="hidden md:block px-2 py-1 rounded-full bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] border border-white/10 outline-none cursor-pointer"
           >
-            <option value="spherex_cosmic" className="bg-slate-900">SPHEREx Cosmic</option>
+            <option value="diff_diverging" className="bg-slate-900">Diff Diverging</option>
+            <option value="grayscale" className="bg-slate-900">Grayscale</option>
+            <option value="infrared_warm" className="bg-slate-900">Infrared Warm</option>
             <option value="inferno" className="bg-slate-900">Inferno</option>
             <option value="viridis" className="bg-slate-900">Viridis</option>
-            <option value="cyan_gold" className="bg-slate-900">Cyan-Gold</option>
-            <option value="grayscale" className="bg-slate-900">Grayscale</option>
           </select>
+
+          {/* Mobile Secondary Controls Button (Sliding Bottom Sheet) */}
+          <button
+            onClick={() => setIsMobileControlsOpen(true)}
+            className="md:hidden flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/15 text-amber-300 border border-white/15 text-[11px] transition-all ml-1"
+          >
+            <Sliders className="h-3.5 w-3.5 text-amber-400" />
+            <span>Controls</span>
+          </button>
         </div>
 
-        {/* Right: SPEX AI Floating Companion Dock */}
-        <div
-          className={`pointer-events-auto transition-all duration-300 max-w-sm w-full ${
-            isSpexCollapsed ? 'w-auto' : ''
-          }`}
-        >
-          <div className="rounded-3xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] p-3 overflow-hidden">
-            {/* SPEX Header & Mood Avatar */}
-            <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
-              <div className="flex items-center gap-2.5">
-                <div className="relative h-9 w-9 rounded-2xl overflow-hidden border border-amber-500/40 bg-gradient-to-br from-amber-500/20 to-sky-500/20 flex-shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
-                  <img
-                    src={SPEX_ASSETS[spexMood]?.imagePath || SPEX_ASSETS.explaining.imagePath}
-                    alt={spexMood}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 border border-black shadow-[0_0_5px_#34d399]" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-['Outfit'] text-xs font-bold tracking-wide text-slate-100">
-                      {t.spexTitle}
-                    </span>
-                    <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-400/10 text-amber-300 border border-amber-400/20 font-semibold">
-                      {spexMood}
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-400 truncate max-w-[160px]">
-                    {t.spexRole}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsSpexCollapsed(!isSpexCollapsed)}
-                className="text-slate-400 hover:text-slate-200 transition-colors p-1"
-              >
-                {isSpexCollapsed ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-            </div>
-
-            {!isSpexCollapsed && (
-              <div className="space-y-2">
-                {/* Speech Bubble */}
-                <div className="max-h-32 overflow-y-auto pr-1 text-xs font-mono text-slate-200 leading-relaxed p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
-                  {spexReply}
-                </div>
-
-                {/* Prompt Chips */}
-                <div className="flex flex-wrap gap-1">
-                  {t.spexChips.slice(0, 2).map((chip, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => askSpex(chip)}
-                      disabled={isSpexThinking}
-                      className="px-2 py-0.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300 hover:text-amber-300 transition-colors text-left"
-                    >
-                      {chip}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Interactive Input */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    askSpex(spexMessage);
-                  }}
-                  className="flex items-center gap-1.5"
-                >
-                  <input
-                    type="text"
-                    value={spexMessage}
-                    onChange={(e) => setSpexMessage(e.target.value)}
-                    placeholder={t.spexPlaceholder}
-                    disabled={isSpexThinking}
-                    className="flex-1 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-xs font-mono text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400/50 transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSpexThinking || !spexMessage.trim()}
-                    className="p-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 disabled:opacity-40 transition-colors"
-                  >
-                    <Send className="h-3.5 w-3.5" />
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
-        </div>
+        {/* Right Spacer for SPEX Button on Desktop */}
+        <div className="hidden md:block w-10 h-10" />
       </div>
 
-      {/* Provenance Audit Modal */}
-      {showProvenance && currentResult?.provenance && (
-        <ProvenanceModal
-          provenance={currentResult.provenance}
-          onClose={() => setShowProvenance(false)}
-        />
-      )}
-
-      {/* Real-Data Coordinate Search Modal */}
-      {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
-          <div className="relative w-full max-w-lg rounded-3xl border border-white/10 bg-[#060b18] shadow-2xl p-6 overflow-hidden">
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
-              <div className="flex items-center gap-2.5">
-                <Search className="h-5 w-5 text-amber-400" />
-                <div>
-                  <h3 className="text-base font-bold text-slate-100 font-['Outfit']">
-                    Search SPHEREx Infrared Sky
-                  </h3>
-                  <p className="text-xs font-mono text-slate-400">
-                    Live IRSA Cutout vs Curated Cases
-                  </p>
-                </div>
+      {/* =========================================================================
+          5. MOBILE COLLAPSIBLE CONTROLS BOTTOM SHEET
+          ========================================================================= */}
+      {isMobileControlsOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm md:hidden animate-in fade-in duration-150">
+          <div className="w-full rounded-t-3xl border-t border-white/20 bg-[#030712]/95 backdrop-blur-2xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto font-mono text-xs text-slate-200">
+            {/* Drawer Handle & Header */}
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
+              <div className="flex items-center gap-2">
+                <Sliders className="h-4 w-4 text-amber-400" />
+                <h4 className="font-['Outfit'] text-sm font-bold text-slate-100">
+                  Image & Telemetry Controls
+                </h4>
               </div>
               <button
-                onClick={() => setIsSearchOpen(false)}
-                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
+                onClick={() => setIsMobileControlsOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-100"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-4 text-xs font-mono">
-              {/* Distinct Categories Notice */}
-              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-1.5">
-                <span className="text-[11px] font-bold text-amber-300 block uppercase tracking-wider">
-                  Real-Data Workflow & Integrity
-                </span>
-                <p className="text-slate-300 text-[11px] leading-relaxed">
-                  • <strong>Curated Benchmark Cases:</strong> 4 pre-indexed fields with published ground truth (variable star, stability null, quality bitmask rejection, and band mismatch guard).
-                </p>
-                <p className="text-slate-300 text-[11px] leading-relaxed">
-                  • <strong>Live IRSA Cutout:</strong> Queries NASA/IPAC IRSA directly at arbitrary coordinates, downloads calibrated Level-2B FITS arrays, and performs live difference imaging.
-                </p>
+            {/* Target Field Info */}
+            <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 mb-4 space-y-1 text-[11px]">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Target:</span>
+                <span className="text-amber-300 font-bold">{currentResult.targetCoords.ra.toFixed(4)}°, {currentResult.targetCoords.dec.toFixed(4)}°</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Classification:</span>
+                <span className="text-slate-200 font-semibold">{currentResult.evidence.classification}</span>
+              </div>
+            </div>
+
+            {/* Display Sampling Toggle */}
+            <div className="mb-4">
+              <label className="block text-slate-400 mb-1.5 text-[11px]">Display Sampling:</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setDisplayMode('science')}
+                  className={`py-2 px-3 rounded-xl border text-center transition-colors ${
+                    displayMode === 'science'
+                      ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200 font-bold'
+                      : 'border-white/10 bg-white/5 text-slate-400'
+                  }`}
+                >
+                  Science (Native)
+                </button>
+                <button
+                  onClick={() => setDisplayMode('presentation')}
+                  className={`py-2 px-3 rounded-xl border text-center transition-colors ${
+                    displayMode === 'presentation'
+                      ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200 font-bold'
+                      : 'border-white/10 bg-white/5 text-slate-400'
+                  }`}
+                >
+                  Presentation (Smooth)
+                </button>
               </div>
 
-              {/* Coordinate Form */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  const ra = parseFloat(customRa);
-                  const dec = parseFloat(customDec);
-                  if (Number.isFinite(ra) && Number.isFinite(dec)) {
-                    setIsSearchOpen(false);
-                    onSearchTarget(ra, dec);
-                  }
-                }}
-                className="space-y-3"
-              >
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">RA (degrees, J2000)</label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      min="0"
-                      max="360"
-                      value={customRa}
-                      onChange={(e) => setCustomRa(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-amber-400 transition-colors"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] text-slate-400 block mb-1">Dec (degrees, J2000)</label>
-                    <input
-                      type="number"
-                      step="0.0001"
-                      min="-90"
-                      max="90"
-                      value={customDec}
-                      onChange={(e) => setCustomDec(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-amber-400 transition-colors"
-                    />
-                  </div>
-                </div>
-
-                {/* Suggestions in Footprint */}
-                <div>
-                  <span className="text-[10px] text-slate-500 block mb-1">Quick Select in QR2 Footprint:</span>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => { setCustomRa('276.2500'); setCustomDec('64.8300'); }}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
-                    >
-                      NEP Point A (276.2500°, +64.8300°)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomRa('275.9265'); setCustomDec('64.9585'); }}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
-                    >
-                      Calibration Field (275.9265°, +64.9585°)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setCustomRa('276.1391'); setCustomDec('64.8361'); }}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
-                    >
-                      QR2 Deep (276.1391°, +64.8361°)
-                    </button>
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-sky-950/20 border border-sky-500/20 text-[10px] text-sky-300">
-                  ⚠️ Note: Coordinates outside SPHEREx QR2 survey coverage return an authentic IRSA HTTP 422 error. The system never substitutes demo data for failed live queries.
-                </div>
-
-                <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+              {displayMode === 'science' && (
+                <div className="mt-2 flex items-center justify-between p-2 rounded-xl bg-white/[0.02] border border-white/5">
+                  <span className="text-[11px] text-slate-400">Detector 64x64 Pixel Grid:</span>
                   <button
-                    type="button"
-                    onClick={() => setIsSearchOpen(false)}
-                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold"
+                    onClick={() => setShowGrid(!showGrid)}
+                    className={`px-3 py-1 rounded-lg border text-[10px] font-bold transition-colors ${
+                      showGrid
+                        ? 'border-amber-400/50 bg-amber-500/20 text-amber-200'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] active:scale-95"
-                  >
-                    Query IRSA Archive
+                    {showGrid ? 'ENABLED' : 'DISABLED'}
                   </button>
                 </div>
-              </form>
+              )}
             </div>
+
+            {/* Stretch Selection */}
+            <div className="mb-4">
+              <label className="block text-slate-400 mb-1.5 text-[11px]">Astronomical Stretch:</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(['asinh', 'sqrt', 'log', 'linear'] as StretchMode[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStretch(s)}
+                    className={`py-2 rounded-xl border text-center transition-colors ${
+                      stretch === s
+                        ? 'border-amber-400/50 bg-amber-500/20 text-amber-200 font-bold'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Colormap Selection */}
+            <div className="mb-5">
+              <label className="block text-slate-400 mb-1.5 text-[11px]">Palette / Colormap:</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {(
+                  [
+                    { id: 'diff_diverging', label: 'Diff Diverging' },
+                    { id: 'grayscale', label: 'Grayscale' },
+                    { id: 'infrared_warm', label: 'Infrared Warm' },
+                    { id: 'inferno', label: 'Inferno' },
+                    { id: 'viridis', label: 'Viridis' },
+                  ] as Array<{ id: ColormapMode; label: string }>
+                ).map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => setColormap(c.id)}
+                    className={`py-2 px-2.5 rounded-xl border text-left truncate transition-colors ${
+                      colormap === c.id
+                        ? 'border-amber-400/50 bg-amber-500/20 text-amber-200 font-bold'
+                        : 'border-white/10 bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Reticle Markers Toggle */}
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/5 mb-4">
+              <span className="text-slate-300">Show Candidate Reticles</span>
+              <button
+                onClick={() => setShowMarkers(!showMarkers)}
+                className={`w-11 h-6 rounded-full transition-colors relative ${
+                  showMarkers ? 'bg-amber-500' : 'bg-white/20'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    showMarkers ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Close Button */}
+            <button
+              onClick={() => setIsMobileControlsOpen(false)}
+              className="w-full py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold transition-colors"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================================
+          6. SPEX AI FLOATING POPUP & LAUNCHER
+          ========================================================================= */}
+      <SpexPopup
+        currentResult={currentResult}
+        selectedCandidate={selectedCandidate}
+        language={language}
+      />
+
+      {/* Provenance Audit Modal */}
+      {showProvenance && currentResult?.provenance && (
+        <ProvenanceModal
+          provenance={currentResult.provenance}
+          compatibility={currentResult.compatibility}
+          evidence={currentResult.evidence}
+          onClose={() => setShowProvenance(false)}
+          language={language}
+        />
+      )}
+
+      {/* =========================================================================
+          7. SEARCH SKY / EXPLORE MORE DIALOG (TAP QUERY & DIRECT FITS DISCOVERY)
+          ========================================================================= */}
+      {isSearchOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-3xl border border-white/15 bg-[#030712]/95 p-5 sm:p-6 shadow-2xl backdrop-blur-2xl max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Search className="h-5 w-5 text-amber-400" />
+                <h3 className="font-['Outfit'] text-sm sm:text-base font-bold text-slate-100">
+                  {language === 'ar' ? 'استكشاف سماء جديدة ومسح أرشيف SPHEREx' : 'Explore More / Search SPHEREx Sky'}
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsSearchOpen(false)}
+                className="text-slate-400 hover:text-slate-100 p-1"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Mode Tabs */}
+            <div className="flex rounded-xl bg-white/5 p-1 mb-4 border border-white/10 text-xs font-mono">
+              <button
+                onClick={() => setSearchModeTab('direct')}
+                className={`flex-1 py-1.5 rounded-lg text-center transition-all ${
+                  searchModeTab === 'direct'
+                    ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-400/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Direct Difference Cutout
+              </button>
+              <button
+                onClick={() => setSearchModeTab('tap')}
+                className={`flex-1 py-1.5 rounded-lg text-center transition-all ${
+                  searchModeTab === 'tap'
+                    ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-400/30'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Query TAP Catalog
+              </button>
+            </div>
+
+            {/* Presets Strip */}
+            <div className="mb-4">
+              <span className="text-[10px] uppercase font-mono text-slate-400 block mb-1.5">
+                North Ecliptic Pole Deep Survey Presets:
+              </span>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px] font-mono">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRa('276.2614');
+                    setCustomDec('64.8258');
+                  }}
+                  className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-left text-slate-300 hover:text-amber-300 transition-colors"
+                >
+                  <div className="font-semibold text-slate-100">NEP Deep Field 1</div>
+                  <div className="text-[9px] text-slate-500">276.2614°, +64.8258°</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRa('275.9265');
+                    setCustomDec('64.9585');
+                  }}
+                  className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-left text-slate-300 hover:text-amber-300 transition-colors"
+                >
+                  <div className="font-semibold text-slate-100">Photometric Standard</div>
+                  <div className="text-[9px] text-slate-500">275.9265°, +64.9585°</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRa('276.1391');
+                    setCustomDec('64.8361');
+                  }}
+                  className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-left text-slate-300 hover:text-amber-300 transition-colors"
+                >
+                  <div className="font-semibold text-slate-100">Persistence / DQ Test</div>
+                  <div className="text-[9px] text-slate-500">276.1391°, +64.8361°</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomRa('275.8500');
+                    setCustomDec('65.1000');
+                  }}
+                  className="p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-left text-slate-300 hover:text-amber-300 transition-colors"
+                >
+                  <div className="font-semibold text-slate-100">NEP Wide Polar Core</div>
+                  <div className="text-[9px] text-slate-500">275.8500°, +65.1000°</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Coordinate Inputs */}
+            <div className="grid grid-cols-2 gap-3 mb-3 font-mono text-xs">
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">Right Ascension (RA, 0-360°):</label>
+                <input
+                  type="text"
+                  value={customRa}
+                  onChange={(e) => setCustomRa(e.target.value)}
+                  placeholder="276.2614"
+                  className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-100 outline-none focus:border-amber-400/50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-400 mb-1 font-semibold">Declination (Dec, ±90°):</label>
+                <input
+                  type="text"
+                  value={customDec}
+                  onChange={(e) => setCustomDec(e.target.value)}
+                  placeholder="64.8258"
+                  className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-100 outline-none focus:border-amber-400/50"
+                />
+              </div>
+            </div>
+
+            {searchModeTab === 'tap' && (
+              <div className="mb-3 font-mono text-xs">
+                <label className="block text-slate-400 mb-1 font-semibold">Search Radius (deg):</label>
+                <input
+                  type="text"
+                  value={customRadius}
+                  onChange={(e) => setCustomRadius(e.target.value)}
+                  placeholder="0.5"
+                  className="w-full px-3 py-2 rounded-xl border border-white/10 bg-white/5 text-slate-100 outline-none focus:border-amber-400/50"
+                />
+              </div>
+            )}
+
+            {/* Coverage Advisory Note */}
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-200 font-mono mb-4 leading-relaxed">
+              <span>Coverage note: Real SPHEREx QR2 public FITS data release is centered on the North Ecliptic Pole deep survey footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).</span>
+            </div>
+
+            {/* Tab: Direct Difference Cutout */}
+            {searchModeTab === 'direct' && (
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen(false)}
+                  className="px-4 py-2 min-h-[40px] rounded-xl border border-white/10 text-slate-300 hover:bg-white/5 text-xs font-mono"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ra = parseFloat(customRa);
+                    const dec = parseFloat(customDec);
+                    if (!Number.isNaN(ra) && !Number.isNaN(dec)) {
+                      onSearchTarget(ra, dec);
+                      setIsSearchOpen(false);
+                    }
+                  }}
+                  className="px-4 py-2 min-h-[40px] rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs font-mono shadow-md transition-all active:scale-95"
+                >
+                  Process Multi-Epoch Field
+                </button>
+              </div>
+            )}
+
+            {/* Tab: TAP Catalog Search */}
+            {searchModeTab === 'tap' && (
+              <div className="space-y-3 font-mono text-xs">
+                <button
+                  type="button"
+                  onClick={executeTapQuery}
+                  disabled={isQueryingTap}
+                  className="w-full py-2.5 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-40"
+                >
+                  {isQueryingTap ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-sky-300" />
+                      <span>Querying NASA/IPAC IRSA TAP Archive...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Compass className="h-4 w-4 text-sky-400" />
+                      <span>Execute IRSA TAP Catalog Query</span>
+                    </>
+                  )}
+                </button>
+
+                {tapError && (
+                  <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-[11px]">
+                    ⚠️ {tapError}
+                  </div>
+                )}
+
+                {tapQueryExecuted && !isQueryingTap && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-white/10 pb-1">
+                      <span>Found {tapObservations.length} Observation Products</span>
+                      <span>Source: spherex.obscore</span>
+                    </div>
+
+                    {tapObservations.length === 0 ? (
+                      <div className="text-center py-4 text-slate-500 text-[11px]">
+                        No archive products found for these coordinates. Try an NEP survey preset.
+                      </div>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto space-y-1.5 scrollbar-thin scrollbar-thumb-white/10">
+                        {tapObservations.map((obs, idx) => (
+                          <div
+                            key={idx}
+                            className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-2 text-[10px]"
+                          >
+                            <div>
+                              <div className="font-bold text-slate-200">{obs.obs_id}</div>
+                              <div className="text-slate-400">
+                                λ {obs.wavelength_um}µm · RA {obs.s_ra.toFixed(3)}°, Dec {obs.s_dec.toFixed(3)}°
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onSearchTarget(obs.s_ra, obs.s_dec);
+                                setIsSearchOpen(false);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold border border-amber-400/30 transition-colors"
+                            >
+                              Investigate
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

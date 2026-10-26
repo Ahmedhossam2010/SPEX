@@ -15,6 +15,8 @@ export function App() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
+
   // Check URL query parameters (e.g. ?autostart=1 or ?tab=explore or ?lang=ar)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -45,6 +47,7 @@ export function App() {
   const loadCase = async (caseId: string, customCoords?: { ra: number; dec: number }) => {
     setIsLoading(true);
     setErrorMsg(null);
+    setFailedQuery(null);
     try {
       const res = await fetch('/api/spherex/process', {
         method: 'POST',
@@ -52,13 +55,15 @@ export function App() {
         body: JSON.stringify({ caseId, customCoords }),
       });
       if (!res.ok) {
-        throw new Error(`Pipeline returned HTTP status ${res.status}`);
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Pipeline returned HTTP status ${res.status}`);
       }
       const data: InvestigationResult = await res.json();
       setCurrentResult(data);
     } catch (err: any) {
       console.error('Case processing failed:', err);
       setErrorMsg('Failed to process SPHEREx observation: ' + err.message);
+      setFailedQuery({ caseId, customCoords });
     } finally {
       setIsLoading(false);
     }
@@ -101,14 +106,36 @@ export function App() {
 
       <main className="flex-1 w-full relative">
         {errorMsg && (
-          <div className="w-full bg-rose-950/80 border-b border-rose-500/40 px-4 py-2 text-xs text-rose-200 text-center flex items-center justify-center gap-2">
-            <span>{errorMsg}</span>
-            <button
-              onClick={() => setErrorMsg(null)}
-              className="underline font-bold text-rose-300 ml-2"
-            >
-              Dismiss
-            </button>
+          <div className="w-full bg-rose-950/90 border-b border-rose-500/40 px-4 py-3 text-xs text-rose-200 flex flex-wrap items-center justify-between gap-3 shadow-xl backdrop-blur-xl">
+            <div className="flex items-center gap-2">
+              <span className="font-mono font-bold text-rose-400">⚠️ Error:</span>
+              <span>{errorMsg}</span>
+            </div>
+            <div className="flex items-center gap-2 font-mono">
+              {failedQuery && (
+                <button
+                  onClick={() => loadCase(failedQuery.caseId, failedQuery.customCoords)}
+                  className="px-3 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 font-bold transition-colors"
+                >
+                  Retry Investigation
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setErrorMsg(null);
+                  loadCase('case-nep-var-01');
+                }}
+                className="px-3 py-1 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-bold transition-colors"
+              >
+                Inspect Saved Benchmark Case
+              </button>
+              <button
+                onClick={() => setErrorMsg(null)}
+                className="text-slate-400 hover:text-slate-200 ml-2 font-bold underline"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
 

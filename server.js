@@ -650,7 +650,8 @@ var ScientificPipeline = class {
               flags1,
               flags2,
               width,
-              height
+              height,
+              noiseSigma
             );
             const sky = WCS.pixToSky(x, y, wcs);
             const apertureSnr = phot.deltaUncertainty > 0 ? Math.abs(phot.deltaFlux) / phot.deltaUncertainty : 0;
@@ -659,11 +660,11 @@ var ScientificPipeline = class {
               status = "Possible artifact";
             } else if (apertureSnr < 3 && absS >= 4) {
               status = "Possible artifact";
-              if (!artifact.flags.includes("REGISTRATION_OR_PSF_DIPOLE")) {
-                artifact.flags.push("REGISTRATION_OR_PSF_DIPOLE");
+              if (!artifact.flags.includes("LOW_APERTURE_SIGNIFICANCE")) {
+                artifact.flags.push("LOW_APERTURE_SIGNIFICANCE");
               }
               artifact.whyFlagged = (artifact.whyFlagged ? artifact.whyFlagged + " " : "") + "High single-pixel difference is not confirmed by integrated aperture photometry (aperture S/N < 3.0\u03C3), consistent with pointing jitter or PSF breathing.";
-              artifact.artifactScore = Math.max(artifact.artifactScore, 0.75);
+              artifact.artifactScore = Math.max(artifact.artifactScore, 0.7);
             } else if (apertureSnr >= 3.5 && artifact.artifactScore < 0.35) {
               status = "Candidate";
             } else {
@@ -676,6 +677,7 @@ var ScientificPipeline = class {
               ra: sky.ra,
               dec: sky.dec,
               peakSignificance: Number(s.toFixed(2)),
+              apertureSignificance: Number(apertureSnr.toFixed(2)),
               deltaFlux: Number(phot.deltaFlux.toFixed(4)),
               deltaFluxUncertainty: Number(phot.deltaUncertainty.toFixed(4)),
               apertureFluxEpoch1: Number(phot.flux1.toFixed(4)),
@@ -724,11 +726,11 @@ var ScientificPipeline = class {
     let sumDiff = 0;
     let sumVar = 0;
     let apPixels = 0;
-    let bkgDiffSum = 0;
-    let bkgPixels = 0;
-    let bkg1Sum = 0;
-    let bkg2Sum = 0;
+    const bkgDiffValues = [];
+    const bkg1Values = [];
+    const bkg2Values = [];
     let bkgVarSum = 0;
+    let bkgPixels = 0;
     const maxR = Math.ceil(rOut);
     for (let dy = -maxR; dy <= maxR; dy++) {
       for (let dx = -maxR; dx <= maxR; dx++) {
@@ -751,9 +753,9 @@ var ScientificPipeline = class {
             }
           } else if (dist >= rIn && dist <= rOut) {
             if (Number.isFinite(dVal)) {
-              bkgDiffSum += dVal;
-              if (Number.isFinite(d1)) bkg1Sum += d1;
-              if (Number.isFinite(d2)) bkg2Sum += d2;
+              bkgDiffValues.push(dVal);
+              if (Number.isFinite(d1)) bkg1Values.push(d1);
+              if (Number.isFinite(d2)) bkg2Values.push(d2);
               if (Number.isFinite(vVal)) bkgVarSum += vVal;
               bkgPixels++;
             }
@@ -761,12 +763,15 @@ var ScientificPipeline = class {
         }
       }
     }
-    const bkgDiffMean = bkgPixels > 0 ? bkgDiffSum / bkgPixels : 0;
-    const bkg1Mean = bkgPixels > 0 ? bkg1Sum / bkgPixels : 0;
-    const bkg2Mean = bkgPixels > 0 ? bkg2Sum / bkgPixels : 0;
-    const netDeltaFlux = apPixels > 0 ? sumDiff - bkgDiffMean * apPixels : 0;
-    const netFlux1 = apPixels > 0 ? sum1 - bkg1Mean * apPixels : 0;
-    const netFlux2 = apPixels > 0 ? sum2 - bkg2Mean * apPixels : 0;
+    bkgDiffValues.sort((a, b) => a - b);
+    bkg1Values.sort((a, b) => a - b);
+    bkg2Values.sort((a, b) => a - b);
+    const bkgDiffMedian = bkgDiffValues.length > 0 ? bkgDiffValues[Math.floor(bkgDiffValues.length / 2)] : 0;
+    const bkg1Median = bkg1Values.length > 0 ? bkg1Values[Math.floor(bkg1Values.length / 2)] : 0;
+    const bkg2Median = bkg2Values.length > 0 ? bkg2Values[Math.floor(bkg2Values.length / 2)] : 0;
+    const netDeltaFlux = apPixels > 0 ? sumDiff - bkgDiffMedian * apPixels : 0;
+    const netFlux1 = apPixels > 0 ? sum1 - bkg1Median * apPixels : 0;
+    const netFlux2 = apPixels > 0 ? sum2 - bkg2Median * apPixels : 0;
     const bkgVarMean = bkgPixels > 0 ? bkgVarSum / bkgPixels : sumVar / Math.max(1, apPixels);
     const deltaUncertainty = Math.sqrt(
       Math.max(1e-10, sumVar + apPixels ** 2 / Math.max(1, bkgPixels) * bkgVarMean)
@@ -783,7 +788,7 @@ var ScientificPipeline = class {
   /**
    * Artifact assessment: analyzes morphology, edge proximity, bad pixels, dipole signs
    */
-  static assessArtifact(cx, cy, sig, diff, flags1, flags2, width, height) {
+  static assessArtifact(cx, cy, sig, diff, flags1, flags2, width, height, noiseSigma = 0) {
     const flags = [];
     let penalty = 0;
     const distToEdge = Math.min(cx, cy, width - 1 - cx, height - 1 - cy);
@@ -835,8 +840,8 @@ var ScientificPipeline = class {
     }
     let hasDipole = false;
     const centerSign = Math.sign(diff[idx]);
-    let oppositeSignMax = 0;
-    let oppositeSignSum = 0;
+    let oppositeSignAdjacentMax = 0;
+    let oppositeSignNearbyMax = 0;
     for (let dy = -2; dy <= 2; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
         if (dx === 0 && dy === 0) continue;
@@ -846,13 +851,19 @@ var ScientificPipeline = class {
           const nVal = diff[ny * width + nx];
           if (Number.isFinite(nVal) && Math.sign(nVal) === -centerSign) {
             const absN = Math.abs(nVal);
-            if (absN > oppositeSignMax) oppositeSignMax = absN;
-            oppositeSignSum += absN;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= 1.5) {
+              if (absN > oppositeSignAdjacentMax) oppositeSignAdjacentMax = absN;
+            } else {
+              if (absN > oppositeSignNearbyMax) oppositeSignNearbyMax = absN;
+            }
           }
         }
       }
     }
-    if (oppositeSignMax >= peakVal * 0.25 || oppositeSignSum >= peakVal * 0.5) {
+    const minDipoleLobe = noiseSigma > 0 ? Math.max(0.35 * peakVal, 3 * noiseSigma) : 0.35 * peakVal;
+    const minNearbyDipole = noiseSigma > 0 ? Math.max(0.5 * peakVal, 3.5 * noiseSigma) : 0.5 * peakVal;
+    if ((oppositeSignAdjacentMax >= minDipoleLobe || oppositeSignNearbyMax >= minNearbyDipole) && peakVal > 0) {
       hasDipole = true;
       morphology = "dipole";
       flags.push("REGISTRATION_OR_PSF_DIPOLE");
@@ -868,7 +879,8 @@ var ScientificPipeline = class {
         NONLINEAR_SUR_RESPONSE: "Sample-Up-the-Ramp slope fitting uncertainty flag (bit 0x4).",
         STATISTICAL_OUTLIER: "Sigma-clipping statistical outlier detected by pipeline (bit 0x80000).",
         COSMIC_RAY_SPIKE: "Flux is concentrated in an isolated single-pixel spike without astronomical PSF wings.",
-        REGISTRATION_OR_PSF_DIPOLE: "Symmetric positive/negative residual dipole indicating astrometric sub-pixel pointing jitter."
+        REGISTRATION_OR_PSF_DIPOLE: "Symmetric positive/negative residual dipole indicating astrometric sub-pixel pointing jitter.",
+        LOW_APERTURE_SIGNIFICANCE: "High single-pixel difference is not confirmed by integrated circular aperture photometry (S/N < 3.0\u03C3)."
       };
       whyFlagged = flags.map((f) => reasons[f] || f).join(" ");
     }
@@ -1209,9 +1221,19 @@ app.post("/api/spherex/process", async (req, res) => {
     if (!selectedCase) {
       selectedCase = CURATED_CASES[0];
     }
+    if (customCoords) {
+      if (typeof customCoords.ra !== "number" || typeof customCoords.dec !== "number" || !Number.isFinite(customCoords.ra) || !Number.isFinite(customCoords.dec)) {
+        return res.status(400).json({
+          error: "Invalid celestial coordinates: RA and Dec must be finite decimal degree numbers.",
+          status: "FAILED",
+          canRetry: false
+        });
+      }
+    }
+    const sourceMode = isCustomSearch ? "live" : "saved_benchmark";
     const caseIdToUse = isCustomSearch ? "custom-irsa-target" : selectedCase.id;
     const caseTitle = isCustomSearch ? `Live IRSA Cutout (RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0)` : selectedCase.title;
-    const caseDescription = isCustomSearch ? `Dynamic live inquiry querying NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0. Processed directly via difference imaging pipeline.` : selectedCase.description;
+    const caseDescription = isCustomSearch ? `Live query requesting NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0. Processed directly via difference imaging pipeline.` : selectedCase.description;
     const fits1Res = await getFITSCutout(selectedCase.epoch1.fits_url, ra, dec, 64);
     const fits2Res = await getFITSCutout(selectedCase.epoch2.fits_url, ra, dec, 64);
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
@@ -1258,6 +1280,7 @@ app.post("/api/spherex/process", async (req, res) => {
     }
     const provenance = {
       caseId: caseIdToUse,
+      sourceMode,
       investigationType: isCustomSearch ? "Live IRSA Query" : "Curated Archival Case",
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
       irsaArchiveSource: "NASA/IPAC Infrared Science Archive (IRSA) \u2014 SPHEREx Public Data Release QR2",
@@ -1281,6 +1304,7 @@ app.post("/api/spherex/process", async (req, res) => {
     };
     const responseData = {
       caseId: caseIdToUse,
+      sourceMode,
       title: caseTitle,
       description: caseDescription,
       targetCoords: { ra, dec },
@@ -1319,7 +1343,15 @@ app.post("/api/spherex/process", async (req, res) => {
     return res.json(responseData);
   } catch (err) {
     console.error("Scientific pipeline execution failed:", err);
-    return res.status(500).json({ error: "Scientific pipeline execution error: " + err.message });
+    const isCoverageError = err.message?.includes("422") || err.message?.includes("footprint");
+    const statusCode = isCoverageError ? 422 : 500;
+    return res.status(statusCode).json({
+      error: err.message || "Scientific pipeline execution error",
+      status: "FAILED",
+      sourceMode: req.body?.customCoords ? "live" : "saved_benchmark",
+      canRetry: true,
+      suggestedCaseId: "case-nep-var-01"
+    });
   }
 });
 app.post("/api/spex/chat", async (req, res) => {
@@ -1341,17 +1373,17 @@ app.post("/api/spex/chat", async (req, res) => {
       whatWeKnow: evidence?.whatWeKnow ?? [],
       whatWeDontKnow: evidence?.whatWeDontKnow ?? [],
       candidate: topCandidate ? {
-        id: topCandidate.id,
-        snr: topCandidate.peakSignificance,
-        deltaFlux: topCandidate.deltaFlux,
-        deltaUncertainty: topCandidate.deltaFluxUncertainty,
-        ra: topCandidate.ra,
-        dec: topCandidate.dec,
-        status: topCandidate.status,
-        artifactScore: topCandidate.artifactScore,
-        artifactFlags: topCandidate.artifactFlags,
-        whyFlagged: topCandidate.whyFlagged,
-        catalogMatches: topCandidate.catalogMatches
+        id: topCandidate.id || "CAND-01",
+        snr: topCandidate.peakSignificance ?? topCandidate.snr ?? 0,
+        deltaFlux: topCandidate.deltaFlux ?? 0,
+        deltaUncertainty: topCandidate.deltaFluxUncertainty ?? topCandidate.deltaUncertainty ?? 0,
+        ra: topCandidate.ra ?? 0,
+        dec: topCandidate.dec ?? 0,
+        status: topCandidate.status ?? "Candidate",
+        artifactScore: topCandidate.artifactScore ?? 0,
+        artifactFlags: Array.isArray(topCandidate.artifactFlags) ? topCandidate.artifactFlags : [],
+        whyFlagged: topCandidate.whyFlagged || "",
+        catalogMatches: Array.isArray(topCandidate.catalogMatches) ? topCandidate.catalogMatches : []
       } : null,
       isCompatible: compatibility?.isCompatible ?? true,
       incompatibilityReason: compatibility?.reason,
@@ -1486,7 +1518,7 @@ ${userPrompt}` }]
   }
 });
 async function startServer() {
-  if (process.env.NODE_ENV === "production" || fs.existsSync(path.join(process.cwd(), "dist"))) {
+  if (process.env.NODE_ENV === "production") {
     app.use(express.static(path.join(process.cwd(), "dist")));
     app.get("*", (_req, res) => {
       res.sendFile(path.join(process.cwd(), "dist", "index.html"));

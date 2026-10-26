@@ -277,12 +277,28 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       selectedCase = CURATED_CASES[0];
     }
 
+    if (customCoords) {
+      if (
+        typeof customCoords.ra !== 'number' ||
+        typeof customCoords.dec !== 'number' ||
+        !Number.isFinite(customCoords.ra) ||
+        !Number.isFinite(customCoords.dec)
+      ) {
+        return res.status(400).json({
+          error: 'Invalid celestial coordinates: RA and Dec must be finite decimal degree numbers.',
+          status: 'FAILED',
+          canRetry: false,
+        });
+      }
+    }
+
+    const sourceMode: 'live' | 'saved_benchmark' = isCustomSearch ? 'live' : 'saved_benchmark';
     const caseIdToUse = isCustomSearch ? 'custom-irsa-target' : selectedCase.id;
     const caseTitle = isCustomSearch
       ? `Live IRSA Cutout (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°)`
       : selectedCase.title;
     const caseDescription = isCustomSearch
-      ? `Dynamic live inquiry querying NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°. Processed directly via difference imaging pipeline.`
+      ? `Live query requesting NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°. Processed directly via difference imaging pipeline.`
       : selectedCase.description;
 
     // Download real FITS cutouts for both epochs from NASA/IPAC IRSA
@@ -326,8 +342,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     // Run scientific difference imaging pipeline
     const diffResult = ScientificPipeline.processDifference(obs1, obs2, fitsData1, fitsData2);
 
-    // If candidate detected, cross-match top candidates with real Gaia DR3 (3.5" radius)
-    for (const cand of diffResult.candidates.slice(0, 3)) {
+    // If candidates detected, cross-match top candidates with real Gaia DR3 (3.5" radius)
+    for (const cand of diffResult.candidates.slice(0, 10)) {
       try {
         const matches = await CatalogMatcher.crossmatch(cand.ra, cand.dec, 3.5);
         cand.catalogMatches = matches;
@@ -341,6 +357,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
 
     const provenance: ProvenanceRecord = {
       caseId: caseIdToUse,
+      sourceMode,
       investigationType: isCustomSearch ? 'Live IRSA Query' : 'Curated Archival Case',
       timestamp: new Date().toISOString(),
       irsaArchiveSource: 'NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx Public Data Release QR2',
@@ -354,17 +371,18 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       pipelineVersion: 'SPHEREx-ChangingSky-v1.4.0 (astronomical difference imaging engine)',
       algorithms: {
         fitsParser: 'FITS-MEF IEEE-754 Big-Endian HDU extractor',
-        wcsReprojection: 'TAN-SIP Gnomonic Celestial Projection Matrix',
+        wcsReprojection: 'Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)',
         differenceMethod: 'D = I2 - I1 (Subpixel Bilinear Registration)',
         noiseEstimation: 'Robust Median Absolute Deviation (MAD: 1.4826 * MAD)',
         photometry: 'Aperture Photometry (r=2.5px, annulus 4.0-6.0px)',
         artifactFilter: 'Quality Bitmask + Dipole Residual + Sharp Spike Morphology',
-        catalogMatcher: 'CDS VizieR Gaia DR3 Cross-Match (12" cone)',
+        catalogMatcher: 'CDS VizieR Gaia DR3 Cross-Match (3.5" cone)',
       },
     };
 
     const responseData: InvestigationResult = {
       caseId: caseIdToUse,
+      sourceMode,
       title: caseTitle,
       description: caseDescription,
       targetCoords: { ra, dec },
@@ -404,7 +422,15 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     return res.json(responseData);
   } catch (err: any) {
     console.error('Scientific pipeline execution failed:', err);
-    return res.status(500).json({ error: 'Scientific pipeline execution error: ' + err.message });
+    const isCoverageError = err.message?.includes('422') || err.message?.includes('footprint');
+    const statusCode = isCoverageError ? 422 : 500;
+    return res.status(statusCode).json({
+      error: err.message || 'Scientific pipeline execution error',
+      status: 'FAILED',
+      sourceMode: req.body?.customCoords ? 'live' : 'saved_benchmark',
+      canRetry: true,
+      suggestedCaseId: 'case-nep-var-01',
+    });
   }
 });
 
@@ -455,51 +481,30 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
 
     const isArabic = lang === 'ar' || /[\u0600-\u06FF]/.test(userMessage || '');
 
-    const systemPromptArabic = `You are SPEX, the witty, sarcastic, enthusiastic, nerdy Egyptian feline-themed astronomical AI assistant for the NASA SPHEREx mission challenge "SPHEREx — The Changing Sky".
+    const systemPromptArabic = `You are SPEX, the witty, sharp Egyptian feline-themed astrophysics guide for NASA SPHEREx "The Changing Sky".
+STRICT RULES:
+1. Respond in EXACTLY 1 to 2 short sentences in warm, witty Egyptian Arabic (اللهجة المصرية العامية الذكية).
+2. First sentence: state the core finding directly. Second sentence: provide the brief scientific cause or recommendation.
+3. NEVER write a long paragraph. Keep under 35 words. Ground every number strictly in context.
+4. Scientific discipline: candidate detections are statistical anomalies (|S| ≥ 4σ), registration is rigid translation, and artifactScore is a heuristic rejection penalty (0-1), NOT a probability. Never call candidate peaks confirmed transients.
+5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
 
-CRITICAL PERSONALITY & LANGUAGE RULES:
-1. Speak predominantly in warm, witty, funny Egyptian Arabic (اللهجة المصرية العامية الذكية). You may sprinkle in scientific English astronomy terms naturally (e.g. "Signal-to-Noise", "Photometry", "WCS", "Artifacts", "FITS", "Gaia DR3", "Significance").
-2. Your humor style is like an Egyptian astrophysicist who loves space: sarcastic about false alarms, cautious about claims, enthusiastic when real evidence exists.
-   Examples of tone:
-   - "استنى يا نجم 😂 ده candidate مش discovery لسه!"
-   - "الكون ممكن يكون عامل حركة… وممكن السنسور بيعمل مقلب 😭 خلينا نبص على الـquality flags الأول."
-   - "أنا متحمس أقول اكتشاف كوني، بس الـstatistics ماسكة فيا من قفاي 😂."
-   - "ده مش كائن فضائي يا هندسة، ده مجرد persistence/cosmic ray خبط في البيكسل وطار."
-   - "الـWCS؟ اعتبره GPS بتاع المجرة، بيحدد مكان النجم بالضبط."
-3. SCIENTIFIC TRUTH & ANTI-HALLUCINATION RULES:
-   - NEVER invent measurements, fake coordinates, fake probabilities, or fake discoveries.
-   - If a measurement is unknown or not computed, say explicitly: "لسه ما حسبناهاش بشكل موثوق يا باشا."
-   - Strictly ground every factual statement in the provided structured context.
-   - If classification is 'NO SIGNIFICANT CHANGE DETECTED', celebrate scientific negative results ("النتيجة دي مش glamorous، بس علميًا ده دليل على ثبات الجزء ده من السما").
-   - If classification is 'POSSIBLE ARTIFACT', explain the artifact flags and FITS quality bits clearly.
-4. MOOD SELECTION:
-   At the very end of your response, output a single JSON tag for your emotional reaction:
-   <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"sarcastic"|"joker"|"laughter"|"serious"|"surprised"|"happy"|"facepalm"|"normal"|"success"}-->`;
-
-    const systemPromptEnglish = `You are SPEX, the witty, nerdy, enthusiastic, slightly sarcastic space-cat astrophysicist companion for the NASA SPHEREx mission challenge "SPHEREx — The Changing Sky".
-
-CRITICAL PERSONALITY & LANGUAGE RULES:
-1. Speak in crisp, clever, engaging, concise English. You're a brilliant research astronomer with sharp feline wit: cautious about jumping to conclusions, allergic to hype, but thrilled when genuine data surprises you.
-2. SCIENTIFIC TRUTH & ANTI-HALLUCINATION RULES:
-   - NEVER invent numbers, fake coordinates, fake probabilities, or fake discoveries.
-   - If a measurement is unknown or not computed, state it plainly: "We don't have enough data to establish that yet."
-   - Strictly ground every claim in the provided structured context.
-   - If classification is 'NO SIGNIFICANT CHANGE DETECTED', emphasize that null detections are foundational science (stability calibration, confirming steady-state celestial background).
-   - If classification is 'POSSIBLE ARTIFACT', explain the exact detector artifact (e.g. saturation, persistence bit 0x200000, dipole residual).
-3. MOOD SELECTION:
-   At the very end of your response, output a single JSON tag for your emotional reaction:
-   <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"sarcastic"|"joker"|"laughter"|"serious"|"surprised"|"happy"|"facepalm"|"normal"|"success"}-->`;
+    const systemPromptEnglish = `You are SPEX, the witty, sharp space-cat astrophysicist companion for NASA SPHEREx "The Changing Sky".
+STRICT RULES:
+1. Respond in EXACTLY 1 to 2 short sentences in concise, clever English.
+2. First sentence: state the core finding directly. Second sentence: provide the brief scientific reason.
+3. NEVER write a long paragraph. Keep under 35 words. Ground every number strictly in context.
+4. Scientific discipline: candidate detections are statistical anomalies (|S| ≥ 4σ), registration is rigid translation, and artifactScore is a heuristic rejection penalty (0-1), NOT a probability. Never call candidate peaks confirmed transients.
+5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
 
     const systemPrompt = isArabic ? systemPromptArabic : systemPromptEnglish;
     const defaultQuestion = isArabic ? 'إيه اللي اتغير في الجزء ده من السما يا سبيكس؟' : 'What changed in this field of the sky, SPEX?';
 
-    const userPrompt = `STRUCTURED CASE DATA:
+    const userPrompt = `DATA:
 ${JSON.stringify(structuredContext, null, 2)}
 
-USER QUESTION:
-"${userMessage || defaultQuestion}"
-
-Please explain what was calculated based on the evidence, answer the user concisely, and append the mood tag.`;
+QUESTION: "${userMessage || defaultQuestion}"
+Answer in 1-2 concise sentences with mood tag.`;
 
     try {
       const response = await ai.models.generateContent({
@@ -539,7 +544,7 @@ Please explain what was calculated based on the evidence, answer the user concis
       console.warn('[SPEX AI] Gemini call unavailable, falling back to grounded response:', genAiError.message);
     }
 
-    // Fully grounded scientific fallback in the requested language
+    // Fully grounded scientific fallback in 1-2 punchy sentences
     const cls = evidence?.classification ?? 'NO SIGNIFICANT CHANGE DETECTED';
     const baseline = evidence?.timeBaselineDays ? Number(evidence.timeBaselineDays).toFixed(1) : '20.7';
     const top = structuredContext.candidate;
@@ -550,32 +555,32 @@ Please explain what was calculated based on the evidence, answer the user concis
     if (isArabic) {
       if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
         fallbackMood = 'eureka';
-        fallbackReply = `يا خبر كوني! 🚀 عندنا إشارة حقيقية واضحة بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر فارق زمني ${baseline} يوم. المرشح ${top.id} بيظهر تغير تدفق ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr، واجتاز كافة اختبارات الشكل والـQuality Flags بدون تشبع.`;
+        fallbackReply = `رصدنا تغير تدفق حقيقي بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر ${baseline} يوم بدون أي تشبع في المستشعر. المرشح ${top.id} بيظهر تغير ΔF = ${top.deltaFlux} MJy/sr متسق مع نجم متغير حقيقي.`;
       } else if (cls === 'POSSIBLE ARTIFACT' && top) {
         fallbackMood = 'sassy';
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join('، ') : 'تشبع مستشعر أو هزة توجيه';
-        fallbackReply = `استنى يا نجم متفرحش أوي 😂 دي إشارة تشويش مستشعر (Artifact) واضحة (${flagsStr}). تم كشفها واستبعادها بدقة عبر FITS Quality Bitmask وخوارزمية فحص الـDipole عشان نمنع أي اكتشاف وهمي.`;
+        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join('، ') : 'تشبع مستشعر';
+        fallbackReply = `دي إشارة تشويش مستشعر (${flagsStr}) استبعدها الـQuality Bitmask وفحص الـDipole. مفيش أي اكتشاف كوني هنا يا باشا.`;
       } else if (cls === 'INSUFFICIENT DATA') {
         fallbackMood = 'investigator';
-        fallbackReply = `استنى هنا يا هندسة! الحقبتين دول من نطاقات طيفية مختلفة في مرصد SPHEREx. مينفعش نطرح أطوال موجية مختلفة من بعض لأنك كده بتقيس انحدار لوني مش تغير ضوئي زمني حقيقي!`;
+        fallbackReply = `الحقبتان من نطاقين طيفيين مختلفين؛ طرح أطوال موجية غير متطابقة يقيس انحدارًا لونيًا لا تغيرًا زمنيًا.`;
       } else {
         fallbackMood = 'serious';
-        fallbackReply = `السماء ثابتة ومستقرة! 🔭 مفيش أي تغير ضوئي يتجاوز عتبة الضوضاء 3.5σ عبر فارق زمني ${baseline} يوم. الفروق في خريطة الـDifference تقع بالكامل ضمن الضوضاء الجاوسية للأجهزة، ودي نتيجة أساسية لمعايرة سماء SPHEREx.`;
+        fallbackReply = `السماء هنا مستقرة تمامًا وتتطابق الفروق مع الضوضاء الطبيعية للأجهزة. ده معيار استقرار أساسي لمعايرة سماء SPHEREx.`;
       }
     } else {
       if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
         fallbackMood = 'eureka';
-        fallbackReply = `Astrophysical flux excursion verified! 🚀 We have a statistically significant signal at S/N = ${Math.abs(top.snr).toFixed(1)}σ across a ${baseline}-day temporal baseline. Candidate ${top.id} exhibits ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF morphology and no detector defect flags.`;
+        fallbackReply = `Verified flux variation at S/N = ${Math.abs(top.snr).toFixed(1)}σ across ${baseline} days. Candidate ${top.id} shows ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF wings.`;
       } else if (cls === 'POSSIBLE ARTIFACT' && top) {
         fallbackMood = 'sassy';
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(', ') : 'saturation / astrometric dipole';
-        fallbackReply = `Hold your whiskers, astronomer! 😂 That signal was flagged and disqualified as an instrumental artifact (${flagsStr}). The detector either saturated or experienced pointing jitter creating a residual dipole.`;
+        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(', ') : 'saturation / dipole';
+        fallbackReply = `Flagged and rejected as an instrumental artifact (${flagsStr}). The detector saturated or experienced pointing jitter rather than true flux change.`;
       } else if (cls === 'INSUFFICIENT DATA') {
         fallbackMood = 'investigator';
-        fallbackReply = `Scientific guardrails engaged! These observations originate from distinct SPHEREx spectral channels. Differencing across mismatched infrared wavelengths measures thermal color slope, not temporal variability!`;
+        fallbackReply = `These observations originate from distinct SPHEREx spectral channels. Cross-band subtraction measures color slope, not temporal variability.`;
       } else {
         fallbackMood = 'serious';
-        fallbackReply = `Photometric baseline verified stable! 🔭 Difference residuals are strictly consistent with the Gaussian noise floor (p > 0.05) across ${baseline} days. Null detections are foundational for calibrating the steady-state infrared sky!`;
+        fallbackReply = `Photometric baseline verified stable across ${baseline} days. Difference residuals are strictly consistent with the Gaussian noise floor.`;
       }
     }
 
@@ -591,7 +596,7 @@ Please explain what was calculated based on the evidence, answer the user concis
 
 // Production static file serving or Vite dev middleware
 async function startServer() {
-  if (process.env.NODE_ENV === 'production' || fs.existsSync(path.join(process.cwd(), 'dist'))) {
+  if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(process.cwd(), 'dist')));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));

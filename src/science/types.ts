@@ -85,7 +85,8 @@ export interface CandidateDetection {
   y: number;
   ra: number;
   dec: number;
-  peakSignificance: number; // Signal-to-noise ratio S/N
+  peakSignificance: number; // Signal-to-noise ratio S/N of the central peak pixel: |D(x,y)| / sigma_D
+  apertureSignificance: number; // Signal-to-noise ratio S/N of integrated aperture flux: |Delta_F| / sigma_Delta_F
   deltaFlux: number; // Residual flux in BUNIT
   deltaFluxUncertainty: number; // 1-sigma uncertainty
   apertureFluxEpoch1: number;
@@ -121,6 +122,7 @@ export interface EvidenceSummary {
 
 export interface ProvenanceRecord {
   caseId: string;
+  sourceMode: 'live' | 'saved_benchmark';
   investigationType?: 'Curated Archival Case' | 'Live IRSA Query';
   timestamp: string;
   irsaArchiveSource: string;
@@ -145,6 +147,7 @@ export interface ProvenanceRecord {
 
 export interface InvestigationResult {
   caseId: string;
+  sourceMode?: 'live' | 'saved_benchmark';
   title: string;
   description: string;
   targetCoords: { ra: number; dec: number };
