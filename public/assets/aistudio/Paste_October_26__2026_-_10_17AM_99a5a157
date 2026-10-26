@@ -1,0 +1,1670 @@
+# SPHEREx — THE CHANGING SKY
+## Full Production Build Specification
+### NASA Space Apps Challenge — Real Data / Real Science / Real AI / Production-Ready Experience
+
+You are building the complete SPHEREx project from scratch.
+
+This is NOT a mockup.
+This is NOT a fake demo.
+This is NOT a static dashboard.
+This is NOT a UI prototype with simulated scientific results.
+
+The final application must be a functional, reproducible, evidence-driven astronomical investigation platform using **real public SPHEREx data**, real scientific calculations, real processing, and a real AI explanation layer grounded in the application's actual data.
+
+The project must be visually impressive enough for a NASA Space Apps Challenge presentation while remaining scientifically honest and technically defensible.
+
+---
+
+# 1. PROJECT CONCEPT
+
+Project name:
+
+**SPHEREx — The Changing Sky**
+
+The application helps a non-expert explore how the infrared sky changes over time using real SPHEREx observations.
+
+The central experience should answer:
+
+> "Did something actually change in this part of the sky?"
+
+The application should let a user:
+
+1. Explore a sky region.
+2. Retrieve real SPHEREx observations.
+3. Compare observations from different epochs.
+4. Visually inspect the images.
+5. Detect potential changes.
+6. Quantify those changes when scientifically possible.
+7. Evaluate whether the change is significant.
+8. Check whether the candidate could be an artifact.
+9. Cross-match the candidate with astronomical catalogs.
+10. Explain the evidence through SPEX.
+11. Clearly distinguish evidence from speculation.
+
+The system should never force a discovery.
+
+A scientifically valid result such as:
+
+> "No statistically significant change was detected."
+
+is a successful scientific result.
+
+---
+
+# 2. NON-NEGOTIABLE RULE
+
+Everything that is presented as a scientific result must come from actual computation over real data.
+
+Never:
+
+- hard-code fake measurements
+- invent source coordinates
+- invent flux values
+- invent uncertainties
+- invent confidence scores
+- invent catalog matches
+- invent archive responses
+- generate fake FITS metadata
+- display synthetic images as real observations
+- silently fall back to demo data
+- claim an algorithm ran when it did not
+- claim a discovery that has not been scientifically established
+
+If a feature cannot be completed correctly, expose that limitation clearly.
+
+Do NOT replace a missing scientific implementation with a fake result just to make the UI look complete.
+
+---
+
+# 3. NASA SPACE APPS OBJECTIVE
+
+Design and engineer the application with the qualities that make a strong NASA Space Apps submission:
+
+## Scientific value
+
+The project should demonstrate:
+
+- use of authentic NASA/public data
+- meaningful scientific analysis
+- reproducibility
+- transparent methodology
+- uncertainty awareness
+- evidence-based conclusions
+
+## Innovation
+
+The project should combine:
+
+- real SPHEREx observations
+- temporal image comparison
+- automated candidate analysis
+- explainable scientific evidence
+- an accessible AI guide
+- an intuitive visual experience
+
+## Accessibility
+
+A person who knows little about astronomy should be able to understand the main result.
+
+The interface should progressively reveal technical details instead of overwhelming the user.
+
+## Technical quality
+
+The system should have:
+
+- real backend processing
+- real scientific computation
+- robust data handling
+- provenance
+- testing
+- graceful failure
+- responsive UI
+- secure API-key handling
+
+## Storytelling
+
+A judge should understand the project within seconds:
+
+**Look at the sky → compare it → detect a change → investigate the evidence → understand what happened.**
+
+Do not turn the application into a wall of text.
+
+---
+
+# 4. VISUAL DESIGN DIRECTION
+
+The visual design is extremely important.
+
+The application should feel like:
+
+**"a futuristic astronomical investigation instrument."**
+
+Not:
+
+- a generic SaaS dashboard
+- a corporate admin panel
+- a university website
+- a crowded analytics dashboard
+- a template-looking React app
+
+The design should feel:
+
+- futuristic
+- spatial
+- cinematic
+- minimal
+- premium
+- clean
+- intelligent
+- calm
+- scientific
+
+Think:
+
+**NASA mission interface + futuristic observatory + modern scientific visualization.**
+
+But do NOT blindly copy NASA's visual identity.
+
+Create an original visual language.
+
+---
+
+# 5. EXTREME SIMPLICITY
+
+The UI must be extremely simple.
+
+Prioritize:
+
+**IMAGE > VISUAL RESULT > SHORT EXPLANATION > DETAILS**
+
+Do NOT fill the screen with paragraphs.
+
+Do NOT show huge blocks of technical text.
+
+Do NOT create 20 cards on one screen.
+
+Do NOT make every metric equally prominent.
+
+Every screen should have a clear visual hierarchy.
+
+The user should immediately know:
+
+1. Where am I looking?
+2. What changed?
+3. Is the change real?
+4. What evidence supports it?
+5. What should I investigate next?
+
+Technical information should appear through:
+
+- expandable panels
+- tooltips
+- drawers
+- "Show scientific details"
+- "Why?"
+- "View provenance"
+
+rather than permanently occupying the main screen.
+
+---
+
+# 6. SPEX CHARACTER REFERENCES
+
+I will provide multiple images/reaction images of the SPEX bot.
+
+Treat these images as official visual references for SPEX.
+
+Do not redesign SPEX into a different character.
+
+Do not generate a visually unrelated mascot.
+
+Use the supplied assets consistently.
+
+Possible SPEX states include:
+
+- greeting
+- excited
+- thinking
+- confused
+- warning
+- discovery
+- happy
+- skeptical
+- error
+- success
+- explaining
+
+Use the supplied images where appropriate.
+
+Do not show a reaction image after every sentence.
+
+Use reactions intentionally.
+
+---
+
+# 7. COLOR SYSTEM
+
+Extract the application's visual palette from the supplied SPEX character images.
+
+Analyze the images and identify their dominant and accent colors.
+
+Build a design-token system around those colors.
+
+The palette should contain:
+
+- primary background
+- secondary background
+- surface
+- elevated surface
+- primary accent
+- secondary accent
+- highlight
+- text
+- muted text
+- border
+- success
+- warning
+- error
+
+The exact colors must be derived from the supplied SPEX visual identity, then adjusted for accessibility and readability.
+
+The bot and UI should look like they belong to the same universe.
+
+Do not use random bright neon colors everywhere.
+
+Use accent colors strategically.
+
+The astronomical imagery should remain visually dominant.
+
+---
+
+# 8. TYPOGRAPHY
+
+Use a modern, highly readable type system.
+
+Typography should feel futuristic without sacrificing readability.
+
+Use:
+
+- one primary interface font
+- optionally one restrained display font
+
+Avoid excessive font variation.
+
+Large headlines should be short.
+
+Example:
+
+**THE SKY CHANGES.**
+
+Then:
+
+**Let's find out why.**
+
+Do not write:
+
+"Welcome to our comprehensive astronomical temporal observation analysis platform."
+
+---
+
+# 9. LANDING PAGE
+
+The landing page should be extremely visual.
+
+Hero concept:
+
+Large astronomical image/video/background.
+
+Minimal text.
+
+Example direction:
+
+**THE SKY CHANGES.**
+
+Short subtitle:
+
+**Explore real SPHEREx observations and investigate what changed.**
+
+Primary CTA:
+
+**EXPLORE THE SKY**
+
+Secondary:
+
+**HOW IT WORKS**
+
+SPEX should appear naturally as a guide.
+
+Do not put a wall of text above the fold.
+
+Immediately communicate:
+
+- SPHEREx
+- real observations
+- time
+- change
+- investigation
+
+---
+
+# 10. MAIN EXPERIENCE
+
+The primary workflow should be:
+
+## Step 1 — Choose the sky
+
+Allow:
+
+- RA
+- Dec
+- search radius
+- optional object name
+
+The user should be able to enter something simple.
+
+Example:
+
+RA: 156.0933
+
+Dec: -41.6447
+
+Then:
+
+**SEARCH THE SKY**
+
+The system performs a real archive query.
+
+---
+
+# 11. REAL DATA SOURCE
+
+Use official NASA/IPAC IRSA SPHEREx data services.
+
+Official sources:
+
+IRSA:
+https://irsa.ipac.caltech.edu/
+
+SPHEREx:
+https://spherex.caltech.edu/
+
+SPHEREx archive documentation:
+https://caltech-ipac.github.io/spherex-archive-documentation/
+
+SPHEREx data products:
+https://spherex.caltech.edu/page/data-products
+
+SPHEREx data tools:
+https://spherex.caltech.edu/page/data-tools
+
+Do NOT invent API endpoints.
+
+Verify the actual services and response formats.
+
+Use current publicly available SPHEREx data.
+
+Do not assume QR2 is the newest release.
+
+Check the currently available release and use the most appropriate compatible public product.
+
+---
+
+# 12. REAL DATA PIPELINE
+
+The actual pipeline must be:
+
+USER INPUT
+
+↓
+
+REAL IRSA QUERY
+
+↓
+
+REAL SPHEREx OBSERVATION METADATA
+
+↓
+
+REAL PRODUCT IDENTIFIER
+
+↓
+
+REAL FITS PRODUCT
+
+↓
+
+FITS VALIDATION
+
+↓
+
+SCIENTIFIC DATA EXTRACTION
+
+↓
+
+QUALITY MASK
+
+↓
+
+WCS VALIDATION
+
+↓
+
+IMAGE REGISTRATION
+
+↓
+
+BACKGROUND / NOISE ANALYSIS
+
+↓
+
+PSF / IMAGE COMPATIBILITY CHECK
+
+↓
+
+DIFFERENCE IMAGE
+
+↓
+
+CANDIDATE DETECTION
+
+↓
+
+PHOTOMETRY
+
+↓
+
+UNCERTAINTY PROPAGATION
+
+↓
+
+ARTIFACT ASSESSMENT
+
+↓
+
+CATALOG CROSS-MATCH
+
+↓
+
+STATISTICAL EVIDENCE
+
+↓
+
+INVESTIGATION RESULT
+
+↓
+
+SPEX EXPLANATION
+
+Every stage must be real.
+
+---
+
+# 13. FITS PROCESSING
+
+Use Astropy or another scientifically appropriate maintained library.
+
+The system must inspect the actual FITS structure rather than assuming a fixed layout.
+
+Record:
+
+- product identifier
+- filename
+- source URL
+- checksum
+- data release
+- observation date/time
+- image dimensions
+- data type
+- units
+- WCS
+- available science extensions
+- quality/flag information
+- variance information
+- relevant calibration metadata
+
+Validate all of these.
+
+If a required field is missing:
+
+DO NOT GUESS.
+
+Report:
+
+**"This measurement cannot be calculated reliably from this product."**
+
+---
+
+# 14. WCS
+
+Use the actual WCS information contained in the FITS products.
+
+Validate:
+
+- coordinate transformation
+- image footprint
+- orientation
+- pixel scale
+- compatibility between observations
+
+Use appropriate reprojection methods when required.
+
+Track:
+
+- transformation
+- interpolation
+- registration quality
+- invalid regions
+
+Do not assume that two images are directly comparable merely because they cover the same sky location.
+
+---
+
+# 15. IMAGE COMPATIBILITY
+
+Before performing quantitative comparison, evaluate:
+
+- wavelength/channel compatibility
+- observation date
+- pixel scale
+- PSF
+- calibration
+- coverage
+- image quality
+- flags
+- background
+- detector/product characteristics
+
+If comparison is not scientifically valid:
+
+DO NOT produce a fake comparison.
+
+Instead show:
+
+**"These observations are visually comparable, but a quantitative comparison is not scientifically valid because ______."**
+
+This is an important scientific feature.
+
+---
+
+# 16. DIFFERENCE IMAGING
+
+Implement a real difference-image pipeline.
+
+At minimum:
+
+D = I₂ − I₁
+
+For independent uncertainties:
+
+σD² = σ₁² + σ₂²
+
+But only use this equation when its assumptions apply.
+
+If the processing introduces covariance or other systematic effects, document the limitation and account for it where feasible.
+
+Generate:
+
+- reference image
+- new image
+- registered image
+- difference image
+- quality mask
+- uncertainty map
+- significance map when valid
+
+The visual display must use a rendering layer separate from the underlying scientific arrays.
+
+Never use display brightness as scientific flux.
+
+---
+
+# 17. CANDIDATE DETECTION
+
+Implement real automated candidate detection.
+
+Candidates should be identified using:
+
+- valid pixels
+- uncertainty information
+- significance thresholds
+- local background
+- morphology
+- image quality
+- spatial consistency
+
+For each candidate calculate what the data support:
+
+- RA
+- Dec
+- pixel location
+- residual amplitude
+- uncertainty
+- local signal-to-noise
+- approximate extent
+- quality flags
+- detection status
+
+Do not automatically call it a transient.
+
+Use statuses such as:
+
+**Candidate**
+
+**Likely known source**
+
+**Possible artifact**
+
+**Insufficient evidence**
+
+**No significant change**
+
+---
+
+# 18. PHOTOMETRY
+
+When scientifically supported, perform real photometry.
+
+Use an appropriate approach such as:
+
+- aperture photometry
+- PSF-based measurement
+
+depending on the actual product and source.
+
+Calculate:
+
+F₂ − F₁
+
+and:
+
+sqrt(σF1² + σF2²)
+
+when the assumptions are valid.
+
+Report:
+
+- flux
+- units
+- uncertainty
+- difference
+- significance
+- method
+- quality flags
+
+Do not report fake precision.
+
+---
+
+# 19. MOTION
+
+If multiple epochs support it:
+
+Track the same candidate across epochs.
+
+Calculate angular displacement.
+
+Use the time baseline.
+
+Estimate motion only when the observations and uncertainties support it.
+
+Do not claim:
+
+- proper motion
+- orbit
+- planet
+- asteroid
+- moving object
+
+unless the evidence actually supports the statement.
+
+If insufficient data:
+
+**INSUFFICIENT DATA**
+
+is the correct result.
+
+---
+
+# 20. ARTIFACT REJECTION
+
+Evaluate:
+
+- bad pixels
+- saturation
+- cosmic-ray-like artifacts
+- image edges
+- PSF mismatch
+- registration errors
+- background mismatch
+- low coverage
+- interpolation artifacts
+- inconsistent observation quality
+
+Show the reason a candidate was flagged.
+
+The UI should allow:
+
+**WHY WAS THIS FLAGGED?**
+
+and show a short explanation.
+
+---
+
+# 21. CATALOG CROSS-MATCH
+
+Where appropriate, cross-match candidates against real astronomical catalogs such as:
+
+- Gaia
+- 2MASS
+- AllWISE
+- SIMBAD
+
+Use real catalog services.
+
+Store:
+
+- catalog name
+- identifier
+- coordinates
+- separation
+- matching radius
+- query status
+- source URL
+
+A catalog match is evidence, not automatic classification.
+
+---
+
+# 22. STATISTICAL EVIDENCE
+
+Create an evidence summary.
+
+Show only statistically justified values.
+
+Possible fields:
+
+- signal-to-noise
+- flux difference
+- uncertainty
+- positional shift
+- detection statistic
+- artifact score
+- catalog association
+- observation count
+
+Do not display arbitrary "confidence percentages."
+
+If a calibrated probability cannot be computed:
+
+show:
+
+**Not estimated**
+
+with a short explanation.
+
+Never convert a heuristic score into a probability without validation.
+
+---
+
+# 23. INVESTIGATION RESULT
+
+Each investigation should end with one of:
+
+### SIGNIFICANT CHANGE DETECTED
+
+or
+
+### POSSIBLE CHANGE — NEEDS REVIEW
+
+or
+
+### NO SIGNIFICANT CHANGE DETECTED
+
+or
+
+### POSSIBLE ARTIFACT
+
+or
+
+### INSUFFICIENT DATA
+
+The result must be generated from actual pipeline outputs.
+
+---
+
+# 24. VISUAL EXPLORER
+
+This is one of the most important screens.
+
+Make the image the hero.
+
+Large astronomical image.
+
+Minimal controls.
+
+Allow:
+
+- observation toggle
+- blink mode
+- side-by-side
+- slider comparison
+- difference mode
+- quality-mask mode
+- zoom
+- pan
+- candidate markers
+
+Use a small floating control system rather than a large sidebar.
+
+When the user selects a candidate:
+
+show a compact evidence panel.
+
+Example:
+
+**Candidate #03**
+
+Possible change detected
+
+S/N: 5.8
+
+Catalog match: Gaia DR3
+
+Then:
+
+**SHOW EVIDENCE**
+
+The technical details can expand below.
+
+---
+
+# 25. CASE VIEW
+
+Each case should feel like an investigation.
+
+Structure:
+
+**WHAT CHANGED?**
+
+Large visual result.
+
+Then:
+
+**THE EVIDENCE**
+
+A few compact metrics.
+
+Then:
+
+**WHAT DO WE KNOW?**
+
+Short explanation.
+
+Then:
+
+**WHAT DON'T WE KNOW?**
+
+Short limitations.
+
+Then:
+
+**SOURCE**
+
+Official archive information.
+
+Then:
+
+**SCIENTIFIC DETAILS**
+
+Expandable.
+
+---
+
+# 26. PROVENANCE
+
+Every scientific result must have a provenance trail.
+
+Example:
+
+Case
+
+↓
+
+Observation A
+
+↓
+
+IRSA Product ID
+
+↓
+
+FITS checksum
+
+↓
+
+Processing run
+
+↓
+
+Algorithm version
+
+↓
+
+Output
+
+↓
+
+Displayed result
+
+The user should be able to inspect this.
+
+This is critical for scientific credibility.
+
+---
+
+# 27. SPEX AI
+
+SPEX is not the scientific engine.
+
+The scientific engine calculates.
+
+SPEX explains.
+
+SPEX must consume structured results generated by the scientific pipeline.
+
+SPEX must never invent a measurement.
+
+SPEX should be able to answer:
+
+- What changed?
+- How do you know?
+- Is it real?
+- Could this be an artifact?
+- What is WCS?
+- What does S/N mean?
+- Why did the system reject this candidate?
+- Where did this data come from?
+- What is still unknown?
+
+If the scientific engine has not calculated something:
+
+SPEX must say:
+
+**"لسه ما حسبناهاش بشكل موثوق."**
+
+not invent an answer.
+
+---
+
+# 28. SPEX PERSONALITY
+
+SPEX should speak mostly Egyptian Arabic.
+
+Personality:
+
+- funny
+- witty
+- slightly sarcastic
+- enthusiastic
+- nerdy
+- futuristic
+- friendly
+- confident but scientifically cautious
+
+SPEX can make jokes and astronomy puns.
+
+Examples of style:
+
+"استنى يا نجم 😂 ده candidate مش discovery لسه."
+
+"الكون ممكن يكون عامل حركة… وممكن الصورة نفسها بتعمل مقلب 😭 خلينا نشوف الـquality flags الأول."
+
+"أنا متحمس أقول اكتشاف، بس الـstatistics ماسكة فيا من قفاي 😂."
+
+"ده مش دليل كفاية يا معلم. محتاجين evidence أكتر."
+
+"الـWCS؟ اعتبره GPS بتاع الصورة الكونية… بس من غير ما يطلب منك location 😂."
+
+"الـS/N عالي، بس خلينا ما نحتفلش قبل ما نشوف الـartifacts."
+
+"النتيجة دي مش glamorous، بس علميًا مهمة جدًا."
+
+Never allow humor to override scientific truth.
+
+---
+
+# 29. SPEX REACTION SYSTEM
+
+Use the supplied SPEX images as state-dependent reactions.
+
+Possible states:
+
+IDLE
+
+THINKING
+
+SEARCHING
+
+PROCESSING
+
+EXCITED
+
+SKEPTICAL
+
+WARNING
+
+SUCCESS
+
+NO_RESULT
+
+ERROR
+
+Use the most appropriate supplied image.
+
+Do not overuse reactions.
+
+The bot should feel alive but not childish.
+
+---
+
+# 30. AI SAFETY AGAINST HALLUCINATION
+
+The AI layer must be grounded.
+
+Give SPEX structured context such as:
+
+{
+  case_id,
+  observation_metadata,
+  processing_status,
+  measurements,
+  uncertainty,
+  candidate_data,
+  catalog_matches,
+  provenance,
+  limitations
+}
+
+SPEX should not answer from imagination when a question concerns the current case.
+
+If evidence is unavailable:
+
+say so.
+
+---
+
+# 31. NO FAKE DEMO MODE
+
+There must be a strict distinction between:
+
+REAL DATA
+
+and
+
+TEST DATA
+
+Synthetic fixtures may exist for automated tests.
+
+But they must never appear in the normal user workflow as real scientific observations.
+
+If demo/test data are included:
+
+label them clearly:
+
+**TEST DATA — NOT A REAL SPHEREx OBSERVATION**
+
+Do not hide the distinction.
+
+---
+
+# 32. PERFORMANCE
+
+The UI must never freeze during FITS processing.
+
+Use:
+
+- background processing
+- progress states
+- job IDs
+- polling or streaming status
+- caching
+- retry handling
+
+Example progress:
+
+FETCHING OBSERVATION
+
+↓
+
+VALIDATING FITS
+
+↓
+
+CHECKING WCS
+
+↓
+
+ALIGNING IMAGES
+
+↓
+
+BUILDING DIFFERENCE
+
+↓
+
+SEARCHING FOR CANDIDATES
+
+↓
+
+CROSS-MATCHING
+
+↓
+
+GENERATING EVIDENCE
+
+↓
+
+READY
+
+This should feel like a mission-control process.
+
+---
+
+# 33. ERROR HANDLING
+
+Every failure should be understandable.
+
+Examples:
+
+Instead of:
+
+"500 Internal Server Error"
+
+show:
+
+**We couldn't retrieve this observation.**
+
+"IRSA did not return a usable product for this search."
+
+Then:
+
+**TRY ANOTHER REGION**
+
+Do not expose raw stack traces to normal users.
+
+Keep detailed diagnostics in developer logs.
+
+---
+
+# 34. SECURITY
+
+Never expose:
+
+- API keys
+- secrets
+- private credentials
+
+in frontend code.
+
+Use secure server-side configuration.
+
+Validate user inputs.
+
+Protect backend endpoints from malformed requests.
+
+---
+
+# 35. RESPONSIVE DESIGN
+
+The application must work on:
+
+- desktop
+- laptop
+- tablet
+- mobile
+
+The astronomical image remains the primary visual element.
+
+Avoid tiny scientific charts that become unreadable on mobile.
+
+---
+
+# 36. ACCESSIBILITY
+
+Use:
+
+- sufficient contrast
+- readable typography
+- keyboard-accessible controls
+- meaningful labels
+- accessible buttons
+- alternative descriptions for important visual elements
+
+Do not rely on color alone to communicate scientific states.
+
+---
+
+# 37. TESTING
+
+Do not just create tests.
+
+RUN THEM.
+
+Test:
+
+- FITS loading
+- WCS
+- metadata
+- archive queries
+- image registration
+- difference imaging
+- uncertainty propagation
+- candidate detection
+- photometry
+- catalog matching
+- API endpoints
+- SPEX grounding
+- frontend workflow
+
+Create synthetic test fixtures with known expected outputs.
+
+Examples:
+
+- no change
+- known brightness change
+- known positional shift
+- bad pixels
+- registration offset
+- PSF mismatch
+- missing variance
+
+But clearly label them as tests.
+
+---
+
+# 38. REAL DATA ACCEPTANCE TEST
+
+Before declaring the application complete:
+
+Process at least one genuine public SPHEREx observation end-to-end.
+
+Preferably process two compatible observations from different epochs.
+
+Prove:
+
+1. Official archive source
+2. Real product ID
+3. Real FITS download
+4. FITS validation
+5. WCS validation
+6. Image extraction
+7. Quality masking
+8. Registration
+9. Difference image
+10. Candidate detection
+11. Measurement
+12. Uncertainty
+13. Artifact assessment
+14. Catalog cross-match when available
+15. Evidence summary
+16. Provenance
+17. Frontend display
+18. SPEX explanation
+
+The result must be reproducible.
+
+If the observations cannot support a particular measurement, explicitly mark that measurement as unavailable.
+
+---
+
+# 39. FINAL UI STRUCTURE
+
+Keep the application small and focused.
+
+Recommended navigation:
+
+**HOME**
+
+**EXPLORE**
+
+**CASES**
+
+**ABOUT**
+
+Avoid 10+ navigation items.
+
+HOME:
+Minimal cinematic introduction.
+
+EXPLORE:
+Main scientific experience.
+
+CASES:
+Interesting investigations and results.
+
+ABOUT:
+Methodology, NASA data sources, scientific limitations, team/project information.
+
+---
+
+# 40. HOME SCREEN VISUAL HIERARCHY
+
+Hero image.
+
+Small SPHEREx identifier.
+
+Headline:
+
+**THE SKY CHANGES.**
+
+Subheadline:
+
+**Let's find out what changed.**
+
+CTA:
+
+**EXPLORE THE SKY**
+
+SPEX reaction.
+
+Minimal.
+
+No huge paragraphs.
+
+---
+
+# 41. EXPLORE SCREEN
+
+The Explore screen should feel like an astronomical instrument.
+
+Large image canvas.
+
+Small floating controls.
+
+Search coordinates.
+
+Observation timeline.
+
+Candidate markers.
+
+Difference visualization.
+
+SPEX appears as a contextual guide.
+
+---
+
+# 42. CASES SCREEN
+
+Cards should be visual.
+
+Each case:
+
+Large image.
+
+One-line result.
+
+Tiny metadata.
+
+Example:
+
+**Possible Variable Source**
+
+"Change detected across 2 epochs."
+
+Then:
+
+**INVESTIGATE**
+
+Do not write large descriptions on the card.
+
+---
+
+# 43. ABOUT SCREEN
+
+Explain:
+
+What is SPHEREx?
+
+What is the problem?
+
+How does the pipeline work?
+
+Where does the data come from?
+
+What can the system actually prove?
+
+What can it NOT prove?
+
+Keep the explanations concise and visual.
+
+Include a simple pipeline diagram:
+
+REAL DATA
+→
+PROCESSING
+→
+EVIDENCE
+→
+SPEX
+
+---
+
+# 44. NASA JUDGING / PRESENTATION OPTIMIZATION
+
+Build the product so that a judge can understand its value quickly.
+
+Within the first minute, the judge should be able to:
+
+1. See real SPHEREx imagery.
+2. Understand that the data are real.
+3. Compare observations.
+4. See a scientifically generated difference.
+5. Select a candidate.
+6. See evidence.
+7. Ask SPEX what happened.
+8. See the provenance/source.
+9. Understand the limitation.
+
+The application should communicate:
+
+**We don't just visualize NASA data.**
+
+**We turn real observations into an understandable investigation.**
+
+Do not make unsupported claims such as:
+
+"AI discovered a new planet."
+
+Instead use scientifically responsible language:
+
+"Potential change detected."
+
+"Candidate requires further investigation."
+
+"Evidence is consistent with..."
+
+---
+
+# 45. VISUAL STORYTELLING
+
+Use animation carefully.
+
+Good:
+
+- image transitions
+- subtle star-field movement
+- smooth image comparison
+- candidate highlighting
+- processing progress
+- SPEX reaction changes
+
+Avoid:
+
+- excessive particle effects
+- distracting 3D animations
+- constant glowing neon
+- excessive motion
+- flashy transitions that distract from astronomical imagery
+
+The future aesthetic should come from precision and restraint.
+
+---
+
+# 46. CODE QUALITY
+
+Use:
+
+- clear component structure
+- typed interfaces
+- reusable scientific modules
+- separation of concerns
+- documented algorithms
+- error handling
+- deterministic tests
+
+Scientific computation should not live inside UI components.
+
+Keep:
+
+Frontend
+↓
+API
+↓
+Scientific Engine
+↓
+Data Layer
+
+clearly separated.
+
+---
+
+# 47. IMPORTANT: DO NOT FAKE COMPLETION
+
+You must never report:
+
+"Implemented"
+
+unless you actually:
+
+1. wrote the code
+2. executed it
+3. verified its output
+4. connected it to the application
+5. tested the relevant workflow
+
+At the end of development, produce a verification table:
+
+| Feature | Implemented | Executed | Tested | Real Data Verified |
+|---|---|---|---|---|
+
+Do not mark anything green without evidence.
+
+---
+
+# 48. DEVELOPMENT ORDER
+
+Follow this exact priority:
+
+PHASE 1
+Architecture + data source validation
+
+PHASE 2
+Real FITS ingestion
+
+PHASE 3
+WCS + scientific image registration
+
+PHASE 4
+Quality masking + noise/background
+
+PHASE 5
+Difference imaging
+
+PHASE 6
+Candidate detection
+
+PHASE 7
+Photometry + uncertainty
+
+PHASE 8
+Artifact assessment
+
+PHASE 9
+Catalog cross-match
+
+PHASE 10
+Evidence engine
+
+PHASE 11
+SPEX grounded AI
+
+PHASE 12
+Visual explorer
+
+PHASE 13
+Minimal futuristic design
+
+PHASE 14
+Testing + real-data acceptance test
+
+PHASE 15
+Final NASA Space Apps presentation polish
+
+Scientific correctness takes priority over visual polish.
+
+---
+
+# 49. DEFINITION OF DONE
+
+The project is DONE only when:
+
+- real SPHEREx data are retrieved from an official source
+- actual FITS files are processed
+- scientific arrays are used for calculations
+- WCS is validated
+- image comparison is scientifically controlled
+- difference images are generated from actual data
+- uncertainty is propagated correctly where applicable
+- candidates are detected using real algorithms
+- artifacts are evaluated
+- catalog matching uses real services where applicable
+- results are traceable to source products
+- SPEX explains actual computed results
+- no fake measurements exist
+- no fake discoveries exist
+- tests are actually executed
+- the application works as a complete user journey
+- the UI is simple, visual, futuristic, and cohesive with SPEX
+- the project is understandable to a NASA Space Apps judge
+
+---
+
+# 50. FINAL INSTRUCTION
+
+Do not optimize for the appearance of completion.
+
+Optimize for:
+
+**REAL DATA**
++
+**REAL SCIENCE**
++
+**REAL COMPUTATION**
++
+**REAL EVIDENCE**
++
+**REAL AI EXPLANATION**
++
+**EXCELLENT UX**
+
+The final product should feel like a futuristic scientific instrument, not a website full of cards.
+
+The user should spend most of their time looking at the sky, comparing observations, investigating evidence, and interacting with SPEX.
+
+The interface should be quiet.
+
+The imagery should be loud.
+
+The science should be real.
+
+And SPEX should be the witty guide who makes the science feel approachable without ever making up an answer.

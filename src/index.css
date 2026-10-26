@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+.font-cairo, [dir="rtl"], [lang="ar"] {
+  font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;
+}
+
+input, textarea, button, select {
+  font-family: inherit;
+}
+
+input::placeholder, textarea::placeholder {
+  font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;
+}
+
+

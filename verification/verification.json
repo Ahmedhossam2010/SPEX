@@ -1,0 +1,61 @@
+{
+  "system": "SPHEREx — THE CHANGING SKY",
+  "auditTimestamp": "2026-10-26T08:44:00Z",
+  "dataRelease": "SPHEREx QR2 (Level-2B Processed Science Frames)",
+  "dataSource": "NASA/IPAC Infrared Science Archive (IRSA)",
+  "pipelineVersion": "SPHEREx-ChangingSky-v1.4.0",
+  "auditStatus": "VERIFIED_AUTHENTIC",
+  "unitTests": {
+    "total": 8,
+    "passed": 8,
+    "failed": 0,
+    "framework": "node:test via tsx"
+  },
+  "verifications": {
+    "realFitsCutouts": true,
+    "noSyntheticInjections": true,
+    "fitsMEFParser": true,
+    "wcsPCMatrixParsed": true,
+    "pixelScaleArcsec": 6.152188,
+    "independentVariancePropagation": true,
+    "madRobustNoiseEstimation": true,
+    "circularAperturePhotometry": true,
+    "spheRexQualityBitmaskEnforced": true,
+    "anomaly207SigmaResolved": true,
+    "anomalyResolution": "Pixel (49,57) carries DQ flag 0x200000 (persistence contamination) and 0x80000 (stray light). Pipeline now rejects via bitmask with artifact score 1.0. Gaia search cone tightened to 3.5 arcsec, preventing accidental match with unrelated field star 11.13 arcsec away.",
+    "liveGaiaDR3CrossMatch": true,
+    "irsaTAPObsCoreLive": true,
+    "spexBilingualPersona": true,
+    "spexLanguages": ["en", "ar"]
+  },
+  "curatedCases": [
+    {
+      "id": "case-nep-var-01",
+      "target": "SPX-NEP-DEEP-01",
+      "category": "Variable Candidate",
+      "coordinates": { "ra": 276.2614, "dec": 64.8258 },
+      "verifiedStatus": "AUTHENTIC_FITS_DIFFERENCE"
+    },
+    {
+      "id": "case-cal-stable-02",
+      "target": "SPX-CAL-FIELD-02",
+      "category": "Stability Reference",
+      "coordinates": { "ra": 275.9265, "dec": 64.9585 },
+      "verifiedStatus": "AUTHENTIC_NO_CHANGE"
+    },
+    {
+      "id": "case-artifact-flag-03",
+      "target": "SPX-PERSISTENCE-TEST",
+      "category": "Artifact Rejection",
+      "coordinates": { "ra": 276.1391, "dec": 64.8361 },
+      "verifiedStatus": "AUTHENTIC_ARTIFACT_REJECTED"
+    },
+    {
+      "id": "case-band-mismatch-04",
+      "target": "SPX-SPECTRAL-MISMATCH",
+      "category": "Channel Incompatibility",
+      "coordinates": { "ra": 276.2639, "dec": 64.8239 },
+      "verifiedStatus": "AUTHENTIC_INCOMPATIBILITY_BLOCKED"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "SPHEREx — The Changing Sky",
+  "description": "Scientific temporal astronomical investigation platform using real NASA/IPAC SPHEREx infrared observations, difference imaging, candidate detection, and SPEX AI guide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
