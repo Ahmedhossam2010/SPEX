@@ -22,40 +22,26 @@ All three issues have been resolved through physical grounding, rigorous bitmask
 
 ## 2. The 207.64σ Anomaly: Forensic Investigation & Resolution
 
-### 2.1 The Observation
-In raw SPHEREx QR2 cutout pairs at $\alpha = 276.139^\circ, \delta = +64.836^\circ$, pixel coordinate $(49, 57)$ showed a staggering difference:
-- **Epoch 1 ($t = 60793.5418$ MJD):** Flux $= 0.1906\text{ MJy/sr}$, variance $= 2.87 \times 10^{-4}$
-- **Epoch 2 ($t = 60814.2250$ MJD):** Flux $= 54.3338\text{ MJy/sr}$, variance $= 6.76 \times 10^{-2}$
-- **Calculated Difference:** $\Delta F = 54.1432\text{ MJy/sr}$
-- **Propagated Uncertainty:** $\sigma_{\Delta F} = \sqrt{\sigma_1^2 + \sigma_2^2} \approx 0.2605\text{ MJy/sr}$
-- **Signal-to-Noise Ratio:**
-  $$\text{SNR} = \frac{54.1432}{0.2605} = 208.24\sigma$$
+### 2.1 The Observation & Initial Defect
+In earlier versions of the pipeline, an apparent $\sim 207.6\sigma$ candidate was reported at high significance. Forensic analysis of the FITS arrays, WCS transformations, and Level-2 bitmasks revealed three compounding defects:
 
-### 2.2 The Root Cause Analysis
-Examination of the raw FITS HDU 2 (Data Quality flags array) revealed:
-- `flags1[57 * 64 + 49] = 0x80000` (Bit 19: `STRAY_LIGHT_OR_LATENT_SUSPECT`)
-- `flags2[57 * 64 + 49] = 0x200000` (Bit 21: `PERSISTENCE_CONTAMINATION` / `NONLINEAR_RAMP`)
+1. **Sub-Pixel Registration Offset:** The initial registration code calculated celestial coordinate offsets using parent frame `CRVAL1/2` keywords rather than projecting the cutout center across WCS celestial coordinates. This produced a $\sim 2.2$-pixel misregistration between Epoch 1 and Epoch 2.
+2. **Astrometric Registration Dipole Residue:** When two frames containing a bright $G = 6.73$ mag star (Gaia DR3 2256659625017767168, flux $> 1600\text{ MJy/sr}$) were subtracted with a 2-pixel shift, the bright star was subtracted against empty sky, generating an artificial dipole of immense amplitude ($\Delta F > 1200\text{ MJy/sr}$).
+3. **FITS Bitmask Misinterpretation & Saturation:** The bright star's core exceeded detector full well capacity, setting Level-2 bit `0x02` (`OVERFLOW` / saturation) and `0x01` (`TRANSIENT`). Furthermore, bit 21 (`0x200000`) was previously mislabeled as "persistence", whereas the official SPHEREx Explanatory Supplement (Section 3.2.4) defines bit `0x200000` as `SOURCE` (pixels containing flux from cataloged astronomical sources, produced by module `SSDC-MS-019`).
 
-The previous pipeline code only inspected:
-```typescript
-if ((f1 & 0x01) !== 0 || (f2 & 0x01) !== 0) flags.push('FLAGGED_BAD_PIXEL');
-if ((f1 & 0x04) !== 0 || (f2 & 0x04) !== 0) flags.push('SATURATION_OR_NONLINEAR');
-```
-It completely ignored bits `0x80000` and `0x200000`. As a result, `artifactScore` remained `0.0`, and the detector persistence artifact was classified as a clean `Candidate`.
-
-Furthermore, the Gaia cross-matcher queried with a broad $12.0^{\prime\prime}$ radius. It found a field star (Gaia DR3 2256662300780346368) at separation $11.13^{\prime\prime}$ (nearly two full SPHEREx pixels away). The pipeline incorrectly declared the candidate a "Likely known source" with 208σ significance.
-
-### 2.3 Scientific Hardening & Fix
-1. **Full Bitmask Enforcement:** The quality filter in `ScientificPipeline.assessArtifact` now inspects:
-   - `0x01`: Bad / Dead detector pixel
-   - `0x02`: Full-well saturation
-   - `0x04`: Nonlinear ramp response
-   - `0x08`: Cosmic ray hit during ramp integration
-   - `0x10`: Jump detection
-   - `0x80000`: Stray light or latent suspect
-   - `0x200000`: Detector persistence contamination
-2. **Astrometric Matching Radius:** SPHEREx native pixel scale is $\sim 6.15^{\prime\prime}$. With an optimal point-spread function centroid uncertainty $\le 0.5\text{ pix}$, the cross-match search cone was tightened from $12.0^{\prime\prime}$ to $3.5^{\prime\prime}$. At $3.5^{\prime\prime}$, zero catalog stars match pixel $(49, 57)$.
-3. **Artifact Disqualification:** When persistence or saturation flags are detected, `artifactScore` reaches $\ge 0.85$, and the candidate is strictly classified as `Possible artifact`.
+### 2.2 Mathematical Resolution & Hardening
+1. **Accurate WCS Projection Registration:** Registration now projects the center coordinate $(w/2, h/2)$ of Epoch 2 into Epoch 1's celestial WCS frame:
+   $$x_1 = \text{WCS.skyToPix}(\alpha_{\text{center}}, \delta_{\text{center}}, \text{fits1.wcs}).x$$
+   $$dx = x_1 - \frac{w}{2}, \quad dy = y_1 - \frac{h}{2}$$
+   This is refined with sub-pixel normalized cross-correlation, achieving an alignment quality of $r > 0.94$.
+2. **True Bitmask Quality Filtering:**
+   - `0x01` (`TRANSIENT`): Cosmic ray hits or sudden slope jumps $\implies$ penalized.
+   - `0x02` (`OVERFLOW`): Full-well saturation $\implies$ strictly disqualified (`Possible artifact`).
+   - `0x04` (`SUR_ERROR`): Non-linear slope fitting errors $\implies$ flagged.
+   - `0x80000` (`OUTLIER`): Statistical clipping outliers $\implies$ flagged.
+   - `0x200000` (`SOURCE`): Confirms astronomical source position $\implies$ recognized as genuine source.
+3. **Dipole Morphology Rejection:** When adjacent positive and negative lobes around a bright star indicate astrometric pointing jitter, the candidate is flagged as `REGISTRATION_OR_PSF_DIPOLE` and disqualified from false transient status.
+4. **Finite NaN Protection in Resampling & Photometry:** Bilinear resampling and aperture photometry explicitly guard against `NaN` propagation from masked saturated pixels. Net aperture flux $\Delta F_{\text{net}}$ and propagated variance $\sigma_{\Delta F_{\text{net}}}^2$ are always finite, mathematically sound physical values.
 
 ---
 

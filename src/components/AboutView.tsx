@@ -88,7 +88,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.05]">
             <CheckCircle2 className="h-6 w-6 text-amber-400 mx-auto mb-2" />
             <h4 className="font-bold text-slate-100 text-xs mb-1">4. Bilingual SPEX AI</h4>
-            <p className="text-[10px] text-slate-400">Strictly grounded in computed data (Gemini 3.5 Flash Lite)</p>
+            <p className="text-[10px] text-slate-400">Strictly grounded in computed data (Gemini 3.1 Flash Lite)</p>
           </div>
         </div>
       </div>

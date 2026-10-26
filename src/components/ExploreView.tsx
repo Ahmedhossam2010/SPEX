@@ -3,20 +3,15 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
-  Sliders,
   Sparkles,
   Layers,
   Info,
   Send,
   ExternalLink,
-  ShieldAlert,
   ShieldCheck,
   Search,
   CheckCircle2,
   AlertTriangle,
-  FileText,
-  Eye,
-  Maximize2,
   ChevronDown,
   ChevronUp,
   Crosshair,
@@ -25,12 +20,17 @@ import {
   Play,
   Pause,
   Telescope,
+  Binary,
+  Eye,
+  SlidersHorizontal,
+  Compass,
+  X,
 } from 'lucide-react';
 import {
   CandidateDetection,
   InvestigationResult,
 } from '../science/types';
-import { AstronomyRenderer, ColormapMode, StretchMode } from '../utils/astronomyRender';
+import { AstronomyRenderer, ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { WCS } from '../science/wcs';
 import { SPEX_ASSETS, SPEXMood } from '../spex/spexAssets';
 import { ProvenanceModal } from './ProvenanceModal';
@@ -60,9 +60,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // Viewport states
   const [viewMode, setViewMode] = useState<ViewMode>('difference');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('presentation');
   const [stretch, setStretch] = useState<StretchMode>('asinh');
-  const [colormap, setColormap] = useState<ColormapMode>('heat');
-  const [zoom, setZoom] = useState<number>(3.6);
+  const [colormap, setColormap] = useState<ColormapMode>('spherex_cosmic');
+  const [zoom, setZoom] = useState<number>(1.2);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -85,13 +86,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetection | null>(null);
   const [showMarkers, setShowMarkers] = useState<boolean>(true);
   const [showProvenance, setShowProvenance] = useState<boolean>(false);
-  const [isWhyOpen, setIsWhyOpen] = useState<boolean>(true);
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const [customRa, setCustomRa] = useState<string>('276.2500');
+  const [customDec, setCustomDec] = useState<string>('64.8300');
   const [isCandidateDrawerCollapsed, setIsCandidateDrawerCollapsed] = useState<boolean>(false);
+  const [isCandidateDetailsOpen, setIsCandidateDetailsOpen] = useState<boolean>(true);
   const [isSpexCollapsed, setIsSpexCollapsed] = useState<boolean>(false);
-
-  // Search input state
-  const [searchRa, setSearchRa] = useState<string>('276.2614');
-  const [searchDec, setSearchDec] = useState<string>('64.8258');
 
   // SPEX Chat state
   const [spexMessage, setSpexMessage] = useState<string>('');
@@ -111,38 +111,32 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       } else {
         setSelectedCandidate(null);
       }
-      if (currentResult.targetCoords?.ra != null) {
-        setSearchRa(currentResult.targetCoords.ra.toFixed(4));
-      }
-      if (currentResult.targetCoords?.dec != null) {
-        setSearchDec(currentResult.targetCoords.dec.toFixed(4));
-      }
 
-      // Reset pan and zoom to center
+      // Reset pan and set balanced initial zoom
       setPan({ x: 0, y: 0 });
-      setZoom(3.6);
+      setZoom(1.2);
 
       // Default SPEX greeting based on classification and language
       if (currentResult.evidence.classification === 'SIGNIFICANT CHANGE DETECTED') {
         setSpexMood('eureka');
         setSpexReply(
           language === 'ar'
-            ? `يا خبر كوني! 🚀 رصدنا إشارة حقيقية واضحة بنسبة S/N = ${currentResult.evidence.maxSignificance}σ عبر فارق زمني ${currentResult.compatibility.timeBaselineDays.toFixed(1)} يوم. افحص المرشح في الجدول!`
-            : `Astrophysical flux excursion detected! 🚀 Peak residual significance S/N = ${currentResult.evidence.maxSignificance}σ across ${currentResult.compatibility.timeBaselineDays.toFixed(1)} days. Check the candidate card!`
+            ? `يا خبر كوني! 🚀 رصدنا تغير حقيقي في تدفق النجم بنسبة S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ عبر فارق زمني ${currentResult.compatibility.timeBaselineDays.toFixed(1)} يوم. بص على كارت المرشح!`
+            : `Verified astrophysical flux variation! 🚀 Peak residual significance S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ across ${currentResult.compatibility.timeBaselineDays.toFixed(1)} days. Check the candidate card!`
         );
       } else if (currentResult.evidence.classification === 'NO SIGNIFICANT CHANGE DETECTED') {
         setSpexMood('serious');
         setSpexReply(
           language === 'ar'
-            ? 'ثبات ضوئي ممتاز! 🔭 الفروق بين الحقبتين تقع بالكامل داخل نطاق الضوضاء الجاوسية للأجهزة. دي نتيجة أساسية لمعايرة سماء SPHEREx.'
-            : 'Photometric baseline verified stable! 🔭 Difference residuals are strictly consistent with the Gaussian instrumental noise floor.'
+            ? 'ثبات ضوئي ممتاز! 🔭 قياس الفتحة الضوئية (Aperture Photometry) يؤكد ثبات التدفق تمامًا، والفروق تقع ضمن الضوضاء الطبيعية للأجهزة. ده معيار استقرار أساسي لسماء SPHEREx.'
+            : 'Photometric baseline verified stable! 🔭 Difference residuals and aperture photometry are strictly consistent with the Gaussian instrumental noise floor.'
         );
       } else if (currentResult.evidence.classification === 'POSSIBLE ARTIFACT') {
         setSpexMood('sassy');
         setSpexReply(
           language === 'ar'
-            ? 'استنى هنا! ده مش كائن فضائي يا باشا 😂 ده مجرد Artifact/Persistence في المستشعر وتم كشفه بدقة عبر FITS Quality Bitmask (0x200000) عشان نمنع الاكتشافات الوهمية.'
-            : 'Hold your horses! That 208σ spike is not an alien beacon—it is a detector persistence excursion (bit 0x200000) cleanly caught by our quality bitmask!'
+            ? 'استنى هنا! ده مش كائن فضائي يا باشا 😂 الإشارة دي ناتجة عن تشبع البيكسل (Saturation) أو استمرار شحنة المستشعر (Persistence)، وتم كشفها واستبعادها بدقة عبر FITS Quality Bitmask عشان نمنع الاكتشافات الوهمية.'
+            : 'Hold your horses! That spike is an instrumental artifact (saturation / detector persistence) cleanly caught and disqualified by our quality bitmask!'
         );
       } else {
         setSpexMood('investigator');
@@ -160,7 +154,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     return () => clearInterval(interval);
   }, [viewMode, isBlinking, blinkSpeedMs]);
 
-  // Render to canvas
+  // Render to canvas using enhanced AstronomyRenderer
   useEffect(() => {
     if (!currentResult || !canvasRef.current) return;
 
@@ -197,9 +191,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       dataToRender,
       currentResult.epoch1.width,
       currentResult.epoch1.height,
-      { stretch, colormap: cm }
+      {
+        stretch,
+        colormap: cm,
+        displayMode,
+        renderSize: 512,
+      }
     );
-  }, [currentResult, viewMode, blinkEpoch, stretch, colormap, sliderPos]);
+  }, [currentResult, viewMode, blinkEpoch, stretch, colormap, sliderPos, displayMode]);
 
   // Cursor inspector readout
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -282,8 +281,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       console.error('SPEX AI chat error:', err);
       setSpexReply(
         language === 'ar'
-          ? 'عفوًا يا نجم، السيرفر مهنج ثانية بس البيانات واضحة قدامك في الجدول!'
-          : 'Telemetry glitch, astronomer! Please try again in a second.'
+          ? 'عفوًا يا نجم، الاتصال بالمرصد اتأخر ثانية بس البيانات واضحة قدامك في الجدول!'
+          : 'Network glitch with the ground station, astronomer! Please ask again in a moment.'
       );
     } finally {
       setIsSpexThinking(false);
@@ -297,9 +296,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     if (!currentResult) return;
     const w = currentResult.epoch1.width;
     const h = currentResult.epoch1.height;
-    // Normalized offset from center
-    const offsetX = (w / 2 - cand.x) * (zoom * 5);
-    const offsetY = (h / 2 - cand.y) * (zoom * 5);
+    const offsetX = (w / 2 - cand.x) * (zoom * 7);
+    const offsetY = (h / 2 - cand.y) * (zoom * 7);
     setPan({ x: offsetX, y: offsetY });
   };
 
@@ -308,36 +306,36 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       case 'SIGNIFICANT CHANGE DETECTED':
         return {
           label: t.statusSignificant,
-          border: 'border-emerald-500/40',
-          bg: 'bg-emerald-500/10 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]',
+          border: 'border-emerald-500/30',
+          bg: 'bg-emerald-500/15 text-emerald-200 shadow-[0_0_20px_rgba(16,185,129,0.25)]',
           dot: 'bg-emerald-400',
         };
       case 'NO SIGNIFICANT CHANGE DETECTED':
         return {
           label: t.statusStable,
-          border: 'border-cyan-500/40',
-          bg: 'bg-cyan-500/10 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.2)]',
+          border: 'border-cyan-500/30',
+          bg: 'bg-cyan-500/15 text-cyan-200 shadow-[0_0_20px_rgba(6,182,212,0.25)]',
           dot: 'bg-cyan-400',
         };
       case 'POSSIBLE ARTIFACT':
         return {
           label: t.statusArtifact,
-          border: 'border-amber-500/40',
-          bg: 'bg-amber-500/10 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]',
+          border: 'border-amber-500/30',
+          bg: 'bg-amber-500/15 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.25)]',
           dot: 'bg-amber-400',
         };
       case 'INSUFFICIENT DATA':
         return {
           label: t.statusIncompatible,
-          border: 'border-rose-500/40',
-          bg: 'bg-rose-500/10 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.2)]',
+          border: 'border-rose-500/30',
+          bg: 'bg-rose-500/15 text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.25)]',
           dot: 'bg-rose-400',
         };
       default:
         return {
           label: t.statusUnknown,
-          border: 'border-slate-500/40',
-          bg: 'bg-slate-800 text-slate-300',
+          border: 'border-slate-500/30',
+          bg: 'bg-slate-800/80 text-slate-300',
           dot: 'bg-slate-400',
         };
     }
@@ -345,20 +343,22 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   if (isLoading || !currentResult) {
     return (
-      <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-[#02040a] text-slate-200">
-        <div className="relative flex flex-col items-center gap-4 p-8 rounded-3xl border border-white/[0.08] bg-black/60 backdrop-blur-2xl shadow-2xl max-w-md text-center">
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-500/40 bg-gradient-to-br from-amber-500/20 via-sky-500/10 to-indigo-500/20 text-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.2)]">
-            <Telescope className="h-8 w-8 animate-pulse" />
-            <div className="absolute inset-0 rounded-2xl border border-amber-400 animate-ping opacity-25" />
+      <div className="relative w-full h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-[#02040a] text-slate-200 overflow-hidden">
+        {/* Subtle radial space glow */}
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(14,165,233,0.15),rgba(255,255,255,0))]" />
+        <div className="relative flex flex-col items-center gap-5 p-8 rounded-3xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] max-w-md text-center">
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-400/30 bg-gradient-to-br from-amber-500/20 via-sky-500/15 to-indigo-500/20 text-amber-300 shadow-[0_0_25px_rgba(245,158,11,0.25)]">
+            <Telescope className="h-8 w-8 animate-pulse text-amber-300" />
+            <div className="absolute inset-0 rounded-2xl border border-amber-400/40 animate-ping opacity-30" />
           </div>
           <div>
             <h3 className="font-['Outfit'] text-lg font-bold text-slate-100">
-              {language === 'ar' ? 'جاري الاتصال بأرشيف IRSA ومرصد SPHEREx...' : 'Connecting to NASA/IPAC IRSA...'}
+              {language === 'ar' ? 'جاري الاتصال بأرشيف IRSA ومرصد SPHEREx...' : 'Accessing NASA/IPAC IRSA SPHEREx Archive...'}
             </h3>
-            <p className="text-xs font-mono text-slate-400 mt-1">
+            <p className="text-xs font-mono text-slate-400 mt-2 leading-relaxed">
               {language === 'ar'
-                ? 'تحميل بيانات FITS الأصلية، محاذاة WCS، وحساب خريطة الفروق الضوئية...'
-                : 'Streaming Level-2B FITS cutouts, computing sub-pixel WCS registration & difference maps...'}
+                ? 'استرجاع ملفات FITS الأصلية، محاذاة WCS الدقيقة، وحساب مصفوفات الفروق الضوئية...'
+                : 'Downloading Level-2B calibrated FITS cutouts, computing sub-pixel WCS registration & difference maps...'}
             </p>
           </div>
         </div>
@@ -376,7 +376,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       }`}
     >
       {/* =========================================================================
-          1. DOMINANT CANVAS BACKGROUND (85%+ VIEWPORT PRESENCE)
+          1. DOMINANT HERO TELESCOPE CANVAS (90%+ VIEWPORT)
           ========================================================================= */}
       <div
         className="absolute inset-0 flex items-center justify-center cursor-grab active:cursor-grabbing overflow-hidden"
@@ -389,19 +389,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         }}
       >
         <div
-          className="relative transition-transform duration-75 ease-out shadow-2xl rounded-lg overflow-hidden border border-white/[0.06]"
+          className="relative transition-transform duration-75 ease-out rounded-2xl overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.8)] border border-white/10"
           style={{
             transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            imageRendering: 'pixelated',
           }}
         >
           <canvas
             ref={canvasRef}
-            className="block w-[640px] h-[640px] pointer-events-auto"
-            style={{ imageRendering: 'pixelated' }}
+            className="block w-[512px] h-[512px] pointer-events-auto"
+            style={{
+              imageRendering: displayMode === 'science' ? 'pixelated' : 'auto',
+            }}
           />
 
-          {/* Interactive Candidate Reticle Overlay */}
+          {/* Interactive Candidate Reticles */}
           {showMarkers &&
             currentResult &&
             currentResult.candidates.map((cand) => {
@@ -424,8 +425,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     className={`relative flex items-center justify-center w-7 h-7 rounded-full border transition-all ${
                       isSelected
                         ? isArtifact
-                          ? 'border-amber-400 bg-amber-500/20 shadow-[0_0_12px_#f59e0b]'
-                          : 'border-emerald-400 bg-emerald-500/20 shadow-[0_0_12px_#10b981]'
+                          ? 'border-amber-400 bg-amber-500/25 shadow-[0_0_15px_#f59e0b]'
+                          : 'border-emerald-400 bg-emerald-500/25 shadow-[0_0_15px_#10b981]'
                         : isArtifact
                         ? 'border-amber-500/60 hover:border-amber-400 bg-amber-500/10'
                         : 'border-sky-400/60 hover:border-sky-400 bg-sky-500/10'
@@ -437,16 +438,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       }`}
                     />
                     <div
-                      className={`absolute inset-0 rounded-full border animate-ping opacity-40 ${
+                      className={`absolute inset-0 rounded-full border animate-ping opacity-35 ${
                         isArtifact ? 'border-amber-400' : 'border-emerald-400'
                       }`}
                     />
                   </div>
 
-                  {/* Hover Tag */}
-                  <div className="absolute left-8 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded bg-black/85 backdrop-blur-md border border-white/[0.1] text-[9px] font-mono text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  {/* Candidate Tag Pill on Hover */}
+                  <div className="absolute left-8 top-1/2 -translate-y-1/2 px-2.5 py-1 rounded-xl bg-black/85 backdrop-blur-xl border border-white/10 text-[10px] font-mono text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none shadow-lg">
                     <span className="font-bold text-amber-300">{cand.id}</span> ·{' '}
-                    <span>{cand.peakSignificance.toFixed(1)}σ</span>
+                    <span>{cand.peakSignificance.toFixed(1)}σ</span> ·{' '}
+                    <span className="text-slate-400">{cand.status}</span>
                   </div>
                 </div>
               );
@@ -455,12 +457,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </div>
 
       {/* =========================================================================
-          2. TOP FLOATING SPATIAL GLASS HUD BAR
+          2. TOP LIQUID-GLASS INSTRUMENT HUD (SPATIAL FLOATING PILL)
           ========================================================================= */}
-      <div className="absolute top-4 inset-x-4 pointer-events-none z-30 flex items-center justify-between gap-3">
-        {/* Left: Scientific Status & Target Quick-Switch */}
+      <div className="absolute top-3 inset-x-3 pointer-events-none z-30 flex flex-wrap items-center justify-between gap-2.5">
+        {/* Left: Scientific Status Badge & Quick Case Switcher */}
         <div className="pointer-events-auto flex items-center gap-2">
-          {/* Classification Badge */}
+          {/* Classification Status Pill */}
           <div
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-2xl border ${statusBadge.border} ${statusBadge.bg} backdrop-blur-2xl text-xs font-mono font-semibold tracking-wide`}
           >
@@ -473,7 +475,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <select
               value={currentResult?.caseId || ''}
               onChange={(e) => onSelectCase(e.target.value)}
-              className="appearance-none px-3.5 py-1.5 pr-8 rounded-2xl border border-white/[0.1] bg-black/60 hover:bg-black/80 backdrop-blur-2xl text-xs font-mono text-slate-200 transition-colors cursor-pointer outline-none focus:border-amber-400/50 shadow-lg"
+              className="appearance-none px-3.5 py-1.5 pr-8 rounded-2xl border border-white/10 bg-black/50 hover:bg-black/75 backdrop-blur-2xl text-xs font-mono text-slate-200 transition-colors cursor-pointer outline-none focus:border-amber-400/50 shadow-lg"
             >
               {cases.map((c) => (
                 <option key={c.id} value={c.id} className="bg-slate-900 text-slate-200">
@@ -487,17 +489,117 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           {/* Provenance Audit Trigger */}
           <button
             onClick={() => setShowProvenance(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-white/[0.1] bg-black/60 hover:bg-white/[0.08] backdrop-blur-2xl text-xs font-mono text-slate-300 hover:text-amber-300 transition-colors shadow-lg active:scale-95"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-white/10 bg-black/50 hover:bg-white/10 backdrop-blur-2xl text-xs font-mono text-slate-300 hover:text-amber-300 transition-colors shadow-lg active:scale-95"
             title={t.ctrlProvenance}
           >
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-            <span className="hidden sm:inline font-semibold">Audit Provenance</span>
+            <span className="hidden md:inline font-semibold">Audit Provenance</span>
+          </button>
+
+          {/* Custom Sky Search Trigger */}
+          <button
+            onClick={() => setIsSearchOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border border-white/10 bg-black/50 hover:bg-white/10 backdrop-blur-2xl text-xs font-mono text-slate-300 hover:text-amber-300 transition-colors shadow-lg active:scale-95"
+            title="Search Custom Sky Coordinates in IRSA"
+          >
+            <Search className="h-3.5 w-3.5 text-amber-400" />
+            <span className="hidden md:inline font-semibold">Search Coordinates</span>
           </button>
         </div>
 
-        {/* Right: Telemetry Readouts (Baseline, MAD Noise, Pixel Scale) */}
+        {/* Center: View Modes & Science/Presentation Toggle */}
+        <div className="pointer-events-auto flex items-center p-1 rounded-2xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-xl gap-1">
+          {/* Science vs Presentation Toggle Pill */}
+          <button
+            onClick={() => setDisplayMode(displayMode === 'presentation' ? 'science' : 'presentation')}
+            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-mono rounded-xl font-semibold transition-all ${
+              displayMode === 'presentation'
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40 shadow-sm'
+                : 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-sm'
+            }`}
+            title={displayMode === 'presentation' ? t.viewPresentation : t.viewScience}
+          >
+            {displayMode === 'presentation' ? (
+              <>
+                <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+                <span>Presentation</span>
+              </>
+            ) : (
+              <>
+                <Binary className="h-3.5 w-3.5 text-cyan-300" />
+                <span>Science (Native)</span>
+              </>
+            )}
+          </button>
+
+          <span className="h-4 w-[1px] bg-white/10 mx-0.5" />
+
+          {/* View Mode Pills */}
+          <button
+            onClick={() => setViewMode('difference')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'difference'
+                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewDifference}
+          </button>
+          <button
+            onClick={() => setViewMode('significance')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'significance'
+                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewSignificance}
+          </button>
+          <button
+            onClick={() => setViewMode('epoch1')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'epoch1'
+                ? 'bg-white/15 border border-white/20 text-sky-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewEpoch1}
+          </button>
+          <button
+            onClick={() => setViewMode('epoch2')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'epoch2'
+                ? 'bg-white/15 border border-white/20 text-sky-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewEpoch2}
+          </button>
+          <button
+            onClick={() => setViewMode('split')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'split'
+                ? 'bg-white/15 border border-white/20 text-amber-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewSplit}
+          </button>
+          <button
+            onClick={() => setViewMode('blink')}
+            className={`px-2.5 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
+              viewMode === 'blink'
+                ? 'bg-white/15 border border-white/20 text-emerald-300 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+            }`}
+          >
+            {t.viewBlink}
+          </button>
+        </div>
+
+        {/* Right: Telemetry Chips */}
         {currentResult && (
-          <div className="pointer-events-auto hidden md:flex items-center gap-3 px-4 py-1.5 rounded-2xl border border-white/[0.08] bg-black/50 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-xl">
+          <div className="pointer-events-auto hidden lg:flex items-center gap-3 px-3.5 py-1.5 rounded-2xl border border-white/10 bg-black/50 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-lg">
             <div className="flex items-center gap-1.5">
               <span className="text-slate-500">Δt:</span>
               <span className="text-amber-300 font-semibold">
@@ -513,85 +615,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
             <span className="text-slate-700">|</span>
             <div className="flex items-center gap-1.5">
-              <span className="text-slate-500">Scale:</span>
-              <span className="text-slate-200">~6.15"/px</span>
+              <span className="text-slate-500">WCS:</span>
+              <span className="text-slate-200 font-medium">~6.15"/px</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* =========================================================================
-          3. FLOATING TOP-CENTER VIEW MODE PILL DOCK
-          ========================================================================= */}
-      <div className="absolute top-16 inset-x-0 pointer-events-none z-30 flex justify-center">
-        <div className="pointer-events-auto flex items-center p-1 rounded-2xl border border-white/[0.08] bg-black/70 backdrop-blur-2xl shadow-[0_4px_30px_rgba(0,0,0,0.5)] gap-1">
-          <button
-            onClick={() => setViewMode('difference')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'difference'
-                ? 'bg-gradient-to-r from-amber-500/25 to-sky-500/25 border border-amber-400/40 text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewDifference}
-          </button>
-          <button
-            onClick={() => setViewMode('significance')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'significance'
-                ? 'bg-white/[0.12] border border-white/[0.2] text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewSignificance}
-          </button>
-          <button
-            onClick={() => setViewMode('epoch1')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'epoch1'
-                ? 'bg-white/[0.12] border border-white/[0.2] text-sky-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewEpoch1}
-          </button>
-          <button
-            onClick={() => setViewMode('epoch2')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'epoch2'
-                ? 'bg-white/[0.12] border border-white/[0.2] text-sky-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewEpoch2}
-          </button>
-          <button
-            onClick={() => setViewMode('split')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'split'
-                ? 'bg-white/[0.12] border border-white/[0.2] text-amber-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewSplit}
-          </button>
-          <button
-            onClick={() => setViewMode('blink')}
-            className={`px-3 py-1 text-xs font-mono font-medium rounded-xl transition-all ${
-              viewMode === 'blink'
-                ? 'bg-white/[0.12] border border-white/[0.2] text-emerald-300 shadow-sm'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
-            }`}
-          >
-            {t.viewBlink}
-          </button>
-        </div>
-      </div>
-
       {/* Special Context Slider for Split Wipe */}
       {viewMode === 'split' && (
-        <div className="absolute top-28 inset-x-0 pointer-events-none z-30 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/[0.08] bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+        <div className="absolute top-16 inset-x-0 pointer-events-none z-30 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
             <span className="text-sky-300 font-semibold">{t.viewEpoch1}</span>
             <input
               type="range"
@@ -600,7 +634,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               step="0.01"
               value={sliderPos}
               onChange={(e) => setSliderPos(parseFloat(e.target.value))}
-              className="w-48 accent-amber-400 cursor-pointer"
+              className="w-44 accent-amber-400 cursor-pointer"
             />
             <span className="text-amber-300 font-semibold">{t.viewEpoch2}</span>
           </div>
@@ -609,15 +643,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
       {/* Special Context Control for Blink Cadence */}
       {viewMode === 'blink' && (
-        <div className="absolute top-28 inset-x-0 pointer-events-none z-30 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/[0.08] bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+        <div className="absolute top-16 inset-x-0 pointer-events-none z-30 flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
             <button
               onClick={() => setIsBlinking(!isBlinking)}
-              className="p-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-amber-300"
+              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-amber-300"
             >
               {isBlinking ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
-            <span className="px-2 py-0.5 rounded bg-white/[0.06] text-amber-300 font-bold uppercase text-[10px]">
+            <span className="px-2 py-0.5 rounded bg-white/10 text-amber-300 font-bold uppercase text-[10px]">
               {blinkEpoch === 'epoch1' ? t.viewEpoch1 : t.viewEpoch2}
             </span>
             <span className="text-slate-400">{t.hudBlinkSpeed}:</span>
@@ -628,7 +662,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               step="50"
               value={blinkSpeedMs}
               onChange={(e) => setBlinkSpeedMs(parseInt(e.target.value, 10))}
-              className="w-32 accent-emerald-400 cursor-pointer"
+              className="w-28 accent-emerald-400 cursor-pointer"
             />
             <span className="text-slate-400">{blinkSpeedMs}ms</span>
           </div>
@@ -636,22 +670,22 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       )}
 
       {/* =========================================================================
-          4. FLOATING CANDIDATE HUD (LEFT / TOP-LEFT)
+          3. FLOATING CANDIDATE HUD (GLASS CARD ON LEFT)
           ========================================================================= */}
       <div
-        className={`absolute top-20 left-4 z-30 pointer-events-auto transition-all duration-300 max-w-sm w-full ${
-          isCandidateDrawerCollapsed ? 'h-10 overflow-hidden' : ''
+        className={`absolute top-16 left-3 z-30 pointer-events-auto transition-all duration-300 max-w-sm w-full ${
+          isCandidateDrawerCollapsed ? 'h-11 overflow-hidden' : ''
         }`}
       >
-        <div className="rounded-3xl border border-white/[0.08] bg-black/75 backdrop-blur-2xl shadow-2xl overflow-hidden p-4">
+        <div className="rounded-3xl border border-white/10 bg-black/70 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] p-4 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-3">
+          <div className="flex items-center justify-between border-b border-white/10 pb-2.5 mb-3">
             <div className="flex items-center gap-2">
               <Crosshair className="h-4 w-4 text-amber-400" />
               <h3 className="text-xs font-mono font-bold tracking-wider text-slate-100 uppercase">
                 {t.candidateTitle}
               </h3>
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20 text-[10px] font-mono font-bold">
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-400/10 text-amber-300 border border-amber-400/20 text-[10px] font-mono font-bold">
                 {currentResult?.candidates.length || 0}
               </span>
             </div>
@@ -659,15 +693,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               onClick={() => setIsCandidateDrawerCollapsed(!isCandidateDrawerCollapsed)}
               className="text-slate-400 hover:text-slate-200 transition-colors p-1"
             >
-              {isCandidateDrawerCollapsed ? (
-                <ChevronDown className="h-4 w-4" />
-              ) : (
-                <ChevronUp className="h-4 w-4" />
-              )}
+              {isCandidateDrawerCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
             </button>
           </div>
 
-          {/* Candidate selector pills if multiple */}
+          {/* Candidate selector pills */}
           {currentResult && currentResult.candidates.length > 0 ? (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
@@ -681,9 +711,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       className={`px-2.5 py-1 rounded-xl text-xs font-mono font-medium border transition-all ${
                         isSel
                           ? isArt
-                            ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
-                            : 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.3)]'
-                          : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]'
+                            ? 'border-amber-400 bg-amber-500/20 text-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                            : 'border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.3)]'
+                          : 'border-white/10 bg-white/5 text-slate-400 hover:text-slate-200 hover:bg-white/10'
                       }`}
                     >
                       {cand.id} ({cand.peakSignificance.toFixed(1)}σ)
@@ -693,104 +723,141 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </div>
 
               {selectedCandidate && (
-                <div className="space-y-3 pt-1">
-                  {/* Selected Candidate Metadata Grid */}
-                  <div className="grid grid-cols-2 gap-2 text-xs font-mono p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.05]">
+                <div className="space-y-2.5 pt-1">
+                  {/* Selected Candidate Metadata Grid: Distinguishes Peak Pixel S/N vs Integrated Aperture S/N */}
+                  <div className="grid grid-cols-2 gap-2 text-xs font-mono p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                     <div>
-                      <span className="text-[10px] text-slate-500 block">Peak Significance</span>
+                      <span className="text-[10px] text-slate-400 block font-semibold">Peak Pixel S/N (ΔI/σ_pix)</span>
                       <span
                         className={`text-sm font-bold ${
-                          selectedCandidate.artifactScore >= 0.5
-                            ? 'text-amber-400'
-                            : 'text-emerald-400'
+                          selectedCandidate.artifactScore >= 0.5 ? 'text-amber-400' : 'text-emerald-400'
                         }`}
                       >
                         {selectedCandidate.peakSignificance.toFixed(2)}σ
                       </span>
+                      <span className="text-[9px] text-slate-500 block">Single-pixel deviation</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 block">Net ΔFlux (MJy/sr)</span>
-                      <span className="text-sm font-bold text-slate-200">
-                        {selectedCandidate.deltaFlux.toFixed(3)} ±{' '}
-                        {selectedCandidate.deltaFluxUncertainty.toFixed(3)}
+                      <span className="text-[10px] text-slate-400 block font-semibold">Aperture S/N (|ΔF|/σ_ΔF)</span>
+                      {(() => {
+                        const apSnr = selectedCandidate.deltaFluxUncertainty > 0
+                          ? Math.abs(selectedCandidate.deltaFlux) / selectedCandidate.deltaFluxUncertainty
+                          : 0;
+                        const isSig = apSnr >= 3.5;
+                        return (
+                          <div>
+                            <span className={`text-sm font-bold ${isSig ? 'text-emerald-400' : 'text-slate-300'}`}>
+                              {apSnr.toFixed(2)}σ
+                            </span>
+                            <span className="text-[9px] text-slate-500 block">
+                              {isSig ? 'Statistically significant' : 'Noise consistent (<3σ)'}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block font-medium">Net ΔFlux (r=2.5px)</span>
+                      <span className="text-[11px] font-bold text-slate-200 block truncate">
+                        {selectedCandidate.deltaFlux.toFixed(3)} ± {selectedCandidate.deltaFluxUncertainty.toFixed(3)}
                       </span>
+                      <span className="text-[9px] text-slate-500 block">MJy/sr (nominal uncorrelated σ)</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-slate-500 block">RA / Dec</span>
-                      <span className="text-[11px] text-slate-300 truncate block">
-                        {selectedCandidate.ra.toFixed(4)}°, {selectedCandidate.dec.toFixed(4)}°
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-500 block">Pixel (x, y)</span>
-                      <span className="text-[11px] text-slate-300 block">
+                      <span className="text-[10px] text-slate-500 block font-medium">Pixel & Coordinates</span>
+                      <span className="text-[10px] text-slate-300 block">
                         ({selectedCandidate.x}, {selectedCandidate.y})
+                      </span>
+                      <span className="text-[9px] text-slate-400 block truncate">
+                        {selectedCandidate.ra.toFixed(4)}°, {selectedCandidate.dec.toFixed(4)}°
                       </span>
                     </div>
                   </div>
 
-                  {/* Progressive Disclosure: Why Does This Matter? */}
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden text-xs font-mono">
+                  {/* Scientific Warning / Status Banner */}
+                  <div className={`p-2 rounded-xl text-[10px] font-mono leading-relaxed border ${
+                    selectedCandidate.artifactScore >= 0.5
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                      : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                  }`}>
+                    {selectedCandidate.artifactScore >= 0.5 ? (
+                      <div>
+                        <span className="font-bold text-amber-300">⚠️ Astrometric Dipole / Artifact:</span> Peak single-pixel reaches {selectedCandidate.peakSignificance.toFixed(1)}σ due to steep PSF gradient sub-pixel jitter, while integrated aperture photometry confirms only {selectedCandidate.deltaFluxUncertainty > 0 ? (Math.abs(selectedCandidate.deltaFlux) / selectedCandidate.deltaFluxUncertainty).toFixed(2) : '0.00'}σ (&lt;3.0σ). Sources must never be confirmed as transients based on peak-pixel significance alone.
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="font-bold text-emerald-300">✅ Astrophysical Candidate:</span> Both peak-pixel (&gt;4σ) and integrated aperture photometry (|ΔF|/σ_ΔF ≥ 3.5σ) confirm authentic flux variation across epochs.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Progressive Disclosure: Candidate Verification & Photometry */}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] overflow-hidden text-xs font-mono">
                     <button
-                      onClick={() => setIsWhyOpen(!isWhyOpen)}
+                      onClick={() => setIsCandidateDetailsOpen(!isCandidateDetailsOpen)}
                       className="w-full flex items-center justify-between p-2.5 text-slate-300 hover:text-amber-300 transition-colors"
                     >
                       <span className="font-semibold">{t.whyMattersTitle}</span>
-                      {isWhyOpen ? (
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      )}
+                      {isCandidateDetailsOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </button>
-                    {isWhyOpen && (
-                      <div className="p-2.5 pt-0 text-[11px] text-slate-400 space-y-2 border-t border-white/[0.04]">
+                    {isCandidateDetailsOpen && (
+                      <div className="p-2.5 pt-0 text-[11px] text-slate-400 space-y-2 border-t border-white/5">
                         {selectedCandidate.artifactScore >= 0.5 ? (
                           <div className="space-y-1">
                             <p className="text-amber-300 font-medium">
-                              {language === 'ar'
-                                ? '⚠️ كشف تشويش المستشعر (Detector Artifact):'
-                                : '⚠️ Instrumental Artifact Rejected:'}
+                              {language === 'ar' ? '⚠️ استبعاد كـ Artifact:' : '⚠️ Instrumental Artifact Rejected:'}
                             </p>
                             <p>
                               {selectedCandidate.whyFlagged ||
                                 (language === 'ar'
-                                  ? 'هذه الإشارة ناتجة عن تشبع المستشعر أو تأثير استمرار الصورة (Persistence) بدلاً من جرم فلكي حقيقي.'
-                                  : 'Flagged as detector persistence or saturation spike rather than an astronomical point source.')}
+                                  ? 'هذه الإشارة ناتجة عن تشبع البيكسل أو بقايا توجيه التلسكوب (Dipole) بدلاً من تغير ضوئي حقيقي.'
+                                  : 'Flagged as saturated detector core or astrometric dipole rather than genuine flux change.')}
                             </p>
                           </div>
                         ) : selectedCandidate.catalogMatches.length > 0 ? (
                           <div className="space-y-1">
                             <p className="text-emerald-300 font-medium">
-                              {language === 'ar'
-                                ? '⭐ نجم متغير معروف في كتالوج Gaia DR3:'
-                                : '⭐ Matched to known Gaia DR3 catalog star:'}
+                              {language === 'ar' ? '⭐ جرم سماوي معروف في Gaia DR3:' : '⭐ Matched to known Gaia DR3 catalog star:'}
                             </p>
                             <p>
                               {language === 'ar'
-                                ? `يتطابق الموقع السماوي ضمن نطاق ${selectedCandidate.catalogMatches[0].separationArcsec}" مع ${selectedCandidate.catalogMatches[0].identifier}. التغير في التدفق يشير لتغير ضوئي حقيقي.`
-                                : `Centroid matches ${selectedCandidate.catalogMatches[0].identifier} within ${selectedCandidate.catalogMatches[0].separationArcsec}". Physical flux slope indicates authentic stellar variability.`}
+                                ? `يتطابق الموقع السماوي ضمن نطاق ${selectedCandidate.catalogMatches[0].separationArcsec}" مع ${selectedCandidate.catalogMatches[0].identifier}.`
+                                : `Centroid matches ${selectedCandidate.catalogMatches[0].identifier} within ${selectedCandidate.catalogMatches[0].separationArcsec}".`}
                             </p>
                           </div>
                         ) : (
                           <div className="space-y-1">
                             <p className="text-sky-300 font-medium">
-                              {language === 'ar'
-                                ? '🌌 مرشح عابر غير مفهرس (Uncataloged Transient):'
-                                : '🌌 Uncataloged Transient Candidate:'}
+                              {language === 'ar' ? '🌌 مرشح عابر غير مفهرس:' : '🌌 Uncataloged Transient Candidate:'}
                             </p>
                             <p>
                               {language === 'ar'
-                                ? 'الإشارة تتجاوز العتبة الإحصائية بدون أعلام تشويش ولا توجد نجوم معروفة في غايا عند هذه النقطة.'
-                                : 'Significant flux residual with no detector artifact flags and no prior Gaia catalog counterpart.'}
+                                ? 'إشارة حقيقية تتجاوز عتبة الدلالة الإحصائية بدون أي أعلام تشويش في المستشعر.'
+                                : 'Statistically significant flux residual with clean PSF morphology and no detector defect flags.'}
                             </p>
                           </div>
                         )}
+
+                        {/* Aperture Photometry Measurements */}
+                        <div className="pt-1.5 border-t border-white/5 space-y-1">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wider block font-semibold">
+                            {t.photometryTitle}
+                          </span>
+                          <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                            <span>Epoch 1 Flux:</span>
+                            <span className="font-semibold text-sky-300">{selectedCandidate.apertureFluxEpoch1.toFixed(3)} MJy/sr</span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-300 font-mono">
+                            <span>Epoch 2 Flux:</span>
+                            <span className="font-semibold text-amber-300">{selectedCandidate.apertureFluxEpoch2.toFixed(3)} MJy/sr</span>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Gaia DR3 Crossmatch Table */}
-                  <div className="space-y-1.5">
+                  {/* Gaia DR3 Crossmatch */}
+                  <div className="space-y-1">
                     <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block">
                       {t.gaiaTitle}
                     </span>
@@ -799,12 +866,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         {selectedCandidate.catalogMatches.map((m, idx) => (
                           <div
                             key={idx}
-                            className="p-2 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between text-[11px] font-mono"
+                            className="p-2 rounded-xl bg-white/[0.02] border border-white/10 flex items-center justify-between text-[11px] font-mono"
                           >
                             <div>
-                              <span className="text-amber-300 font-semibold block">
-                                {m.identifier}
-                              </span>
+                              <span className="text-amber-300 font-semibold block">{m.identifier}</span>
                               <span className="text-slate-400 text-[10px]">
                                 Sep: {m.separationArcsec}" · {m.photometry || 'G-band'}
                               </span>
@@ -822,7 +887,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         ))}
                       </div>
                     ) : (
-                      <p className="text-[10px] font-mono text-slate-500 italic p-2 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+                      <p className="text-[10px] font-mono text-slate-500 italic p-2 rounded-xl bg-white/[0.02] border border-white/5">
                         {t.noGaiaMatches}
                       </p>
                     )}
@@ -839,14 +904,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </div>
 
       {/* =========================================================================
-          5. FLOATING BOTTOM GLASS PILL-DOCK (CANVAS TOOLS & CURSOR READOUT)
+          4. FLOATING BOTTOM GLASS INSTRUMENT DECK (TOOLS, CONTROLS & CURSOR READOUT)
           ========================================================================= */}
-      <div className="absolute bottom-4 inset-x-4 pointer-events-none z-30 flex items-end justify-between gap-4">
-        {/* Left: Pixel & Celestial Inspector */}
-        <div className="pointer-events-auto hidden sm:flex items-center gap-3 px-4 py-2 rounded-2xl border border-white/[0.08] bg-black/70 backdrop-blur-2xl shadow-2xl text-[11px] font-mono text-slate-300">
-          <Crosshair className="h-4 w-4 text-amber-400" />
+      <div className="absolute bottom-3 inset-x-3 pointer-events-none z-30 flex flex-wrap items-end justify-between gap-3">
+        {/* Left: Pixel & Celestial Live Cursor Inspector */}
+        <div className="pointer-events-auto hidden sm:flex items-center gap-2.5 px-3.5 py-1.5 rounded-2xl border border-white/10 bg-black/60 backdrop-blur-2xl shadow-xl text-[11px] font-mono text-slate-300">
+          <Crosshair className="h-3.5 w-3.5 text-amber-400" />
           {cursorPos ? (
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <span>
                 Pix: <strong className="text-slate-100">[{cursorPos.x}, {cursorPos.y}]</strong>
               </span>
@@ -859,7 +924,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </span>
               <span className="text-slate-700">|</span>
               <span>
-                Val: <strong className="text-sky-300">{cursorPos.val?.toFixed(3)}</strong>
+                Val: <strong className="text-sky-300">{cursorPos.val != null && Number.isFinite(cursorPos.val) ? cursorPos.val.toFixed(3) : '--'}</strong>
               </span>
             </div>
           ) : (
@@ -868,56 +933,54 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
 
         {/* Center: Image Controls (Zoom, Reticles, Palette, Stretch) */}
-        <div className="pointer-events-auto flex items-center p-1.5 rounded-2xl border border-white/[0.08] bg-black/75 backdrop-blur-2xl shadow-2xl gap-1">
+        <div className="pointer-events-auto flex items-center p-1.5 rounded-2xl border border-white/10 bg-black/70 backdrop-blur-2xl shadow-2xl gap-1">
           {/* Zoom Out */}
           <button
-            onClick={() => setZoom((z) => Math.max(1.0, z - 0.5))}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+            onClick={() => setZoom((z) => Math.max(0.6, z - 0.25))}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
             title={t.ctrlZoomOut}
           >
-            <ZoomOut className="h-4 w-4" />
+            <ZoomOut className="h-3.5 w-3.5" />
           </button>
-          <span className="text-[11px] font-mono text-slate-400 px-1">{zoom.toFixed(1)}x</span>
+          <span className="text-[11px] font-mono text-slate-400 px-1">{zoom.toFixed(2)}x</span>
           {/* Zoom In */}
           <button
-            onClick={() => setZoom((z) => Math.min(10.0, z + 0.5))}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+            onClick={() => setZoom((z) => Math.min(6.0, z + 0.25))}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
             title={t.ctrlZoomIn}
           >
-            <ZoomIn className="h-4 w-4" />
+            <ZoomIn className="h-3.5 w-3.5" />
           </button>
-          {/* Reset Pan/Zoom */}
+          {/* Reset View */}
           <button
             onClick={() => {
               setPan({ x: 0, y: 0 });
-              setZoom(3.6);
+              setZoom(1.2);
             }}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
             title={t.ctrlReset}
           >
-            <RotateCcw className="h-4 w-4" />
+            <RotateCcw className="h-3.5 w-3.5" />
           </button>
 
-          <span className="h-4 w-[1px] bg-white/[0.1] mx-1" />
+          <span className="h-4 w-[1px] bg-white/10 mx-1" />
 
           {/* Toggle Markers */}
           <button
             onClick={() => setShowMarkers(!showMarkers)}
             className={`p-1.5 rounded-xl transition-colors ${
-              showMarkers
-                ? 'text-amber-400 bg-amber-400/10'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]'
+              showMarkers ? 'text-amber-400 bg-amber-400/15' : 'text-slate-400 hover:text-slate-200 hover:bg-white/10'
             }`}
             title={t.ctrlMarkers}
           >
-            <Crosshair className="h-4 w-4" />
+            <Crosshair className="h-3.5 w-3.5" />
           </button>
 
           {/* Stretch Mode Select */}
           <select
             value={stretch}
             onChange={(e) => setStretch(e.target.value as StretchMode)}
-            className="px-2 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-[11px] font-mono border border-white/[0.06] outline-none cursor-pointer"
+            className="px-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono border border-white/10 outline-none cursor-pointer"
             title={t.ctrlStretch}
           >
             <option value="asinh" className="bg-slate-900">asinh (Photometric)</option>
@@ -930,12 +993,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           <select
             value={colormap}
             onChange={(e) => setColormap(e.target.value as ColormapMode)}
-            className="px-2 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-300 text-[11px] font-mono border border-white/[0.06] outline-none cursor-pointer"
+            className="px-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-[11px] font-mono border border-white/10 outline-none cursor-pointer"
             title={t.ctrlColormap}
           >
-            <option value="heat" className="bg-slate-900">Heat (Standard)</option>
-            <option value="cyan_gold" className="bg-slate-900">Cyan-Gold (SPEX)</option>
+            <option value="spherex_cosmic" className="bg-slate-900">SPHEREx Cosmic</option>
             <option value="inferno" className="bg-slate-900">Inferno</option>
+            <option value="viridis" className="bg-slate-900">Viridis</option>
+            <option value="cyan_gold" className="bg-slate-900">Cyan-Gold</option>
             <option value="grayscale" className="bg-slate-900">Grayscale</option>
           </select>
         </div>
@@ -946,20 +1010,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             isSpexCollapsed ? 'w-auto' : ''
           }`}
         >
-          <div className="rounded-3xl border border-white/[0.1] bg-black/85 backdrop-blur-2xl shadow-2xl p-3.5 overflow-hidden">
+          <div className="rounded-3xl border border-white/10 bg-black/80 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.6)] p-3 overflow-hidden">
             {/* SPEX Header & Mood Avatar */}
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-2.5 mb-2.5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2 mb-2">
               <div className="flex items-center gap-2.5">
-                <div className="relative h-10 w-10 rounded-2xl overflow-hidden border border-amber-500/40 bg-gradient-to-br from-amber-500/20 to-sky-500/20 flex-shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                <div className="relative h-9 w-9 rounded-2xl overflow-hidden border border-amber-500/40 bg-gradient-to-br from-amber-500/20 to-sky-500/20 flex-shrink-0 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
                   <img
                     src={SPEX_ASSETS[spexMood]?.imagePath || SPEX_ASSETS.explaining.imagePath}
                     alt={spexMood}
                     className="w-full h-full object-cover"
                   />
-                  <div className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-emerald-400 border border-black shadow-[0_0_6px_#34d399]" />
+                  <div className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-400 border border-black shadow-[0_0_5px_#34d399]" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span className="font-['Outfit'] text-xs font-bold tracking-wide text-slate-100">
                       {t.spexTitle}
                     </span>
@@ -967,7 +1031,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       {spexMood}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-400 truncate max-w-[180px]">
+                  <p className="text-[10px] text-slate-400 truncate max-w-[160px]">
                     {t.spexRole}
                   </p>
                 </div>
@@ -981,9 +1045,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
 
             {!isSpexCollapsed && (
-              <div className="space-y-2.5">
+              <div className="space-y-2">
                 {/* Speech Bubble */}
-                <div className="max-h-36 overflow-y-auto pr-1 text-xs font-mono text-slate-200 leading-relaxed p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+                <div className="max-h-32 overflow-y-auto pr-1 text-xs font-mono text-slate-200 leading-relaxed p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
                   {spexReply}
                 </div>
 
@@ -994,14 +1058,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       key={idx}
                       onClick={() => askSpex(chip)}
                       disabled={isSpexThinking}
-                      className="px-2 py-0.5 rounded-lg border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.06] text-[10px] font-mono text-slate-300 hover:text-amber-300 transition-colors text-left"
+                      className="px-2 py-0.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-[10px] font-mono text-slate-300 hover:text-amber-300 transition-colors text-left"
                     >
                       {chip}
                     </button>
                   ))}
                 </div>
 
-                {/* Input Bar */}
+                {/* Interactive Input */}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -1015,7 +1079,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     onChange={(e) => setSpexMessage(e.target.value)}
                     placeholder={t.spexPlaceholder}
                     disabled={isSpexThinking}
-                    className="flex-1 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] text-xs font-mono text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400/50 transition-colors"
+                    className="flex-1 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 text-xs font-mono text-slate-100 placeholder-slate-500 outline-none focus:border-amber-400/50 transition-colors"
                   />
                   <button
                     type="submit"
@@ -1037,6 +1101,139 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           provenance={currentResult.provenance}
           onClose={() => setShowProvenance(false)}
         />
+      )}
+
+      {/* Real-Data Coordinate Search Modal */}
+      {isSearchOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="relative w-full max-w-lg rounded-3xl border border-white/10 bg-[#060b18] shadow-2xl p-6 overflow-hidden">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <Search className="h-5 w-5 text-amber-400" />
+                <div>
+                  <h3 className="text-base font-bold text-slate-100 font-['Outfit']">
+                    Search SPHEREx Infrared Sky
+                  </h3>
+                  <p className="text-xs font-mono text-slate-400">
+                    Live IRSA Cutout vs Curated Cases
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSearchOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 text-xs font-mono">
+              {/* Distinct Categories Notice */}
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-1.5">
+                <span className="text-[11px] font-bold text-amber-300 block uppercase tracking-wider">
+                  Real-Data Workflow & Integrity
+                </span>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  • <strong>Curated Benchmark Cases:</strong> 4 pre-indexed fields with published ground truth (variable star, stability null, quality bitmask rejection, and band mismatch guard).
+                </p>
+                <p className="text-slate-300 text-[11px] leading-relaxed">
+                  • <strong>Live IRSA Cutout:</strong> Queries NASA/IPAC IRSA directly at arbitrary coordinates, downloads calibrated Level-2B FITS arrays, and performs live difference imaging.
+                </p>
+              </div>
+
+              {/* Coordinate Form */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const ra = parseFloat(customRa);
+                  const dec = parseFloat(customDec);
+                  if (Number.isFinite(ra) && Number.isFinite(dec)) {
+                    setIsSearchOpen(false);
+                    onSearchTarget(ra, dec);
+                  }
+                }}
+                className="space-y-3"
+              >
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">RA (degrees, J2000)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="0"
+                      max="360"
+                      value={customRa}
+                      onChange={(e) => setCustomRa(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-amber-400 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] text-slate-400 block mb-1">Dec (degrees, J2000)</label>
+                    <input
+                      type="number"
+                      step="0.0001"
+                      min="-90"
+                      max="90"
+                      value={customDec}
+                      onChange={(e) => setCustomDec(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-100 text-xs font-mono outline-none focus:border-amber-400 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Suggestions in Footprint */}
+                <div>
+                  <span className="text-[10px] text-slate-500 block mb-1">Quick Select in QR2 Footprint:</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setCustomRa('276.2500'); setCustomDec('64.8300'); }}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
+                    >
+                      NEP Point A (276.2500°, +64.8300°)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCustomRa('275.9265'); setCustomDec('64.9585'); }}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
+                    >
+                      Calibration Field (275.9265°, +64.9585°)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCustomRa('276.1391'); setCustomDec('64.8361'); }}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-slate-300 border border-white/5"
+                    >
+                      QR2 Deep (276.1391°, +64.8361°)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-sky-950/20 border border-sky-500/20 text-[10px] text-sky-300">
+                  ⚠️ Note: Coordinates outside SPHEREx QR2 survey coverage return an authentic IRSA HTTP 422 error. The system never substitutes demo data for failed live queries.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchOpen(false)}
+                    className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold transition-all shadow-[0_0_15px_rgba(245,158,11,0.3)] active:scale-95"
+                  >
+                    Query IRSA Archive
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

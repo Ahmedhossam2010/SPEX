@@ -39,8 +39,10 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({ provenance, on
             </div>
             <p className="text-slate-300 mb-2">{provenance.irsaArchiveSource}</p>
             <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
+              <div>Type: <span className="text-amber-300 font-bold">{provenance.investigationType || 'Curated Archival Case'}</span></div>
               <div>Data Release: <span className="text-slate-200">{provenance.dataRelease}</span></div>
               <div>Run Timestamp: <span className="text-slate-200">{new Date(provenance.timestamp).toUTCString()}</span></div>
+              <div>Case ID: <span className="text-slate-200">{provenance.caseId}</span></div>
             </div>
           </div>
 

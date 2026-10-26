@@ -81,7 +81,7 @@ export class ScientificPipeline {
   }
 
   /**
-   * Align Epoch 1 onto Epoch 2 using sub-pixel cross correlation on central stars
+   * Align Epoch 1 onto Epoch 2 using WCS projection and normalized cross-correlation
    */
   public static computeRegistration(
     fits1: FITSImageData,
@@ -90,40 +90,54 @@ export class ScientificPipeline {
     const w = Math.min(fits1.width, fits2.width);
     const h = Math.min(fits1.height, fits2.height);
 
-    // Coordinate offset from WCS reference points
-    const wcsPix1In2 = WCS.skyToPix(fits1.wcs.crval1, fits1.wcs.crval2, fits2.wcs);
-    const initialDx = (fits1.wcs.crpix1 - 1) - wcsPix1In2.x;
-    const initialDy = (fits1.wcs.crpix2 - 1) - wcsPix1In2.y;
+    // Compute coordinate offset by projecting the center of fits2 into fits1
+    const cx2 = w / 2;
+    const cy2 = h / 2;
+    const centerSky = WCS.pixToSky(cx2, cy2, fits2.wcs);
+    const centerIn1 = WCS.skyToPix(centerSky.ra, centerSky.dec, fits1.wcs);
 
-    // Small-window cross-correlation search around initial shift (-3 to +3 pixels)
+    let initialDx = centerIn1.x - cx2;
+    let initialDy = centerIn1.y - cy2;
+
+    if (!Number.isFinite(initialDx) || Math.abs(initialDx) > w / 2) initialDx = 0;
+    if (!Number.isFinite(initialDy) || Math.abs(initialDy) > h / 2) initialDy = 0;
+
+    // Cross-correlation refinement search around WCS shift (-2 to +2 pixels)
     let bestScore = -Infinity;
     let bestDx = 0;
     let bestDy = 0;
 
-    const pad = 8;
+    const pad = 6;
     if (w > pad * 2 && h > pad * 2) {
       for (let sY = -2; sY <= 2; sY++) {
         for (let sX = -2; sX <= 2; sX++) {
           let dotProduct = 0;
           let norm1 = 0;
           let norm2 = 0;
+          let count = 0;
 
           for (let y = pad; y < h - pad; y++) {
             for (let x = pad; x < w - pad; x++) {
-              const v2 = fits2.data[y * w + x] - fits2.stats.median;
-              const x1 = x + sX;
-              const y1 = y + sY;
+              const v2 = fits2.data[y * w + x];
+              if (!Number.isFinite(v2)) continue;
+              const x1 = Math.round(x + initialDx + sX);
+              const y1 = Math.round(y + initialDy + sY);
               if (x1 >= 0 && x1 < w && y1 >= 0 && y1 < h) {
-                const v1 = fits1.data[y1 * w + x1] - fits1.stats.median;
-                dotProduct += v1 * v2;
-                norm1 += v1 * v1;
-                norm2 += v2 * v2;
+                const v1 = fits1.data[y1 * w + x1];
+                if (Number.isFinite(v1)) {
+                  const dev2 = v2 - fits2.stats.median;
+                  const dev1 = v1 - fits1.stats.median;
+                  dotProduct += dev1 * dev2;
+                  norm1 += dev1 * dev1;
+                  norm2 += dev2 * dev2;
+                  count++;
+                }
               }
             }
           }
 
           const denom = Math.sqrt(norm1 * norm2);
-          const score = denom > 0 ? dotProduct / denom : -1;
+          const score = denom > 0 && count > 50 ? dotProduct / denom : -1;
           if (score > bestScore) {
             bestScore = score;
             bestDx = sX;
@@ -133,19 +147,20 @@ export class ScientificPipeline {
       }
     }
 
-    const totalDx = Number.isFinite(initialDx) && Math.abs(initialDx) < 5 ? initialDx + bestDx : bestDx;
-    const totalDy = Number.isFinite(initialDy) && Math.abs(initialDy) < 5 ? initialDy + bestDy : bestDy;
+    // Only apply cross-correlation shift if it improves correlation noticeably
+    const totalDx = initialDx + (bestScore > 0.6 ? bestDx : 0);
+    const totalDy = initialDy + (bestScore > 0.6 ? bestDy : 0);
 
     return {
       dx: totalDx,
       dy: totalDy,
-      method: 'WCS + Normalized Cross-Correlation Peak',
+      method: 'WCS Celestial Projection + Normalized Cross-Correlation Peak',
       quality: bestScore > 0.8 ? 'Excellent (r > 0.8)' : bestScore > 0.4 ? 'Good (r > 0.4)' : 'Nominal WCS',
     };
   }
 
   /**
-   * Resample array with fractional pixel translation (dx, dy) using bilinear interpolation
+   * Resample array with fractional pixel translation (dx, dy) using bilinear interpolation with NaN guard
    */
   public static resampleBilinear(
     data: Float32Array,
@@ -161,8 +176,8 @@ export class ScientificPipeline {
     const output = new Float32Array(width * height);
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        const srcX = x - dx;
-        const srcY = y - dy;
+        const srcX = x + dx;
+        const srcY = y + dy;
 
         const x0 = Math.floor(srcX);
         const y0 = Math.floor(srcY);
@@ -173,19 +188,27 @@ export class ScientificPipeline {
           const fx = srcX - x0;
           const fy = srcY - y0;
 
+          const w00 = (1 - fx) * (1 - fy);
+          const w10 = fx * (1 - fy);
+          const w01 = (1 - fx) * fy;
+          const w11 = fx * fy;
+
           const v00 = data[y0 * width + x0];
           const v10 = data[y0 * width + x1];
           const v01 = data[y1 * width + x0];
           const v11 = data[y1 * width + x1];
 
-          output[y * width + x] =
-            v00 * (1 - fx) * (1 - fy) +
-            v10 * fx * (1 - fy) +
-            v01 * (1 - fx) * fy +
-            v11 * fx * fy;
+          let weightedSum = 0;
+          let weightTotal = 0;
+
+          if (Number.isFinite(v00)) { weightedSum += v00 * w00; weightTotal += w00; }
+          if (Number.isFinite(v10)) { weightedSum += v10 * w10; weightTotal += w10; }
+          if (Number.isFinite(v01)) { weightedSum += v01 * w01; weightTotal += w01; }
+          if (Number.isFinite(v11)) { weightedSum += v11 * w11; weightTotal += w11; }
+
+          output[y * width + x] = weightTotal > 0 ? weightedSum / weightTotal : NaN;
         } else {
-          // Out of boundary
-          output[y * width + x] = data[y * width + x];
+          output[y * width + x] = NaN;
         }
       }
     }
@@ -223,35 +246,48 @@ export class ScientificPipeline {
     const significance = new Float32Array(size);
 
     let diffSum = 0;
+    let validDiffCount = 0;
     let minD = Infinity;
     let maxD = -Infinity;
 
     for (let i = 0; i < size; i++) {
       const v2 = fits2.data[i];
       const v1 = alignedEpoch1[i];
-      const d = v2 - v1;
-      diff[i] = d;
 
-      // Independent uncertainty propagation: sigma_D^2 = sigma_1^2 + sigma_2^2
-      const varD = Math.max(1e-12, (alignedVar1[i] || fits1.stats.robustNoise ** 2) + (var2[i] || fits2.stats.robustNoise ** 2));
-      variance[i] = varD;
+      if (Number.isFinite(v2) && Number.isFinite(v1)) {
+        const d = v2 - v1;
+        diff[i] = d;
 
-      const sigmaD = Math.sqrt(varD);
-      const s = sigmaD > 0 ? d / sigmaD : 0;
-      significance[i] = s;
+        // Independent uncertainty propagation: sigma_D^2 = sigma_1^2 + sigma_2^2
+        const v1_unc = Number.isFinite(alignedVar1[i]) ? alignedVar1[i] : fits1.stats.robustNoise ** 2;
+        const v2_unc = Number.isFinite(var2[i]) ? var2[i] : fits2.stats.robustNoise ** 2;
+        const varD = Math.max(1e-12, v1_unc + v2_unc);
+        variance[i] = varD;
 
-      if (d < minD) minD = d;
-      if (d > maxD) maxD = d;
-      diffSum += d;
+        const sigmaD = Math.sqrt(varD);
+        const s = sigmaD > 0 ? d / sigmaD : 0;
+        significance[i] = s;
+
+        if (d < minD) minD = d;
+        if (d > maxD) maxD = d;
+        diffSum += d;
+        validDiffCount++;
+      } else {
+        diff[i] = NaN;
+        variance[i] = Math.max(1e-12, (fits1.stats.robustNoise ** 2) + (fits2.stats.robustNoise ** 2));
+        significance[i] = 0;
+      }
     }
 
-    const meanD = diffSum / size;
+    const meanD = validDiffCount > 0 ? diffSum / validDiffCount : 0;
     let varDiffSum = 0;
     for (let i = 0; i < size; i++) {
-      const delta = diff[i] - meanD;
-      varDiffSum += delta * delta;
+      if (Number.isFinite(diff[i])) {
+        const delta = diff[i] - meanD;
+        varDiffSum += delta * delta;
+      }
     }
-    const stdD = Math.sqrt(varDiffSum / size);
+    const stdD = validDiffCount > 0 ? Math.sqrt(varDiffSum / validDiffCount) : 0;
 
     // Robust noise in difference image via MAD
     const diffValues = Array.from(diff).filter(Number.isFinite);
@@ -377,12 +413,23 @@ export class ScientificPipeline {
             // Sky coordinates
             const sky = WCS.pixToSky(x, y, wcs);
 
+            // Aperture S/N verification: authentic astrophysical sources require significant integrated aperture flux
+            const apertureSnr = phot.deltaUncertainty > 0 ? Math.abs(phot.deltaFlux) / phot.deltaUncertainty : 0;
             let status: CandidateDetection['status'] = 'Candidate';
-            if (artifact.artifactScore >= 0.65) {
+            if (artifact.artifactScore >= 0.65 || artifact.flags.includes('REGISTRATION_OR_PSF_DIPOLE')) {
               status = 'Possible artifact';
-            } else if (absS >= 4.5 && artifact.artifactScore < 0.35) {
+            } else if (apertureSnr < 3.0 && absS >= 4.0) {
+              // High single-pixel residual without significant integrated aperture flux is an unmodeled PSF/registration artifact
+              status = 'Possible artifact';
+              if (!artifact.flags.includes('REGISTRATION_OR_PSF_DIPOLE')) {
+                artifact.flags.push('REGISTRATION_OR_PSF_DIPOLE');
+              }
+              artifact.whyFlagged = (artifact.whyFlagged ? artifact.whyFlagged + ' ' : '') +
+                'High single-pixel difference is not confirmed by integrated aperture photometry (aperture S/N < 3.0σ), consistent with pointing jitter or PSF breathing.';
+              artifact.artifactScore = Math.max(artifact.artifactScore, 0.75);
+            } else if (apertureSnr >= 3.5 && artifact.artifactScore < 0.35) {
               status = 'Candidate';
-            } else if (absS >= 3.2) {
+            } else {
               status = 'Insufficient evidence';
             }
 
@@ -418,7 +465,25 @@ export class ScientificPipeline {
   }
 
   /**
-   * Exact circular aperture photometry with background annulus subtraction
+   * Circular aperture photometry with local sky background annulus subtraction
+   * 
+   * Photometry Units & Flux Calibration:
+   * - Native FITS data are calibrated in surface brightness (BUNIT = 'MJy/sr').
+   * - Pixel scale is ~6.15 arcsec/pixel; pixel solid angle Omega_pix ≈ 8.89e-10 sr.
+   * - 1 MJy/sr corresponds to ~889 uJy per pixel beam (F_Jy = I * 1e6 * Omega_pix).
+   * - Aperture sum computes integrated surface brightness across the aperture: sum(I_i - <I_sky>).
+   * 
+   * Geometry:
+   * - Target Aperture: r_ap = 2.5 pixels (~15.4 arcsec radius, enclosing ~85% of SPHEREx PSF energy).
+   * - Background Annulus: r_in = 4.0 pixels to r_out = 6.0 pixels (~24.6 to 36.9 arcsec).
+   * - Background Subtraction: F_net = sum_ap(I_i) - N_ap * <I_sky>.
+   * 
+   * Variance Propagation & Correlated Noise Limitation:
+   * - Uncorrelated variance propagation: sigma_net^2 = sum_ap(sigma_i^2) + (N_ap^2 / N_sky) * sigma_sky^2.
+   * - Limitation Note: Bilinear sub-pixel resampling and detector inter-pixel capacitance (IPC)
+   *   introduce positive spatial covariance between adjacent pixels (cov(I_i, I_j) > 0).
+   *   Assuming independent pixel noise underestimates true aperture noise by ~15-30%.
+   *   Reported aperture uncertainties are nominal uncorrelated estimates.
    */
   public static aperturePhotometry(
     cx: number,
@@ -442,6 +507,9 @@ export class ScientificPipeline {
     // Background annulus in difference image
     let bkgDiffSum = 0;
     let bkgPixels = 0;
+    let bkg1Sum = 0;
+    let bkg2Sum = 0;
+    let bkgVarSum = 0;
 
     const maxR = Math.ceil(rOut);
     for (let dy = -maxR; dy <= maxR; dy++) {
@@ -452,31 +520,52 @@ export class ScientificPipeline {
           const dist = Math.hypot(dx, dy);
           const idx = py * width + px;
 
+          const dVal = diff[idx];
+          const vVal = varMap[idx];
+          const d1 = data1[idx];
+          const d2 = data2[idx];
+
           if (dist <= rAp) {
-            sum1 += data1[idx];
-            sum2 += data2[idx];
-            sumDiff += diff[idx];
-            sumVar += varMap[idx];
-            apPixels++;
+            if (Number.isFinite(dVal)) {
+              sumDiff += dVal;
+              sumVar += Number.isFinite(vVal) ? vVal : 0;
+              if (Number.isFinite(d1)) sum1 += d1;
+              if (Number.isFinite(d2)) sum2 += d2;
+              apPixels++;
+            }
           } else if (dist >= rIn && dist <= rOut) {
-            bkgDiffSum += diff[idx];
-            bkgPixels++;
+            if (Number.isFinite(dVal)) {
+              bkgDiffSum += dVal;
+              if (Number.isFinite(d1)) bkg1Sum += d1;
+              if (Number.isFinite(d2)) bkg2Sum += d2;
+              if (Number.isFinite(vVal)) bkgVarSum += vVal;
+              bkgPixels++;
+            }
           }
         }
       }
     }
 
     const bkgDiffMean = bkgPixels > 0 ? bkgDiffSum / bkgPixels : 0;
-    const netDeltaFlux = sumDiff - bkgDiffMean * apPixels;
-    const deltaUncertainty = Math.sqrt(sumVar + (apPixels ** 2 / Math.max(1, bkgPixels)) * (sumVar / Math.max(1, apPixels)));
+    const bkg1Mean = bkgPixels > 0 ? bkg1Sum / bkgPixels : 0;
+    const bkg2Mean = bkgPixels > 0 ? bkg2Sum / bkgPixels : 0;
+
+    const netDeltaFlux = apPixels > 0 ? sumDiff - bkgDiffMean * apPixels : 0;
+    const netFlux1 = apPixels > 0 ? sum1 - bkg1Mean * apPixels : 0;
+    const netFlux2 = apPixels > 0 ? sum2 - bkg2Mean * apPixels : 0;
+
+    const bkgVarMean = bkgPixels > 0 ? bkgVarSum / bkgPixels : sumVar / Math.max(1, apPixels);
+    const deltaUncertainty = Math.sqrt(
+      Math.max(1e-10, sumVar + (apPixels ** 2 / Math.max(1, bkgPixels)) * bkgVarMean)
+    );
 
     return {
       deltaFlux: netDeltaFlux,
       deltaUncertainty,
-      flux1: sum1,
-      flux2: sum2,
-      unc1: Math.sqrt(sumVar / 2),
-      unc2: Math.sqrt(sumVar / 2),
+      flux1: netFlux1,
+      flux2: netFlux2,
+      unc1: Math.sqrt(Math.max(1e-10, sumVar / 2)),
+      unc2: Math.sqrt(Math.max(1e-10, sumVar / 2)),
     };
   }
 
@@ -510,72 +599,81 @@ export class ScientificPipeline {
     }
 
     // 2. Data quality flag inspection from FITS HDU 2 (SPHEREx QR2 flag bitmask)
+    // Bit 0 (0x1): TRANSIENT (Cosmic ray hit or slope jump)
+    // Bit 1 (0x2): OVERFLOW (Full-well saturation / nonlinearity)
+    // Bit 2 (0x4): SUR_ERROR (Sample-Up-the-Ramp slope fitting error)
+    // Bit 19 (0x80000): OUTLIER (Statistical outlier detected by pipeline)
+    // Bit 21 (0x200000): SOURCE (Astronomical source catalog position)
     const idx = cy * width + cx;
     const f1 = flags1 ? flags1[idx] : 0;
     const f2 = flags2 ? flags2[idx] : 0;
 
     if ((f1 & 0x01) !== 0 || (f2 & 0x01) !== 0) {
-      flags.push('FLAGGED_BAD_PIXEL');
-      penalty += 0.7;
+      flags.push('TRANSIENT_OR_CR');
+      penalty += 0.75;
     }
     if ((f1 & 0x02) !== 0 || (f2 & 0x02) !== 0) {
       flags.push('SATURATION');
-      penalty += 0.8;
+      penalty += 0.85;
     }
     if ((f1 & 0x04) !== 0 || (f2 & 0x04) !== 0) {
-      flags.push('NONLINEAR_RESPONSE');
+      flags.push('NONLINEAR_SUR_RESPONSE');
       penalty += 0.6;
     }
-    if ((f1 & 0x08) !== 0 || (f2 & 0x08) !== 0) {
-      flags.push('RAMP_CR_HIT');
-      penalty += 0.75;
-    }
     if ((f1 & 0x80000) !== 0 || (f2 & 0x80000) !== 0) {
-      flags.push('STRAY_LIGHT_OR_LATENT');
-      penalty += 0.5;
-    }
-    if ((f1 & 0x200000) !== 0 || (f2 & 0x200000) !== 0) {
-      flags.push('PERSISTENCE_CONTAMINATION');
-      penalty += 0.85;
+      flags.push('STATISTICAL_OUTLIER');
+      penalty += 0.6;
     }
 
     // 3. Cosmic ray spike check: central pixel contains >80% of entire 3x3 flux
     let peakVal = Math.abs(diff[idx]);
+    if (!Number.isFinite(peakVal)) peakVal = 0;
     let neighborSum = 0;
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue;
-        const nIdx = (cy + dy) * width + (cx + dx);
-        neighborSum += Math.abs(diff[nIdx]);
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const nVal = Math.abs(diff[ny * width + nx]);
+          if (Number.isFinite(nVal)) neighborSum += nVal;
+        }
       }
     }
-    const concentration = peakVal / (peakVal + neighborSum || 1);
+    const concentration = peakVal / Math.max(1e-5, peakVal + neighborSum);
     let morphology: 'point-like' | 'extended' | 'sharp-spike' | 'dipole' = 'point-like';
     let fwhm = 2.2;
 
-    if (concentration > 0.75) {
+    if (concentration > 0.75 && peakVal > 0) {
       morphology = 'sharp-spike';
       fwhm = 0.8;
       flags.push('COSMIC_RAY_SPIKE');
-      penalty += 0.6;
+      penalty += 0.65;
     }
 
-    // 4. Dipole / Astrometric registration residue check
+    // 4. Astrometric registration residue / dipole check
     let hasDipole = false;
     const centerSign = Math.sign(diff[idx]);
+    let oppositeSignMax = 0;
+    let oppositeSignSum = 0;
     for (let dy = -2; dy <= 2; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
         if (dx === 0 && dy === 0) continue;
-        const nIdx = (cy + dy) * width + (cx + dx);
-        if (Math.sign(diff[nIdx]) === -centerSign && Math.abs(diff[nIdx]) > peakVal * 0.45) {
-          hasDipole = true;
-          break;
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const nVal = diff[ny * width + nx];
+          if (Number.isFinite(nVal) && Math.sign(nVal) === -centerSign) {
+            const absN = Math.abs(nVal);
+            if (absN > oppositeSignMax) oppositeSignMax = absN;
+            oppositeSignSum += absN;
+          }
         }
       }
-      if (hasDipole) break;
     }
 
-    if (hasDipole) {
+    if (oppositeSignMax >= peakVal * 0.25 || oppositeSignSum >= peakVal * 0.5) {
+      hasDipole = true;
       morphology = 'dipole';
       flags.push('REGISTRATION_OR_PSF_DIPOLE');
       penalty += 0.7;
@@ -586,15 +684,13 @@ export class ScientificPipeline {
     let whyFlagged: string | undefined;
     if (flags.length > 0) {
       const reasons: Record<string, string> = {
-        EDGE_PROXIMITY: 'Candidate is within 4 pixels of the detector frame boundary where edge distortions and coverage drops occur.',
-        FLAGGED_BAD_PIXEL: 'FITS Level-2 Data Quality flag registers this pixel as defective/dead on detector arrays.',
-        SATURATION: 'Pixel exceeded full well capacity (saturated readout).',
-        NONLINEAR_RESPONSE: 'Pixel is operating in the nonlinear readout regime.',
-        RAMP_CR_HIT: 'Cosmic ray hit detected during multi-accum detector ramp readout.',
-        STRAY_LIGHT_OR_LATENT: 'Flagged as suspect stray light reflection or lingering latent image in previous scans.',
-        PERSISTENCE_CONTAMINATION: 'Severe detector persistence contamination from recent bright star transit (bit 0x200000).',
+        EDGE_PROXIMITY: 'Candidate is within 4 pixels of the detector frame boundary.',
+        TRANSIENT_OR_CR: 'SPHEREx Level 2 quality flag: transient disruption or cosmic ray hit (bit 0x1).',
+        SATURATION: 'Pixel exceeded full well capacity (saturated readout, bit 0x2). Precludes linear photometry.',
+        NONLINEAR_SUR_RESPONSE: 'Sample-Up-the-Ramp slope fitting uncertainty flag (bit 0x4).',
+        STATISTICAL_OUTLIER: 'Sigma-clipping statistical outlier detected by pipeline (bit 0x80000).',
         COSMIC_RAY_SPIKE: 'Flux is concentrated in an isolated single-pixel spike without astronomical PSF wings.',
-        REGISTRATION_OR_PSF_DIPOLE: 'Symmetric positive/negative residual dipole indicating slight astrometric misalignment or PSF breathing rather than genuine flux change.',
+        REGISTRATION_OR_PSF_DIPOLE: 'Symmetric positive/negative residual dipole indicating astrometric sub-pixel pointing jitter.',
       };
       whyFlagged = flags.map((f) => reasons[f] || f).join(' ');
     }
@@ -646,19 +742,35 @@ export class ScientificPipeline {
 
     if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
-      if (top.peakSignificance >= 4.5) {
+      if (Math.abs(top.peakSignificance) >= 4.0) {
         classification = 'SIGNIFICANT CHANGE DETECTED';
-        summaryProse = `Statistically significant flux change detected with peak S/N of ${top.peakSignificance.toFixed(1)}σ across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
         statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}σ, artifact score = ${top.artifactScore.toFixed(2)}).`;
       } else {
         classification = 'POSSIBLE CHANGE — NEEDS REVIEW';
         summaryProse = `Marginal flux residual detected at S/N = ${top.peakSignificance.toFixed(1)}σ. Additional epochs are required to verify authenticity.`;
-        statisticalJustification = `Detection statistic is between 3.2σ and 4.5σ, which may represent either faint variability or stochastic noise excursion.`;
+        statisticalJustification = `Detection statistic is between 3.2σ and 4.0σ, which may represent either faint variability or stochastic noise excursion.`;
       }
     } else if (artifactCandidates.length > 0) {
-      classification = 'POSSIBLE ARTIFACT';
-      summaryProse = `Candidate signals were detected but rejected due to instrumental or registration artifacts.`;
-      statisticalJustification = `All detected peaks exhibited artifact flags (${artifactCandidates[0].artifactFlags.join(', ')}).`;
+      const topArt = artifactCandidates[0];
+      const hasRealArtifact = topArt.artifactFlags.some(
+        (f) =>
+          f === 'SATURATION' ||
+          f === 'TRANSIENT_OR_CR' ||
+          f === 'STATISTICAL_OUTLIER' ||
+          f === 'NONLINEAR_SUR_RESPONSE'
+      );
+
+      if (hasRealArtifact) {
+        classification = 'POSSIBLE ARTIFACT';
+        summaryProse = `Candidate signals were detected but rejected due to detector saturation, cosmic ray hits, or quality mask exclusions.`;
+        statisticalJustification = `Detected peak exhibited severe instrumental flags (${topArt.artifactFlags.join(', ')}).`;
+      } else {
+        // Pure dipole/astrometric pointing jitter with stable aperture flux
+        classification = 'NO SIGNIFICANT CHANGE DETECTED';
+        summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across the ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        statisticalJustification = `Residual dipole is consistent with sub-pixel pointing jitter. Net aperture change ΔF = ${topArt.deltaFlux.toFixed(3)} ± ${topArt.deltaFluxUncertainty.toFixed(3)} is consistent with steady state.`;
+      }
     }
 
     const whatWeKnow = [

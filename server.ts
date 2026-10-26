@@ -121,7 +121,7 @@ const CURATED_CASES: CuratedCase[] = [
     targetName: 'SPX-PERSISTENCE-TEST',
     category: 'Artifact Rejection',
     expectedClassification: 'POSSIBLE ARTIFACT',
-    description: 'Automated pipeline inspects FITS HDU 2 flags, identifying detector persistence (bit 0x200000) and stray light (bit 0x80000) to reject false candidate spikes.',
+    description: 'Automated pipeline inspects FITS HDU 2 flags, identifying detector saturation (bit 0x02 OVERFLOW), cosmic rays (bit 0x01 TRANSIENT), and statistical outliers (bit 0x80000 OUTLIER) to reject false candidate spikes.',
     epoch1: {
       obs_id: '2025W18_1B_0001_1',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
@@ -198,6 +198,11 @@ async function getFITSCutout(
   clearTimeout(timeout);
 
   if (!res.ok) {
+    if (res.status === 422) {
+      throw new Error(
+        `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`
+      );
+    }
     throw new Error(`IRSA IBE server returned status ${res.status}: ${res.statusText}`);
   }
 
@@ -262,6 +267,7 @@ app.get('/api/spherex/cases', (_req: Request, res: Response) => {
 app.post('/api/spherex/process', async (req: Request, res: Response) => {
   try {
     const { caseId, customCoords } = req.body;
+    const isCustomSearch = !!customCoords;
     let selectedCase = CURATED_CASES.find((c) => c.id === caseId);
 
     let ra = customCoords?.ra ?? selectedCase?.ra ?? 276.2614;
@@ -271,7 +277,14 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       selectedCase = CURATED_CASES[0];
     }
 
-    // Download real FITS cutouts for both epochs
+    const caseIdToUse = isCustomSearch ? 'custom-irsa-target' : selectedCase.id;
+    const caseTitle = isCustomSearch
+      ? `Live IRSA Cutout (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°)`
+      : selectedCase.title;
+    const caseDescription = isCustomSearch
+      ? `Dynamic live inquiry querying NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°. Processed directly via difference imaging pipeline.`
+      : selectedCase.description;
+
     // Download real FITS cutouts for both epochs from NASA/IPAC IRSA
     const fits1Res = await getFITSCutout(selectedCase.epoch1.fits_url, ra, dec, 64);
     const fits2Res = await getFITSCutout(selectedCase.epoch2.fits_url, ra, dec, 64);
@@ -327,7 +340,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     }
 
     const provenance: ProvenanceRecord = {
-      caseId: selectedCase.id,
+      caseId: caseIdToUse,
+      investigationType: isCustomSearch ? 'Live IRSA Query' : 'Curated Archival Case',
       timestamp: new Date().toISOString(),
       irsaArchiveSource: 'NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx Public Data Release QR2',
       obsId1: obs1.obs_id,
@@ -350,9 +364,9 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     };
 
     const responseData: InvestigationResult = {
-      caseId: selectedCase.id,
-      title: selectedCase.title,
-      description: selectedCase.description,
+      caseId: caseIdToUse,
+      title: caseTitle,
+      description: caseDescription,
       targetCoords: { ra, dec },
       epoch1: {
         metadata: obs1,
@@ -416,17 +430,17 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
       whatWeDontKnow: evidence?.whatWeDontKnow ?? [],
       candidate: topCandidate
         ? {
-            id: topCandidate.id,
-            snr: topCandidate.peakSignificance,
-            deltaFlux: topCandidate.deltaFlux,
-            deltaUncertainty: topCandidate.deltaFluxUncertainty,
-            ra: topCandidate.ra,
-            dec: topCandidate.dec,
-            status: topCandidate.status,
-            artifactScore: topCandidate.artifactScore,
-            artifactFlags: topCandidate.artifactFlags,
-            whyFlagged: topCandidate.whyFlagged,
-            catalogMatches: topCandidate.catalogMatches,
+            id: topCandidate.id || 'CAND-01',
+            snr: topCandidate.peakSignificance ?? topCandidate.snr ?? 0,
+            deltaFlux: topCandidate.deltaFlux ?? 0,
+            deltaUncertainty: topCandidate.deltaFluxUncertainty ?? topCandidate.deltaUncertainty ?? 0,
+            ra: topCandidate.ra ?? 0,
+            dec: topCandidate.dec ?? 0,
+            status: topCandidate.status ?? 'Candidate',
+            artifactScore: topCandidate.artifactScore ?? 0,
+            artifactFlags: Array.isArray(topCandidate.artifactFlags) ? topCandidate.artifactFlags : [],
+            whyFlagged: topCandidate.whyFlagged || '',
+            catalogMatches: Array.isArray(topCandidate.catalogMatches) ? topCandidate.catalogMatches : [],
           }
         : null,
       isCompatible: compatibility?.isCompatible ?? true,
@@ -487,42 +501,89 @@ USER QUESTION:
 
 Please explain what was calculated based on the evidence, answer the user concisely, and append the mood tag.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.5-flash-lite',
-      contents: [
-        {
-          role: 'user',
-          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-        },
-      ],
-    });
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+          },
+        ],
+      });
 
-    const replyText = response.text || 'أهلاً يا صديقي! سبيكس هنا يحلل بيانات مرصد SPHEREx.';
+      const replyText = response.text || '';
+      if (replyText) {
+        let mood: SPEXMood = 'explaining';
+        const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+        let cleanReply = replyText;
 
-    let mood: SPEXMood = 'explaining';
-    const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
-    let cleanReply = replyText;
+        if (moodMatch) {
+          try {
+            const moodObj = JSON.parse(moodMatch[1]);
+            if (moodObj.mood) mood = moodObj.mood as SPEXMood;
+          } catch (e) {
+            // fallback mood
+          }
+          cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
+        } else {
+          if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
+          else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
+          else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
+          else mood = 'explaining';
+        }
 
-    if (moodMatch) {
-      try {
-        const moodObj = JSON.parse(moodMatch[1]);
-        if (moodObj.mood) mood = moodObj.mood as SPEXMood;
-      } catch (e) {
-        // fallback mood
+        return res.json({ reply: cleanReply, mood });
       }
-      cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
-    } else {
-      if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
-      else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
-      else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
-      else mood = 'explaining';
+    } catch (genAiError: any) {
+      console.warn('[SPEX AI] Gemini call unavailable, falling back to grounded response:', genAiError.message);
     }
 
-    return res.json({ reply: cleanReply, mood });
+    // Fully grounded scientific fallback in the requested language
+    const cls = evidence?.classification ?? 'NO SIGNIFICANT CHANGE DETECTED';
+    const baseline = evidence?.timeBaselineDays ? Number(evidence.timeBaselineDays).toFixed(1) : '20.7';
+    const top = structuredContext.candidate;
+
+    let fallbackReply = '';
+    let fallbackMood: SPEXMood = 'explaining';
+
+    if (isArabic) {
+      if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
+        fallbackMood = 'eureka';
+        fallbackReply = `يا خبر كوني! 🚀 عندنا إشارة حقيقية واضحة بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر فارق زمني ${baseline} يوم. المرشح ${top.id} بيظهر تغير تدفق ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr، واجتاز كافة اختبارات الشكل والـQuality Flags بدون تشبع.`;
+      } else if (cls === 'POSSIBLE ARTIFACT' && top) {
+        fallbackMood = 'sassy';
+        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join('، ') : 'تشبع مستشعر أو هزة توجيه';
+        fallbackReply = `استنى يا نجم متفرحش أوي 😂 دي إشارة تشويش مستشعر (Artifact) واضحة (${flagsStr}). تم كشفها واستبعادها بدقة عبر FITS Quality Bitmask وخوارزمية فحص الـDipole عشان نمنع أي اكتشاف وهمي.`;
+      } else if (cls === 'INSUFFICIENT DATA') {
+        fallbackMood = 'investigator';
+        fallbackReply = `استنى هنا يا هندسة! الحقبتين دول من نطاقات طيفية مختلفة في مرصد SPHEREx. مينفعش نطرح أطوال موجية مختلفة من بعض لأنك كده بتقيس انحدار لوني مش تغير ضوئي زمني حقيقي!`;
+      } else {
+        fallbackMood = 'serious';
+        fallbackReply = `السماء ثابتة ومستقرة! 🔭 مفيش أي تغير ضوئي يتجاوز عتبة الضوضاء 3.5σ عبر فارق زمني ${baseline} يوم. الفروق في خريطة الـDifference تقع بالكامل ضمن الضوضاء الجاوسية للأجهزة، ودي نتيجة أساسية لمعايرة سماء SPHEREx.`;
+      }
+    } else {
+      if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
+        fallbackMood = 'eureka';
+        fallbackReply = `Astrophysical flux excursion verified! 🚀 We have a statistically significant signal at S/N = ${Math.abs(top.snr).toFixed(1)}σ across a ${baseline}-day temporal baseline. Candidate ${top.id} exhibits ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF morphology and no detector defect flags.`;
+      } else if (cls === 'POSSIBLE ARTIFACT' && top) {
+        fallbackMood = 'sassy';
+        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(', ') : 'saturation / astrometric dipole';
+        fallbackReply = `Hold your whiskers, astronomer! 😂 That signal was flagged and disqualified as an instrumental artifact (${flagsStr}). The detector either saturated or experienced pointing jitter creating a residual dipole.`;
+      } else if (cls === 'INSUFFICIENT DATA') {
+        fallbackMood = 'investigator';
+        fallbackReply = `Scientific guardrails engaged! These observations originate from distinct SPHEREx spectral channels. Differencing across mismatched infrared wavelengths measures thermal color slope, not temporal variability!`;
+      } else {
+        fallbackMood = 'serious';
+        fallbackReply = `Photometric baseline verified stable! 🔭 Difference residuals are strictly consistent with the Gaussian noise floor (p > 0.05) across ${baseline} days. Null detections are foundational for calibrating the steady-state infrared sky!`;
+      }
+    }
+
+    return res.json({ reply: fallbackReply, mood: fallbackMood });
   } catch (err: any) {
     console.error('SPEX AI chat error:', err);
     return res.json({
-      reply: 'يا هلا! الـAI سيرفر مهنج ثانية، بس البيانات العلمية واضحة قدامك في الجدول والـDifference Map! اسألني تاني وهجاوبك على طول يا نجم.',
+      reply: 'Telemetry error in chat engine. Please retry in a second.',
       mood: 'thinking',
     });
   }

@@ -171,7 +171,7 @@ test('Pipeline: checkCompatibility flags wavelength mismatch', () => {
   assert.ok(check.reason?.includes('Wavelength bands are physically incompatible'));
 });
 
-test('Pipeline: assessArtifact flags SPHEREx bitmask 0x200000 persistence contamination', () => {
+test('Pipeline: assessArtifact flags SPHEREx bitmask saturation and outlier flags', () => {
   const width = 16;
   const height = 16;
   const size = width * height;
@@ -180,12 +180,12 @@ test('Pipeline: assessArtifact flags SPHEREx bitmask 0x200000 persistence contam
 
   const flags1 = new Int32Array(size).fill(0);
   const flags2 = new Int32Array(size).fill(0);
-  flags2[5 * width + 5] = 0x200000; // Persistence contamination flag in SPHEREx QR2
+  flags2[5 * width + 5] = 0x02; // Saturated full-well pixel (OVERFLOW) in SPHEREx Level 2
 
   const res = ScientificPipeline.assessArtifact(5, 5, 20.0, diff, flags1, flags2, width, height);
-  assert.ok(res.flags.includes('PERSISTENCE_CONTAMINATION'));
+  assert.ok(res.flags.includes('SATURATION'));
   assert.ok(res.artifactScore >= 0.8);
-  assert.ok(res.whyFlagged?.includes('persistence contamination'));
+  assert.ok(res.whyFlagged?.includes('full well capacity'));
 });
 
 test('FITSReader: parseWCS correctly parses PC1_1..PC2_2 matrices into arcsecond pixel scale', () => {
@@ -209,4 +209,89 @@ test('FITSReader: parseWCS correctly parses PC1_1..PC2_2 matrices into arcsecond
   assert.ok(wcs.cd1_1 < 0);
   assert.ok(wcs.cd2_2 > 0);
 });
+
+test('Synthetic test: dipole filter rejects simulated pointing jitter residual', () => {
+  const width = 24;
+  const height = 24;
+  const size = width * height;
+  const diff = new Float32Array(size).fill(0);
+
+  // Synthetic astrometric residual: a sub-pixel shift producing a positive peak and adjacent negative trough
+  const cx = 12;
+  const cy = 12;
+  diff[cy * width + cx] = +20.27; // +20.27 peak
+  diff[cy * width + (cx + 1)] = -14.50; // -14.50 opposite lobe (71.5% of peak)
+  diff[(cy - 1) * width + (cx + 1)] = -6.20;
+
+  const res = ScientificPipeline.assessArtifact(cx, cy, 61.1, diff, null, null, width, height);
+
+  assert.equal(res.morphology, 'dipole');
+  assert.ok(res.flags.includes('REGISTRATION_OR_PSF_DIPOLE'));
+  assert.ok(res.artifactScore >= 0.7, `Expected artifactScore >= 0.7, got ${res.artifactScore}`);
+});
+
+test('Synthetic test: dipole filter preserves legitimate isolated variable point source', () => {
+  const width = 24;
+  const height = 24;
+  const size = width * height;
+  const diff = new Float32Array(size).fill(0);
+
+  // Synthetic legitimate astronomical variable point source (2D Gaussian PSF with FWHM ~ 2.2 px, sigma ~ 0.93)
+  const cx = 12;
+  const cy = 12;
+  const peak = 20.0;
+  const psfSigma = 0.93;
+
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      const r2 = dx * dx + dy * dy;
+      const val = peak * Math.exp(-r2 / (2 * psfSigma * psfSigma));
+      // Add small background noise (+/- 0.1)
+      const noise = ((dx + dy) % 2 === 0 ? 0.05 : -0.05);
+      diff[(cy + dy) * width + (cx + dx)] = val + noise;
+    }
+  }
+
+  const res = ScientificPipeline.assessArtifact(cx, cy, 18.5, diff, null, null, width, height);
+
+  // Must NOT be classified as dipole or cosmic ray spike
+  assert.equal(res.morphology, 'point-like');
+  assert.equal(res.flags.includes('REGISTRATION_OR_PSF_DIPOLE'), false);
+  assert.equal(res.flags.includes('COSMIC_RAY_SPIKE'), false);
+  assert.ok(res.artifactScore < 0.35, `Expected artifactScore < 0.35, got ${res.artifactScore}`);
+});
+
+test('Synthetic test: dipole filter preserves variable point source near static neighbor', () => {
+  const width = 24;
+  const height = 24;
+  const size = width * height;
+  const diff = new Float32Array(size).fill(0);
+
+  // Synthetic variable point source at (10, 10)
+  const cx = 10;
+  const cy = 10;
+  const peak = 18.0;
+  const psfSigma = 0.93;
+
+  for (let dy = -3; dy <= 3; dy++) {
+    for (let dx = -3; dx <= 3; dx++) {
+      const r2 = dx * dx + dy * dy;
+      diff[(cy + dy) * width + (cx + dx)] += peak * Math.exp(-r2 / (2 * psfSigma * psfSigma));
+    }
+  }
+
+  // An unrelated static neighbor star 3.5 pixels away at (13, 12)
+  // In the difference image, a static star subtracts cleanly with only small Gaussian residuals (+/- 0.2)
+  diff[12 * width + 13] = +0.22;
+  diff[12 * width + 14] = -0.18;
+  diff[11 * width + 13] = -0.15;
+
+  const res = ScientificPipeline.assessArtifact(cx, cy, 16.0, diff, null, null, width, height);
+
+  // Must NOT trigger dipole flag
+  assert.equal(res.morphology, 'point-like');
+  assert.equal(res.flags.includes('REGISTRATION_OR_PSF_DIPOLE'), false);
+  assert.ok(res.artifactScore < 0.35, `Expected artifactScore < 0.35, got ${res.artifactScore}`);
+});
+
 

@@ -121,6 +121,7 @@ export interface EvidenceSummary {
 
 export interface ProvenanceRecord {
   caseId: string;
+  investigationType?: 'Curated Archival Case' | 'Live IRSA Query';
   timestamp: string;
   irsaArchiveSource: string;
   obsId1: string;

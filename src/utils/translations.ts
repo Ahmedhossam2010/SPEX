@@ -24,6 +24,8 @@ export interface TranslationDictionary {
   viewEpoch2: string;
   viewSplit: string;
   viewBlink: string;
+  viewPresentation: string;
+  viewScience: string;
 
   // Canvas HUD
   hudCoords: string;
@@ -98,6 +100,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     viewEpoch2: 'Epoch 2',
     viewSplit: 'Split Wipe',
     viewBlink: 'Blink Comparison',
+    viewPresentation: 'Presentation (Smooth)',
+    viewScience: 'Science (Native 6.15"/px)',
 
     hudCoords: 'Celestial Position',
     hudPixel: 'Pixel Coordinate',
@@ -170,6 +174,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     viewEpoch2: 'الحقبة الثانية',
     viewSplit: 'المقارنة التفاعلية (Split)',
     viewBlink: 'الوميض التبادلي (Blink)',
+    viewPresentation: 'عرض ناعم (Presentation)',
+    viewScience: 'عرض علمي (6.15"/px أصلي)',
 
     hudCoords: 'الإحداثيات السماوية',
     hudPixel: 'إحداثيات البيكسل',
