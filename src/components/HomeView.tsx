@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, ArrowRight, BookOpen, Layers, ShieldCheck, Telescope } from 'lucide-react';
+import { Sparkles, ArrowRight, BookOpen, Layers, Telescope, CheckCircle2, ShieldAlert } from 'lucide-react';
 import { SPEX_ASSETS, SPEX_HERO_IMAGE } from '../spex/spexAssets';
 import { Language, translations } from '../utils/translations';
 
@@ -27,11 +27,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
     >
       {/* Background spatial ambient gradients */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[550px] bg-gradient-to-tr from-amber-600/12 via-sky-600/10 to-indigo-900/15 blur-[140px] rounded-full" />
-        <div className="absolute bottom-10 left-10 w-96 h-96 bg-blue-900/15 blur-[120px] rounded-full" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[550px] bg-gradient-to-tr from-amber-600/10 via-sky-600/8 to-indigo-900/12 blur-[140px] rounded-full" />
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-blue-900/10 blur-[120px] rounded-full" />
       </div>
 
-      {/* Main Hero Grid */}
+      {/* Main Hero Section */}
       <div className="mx-auto max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center my-auto">
         {/* Left Column: Headlines & Actions */}
         <div className="lg:col-span-7 flex flex-col items-start text-left">
@@ -53,21 +53,51 @@ export const HomeView: React.FC<HomeViewProps> = ({
             )}
           </h1>
 
-          <p className="text-lg sm:text-xl text-slate-300 font-light max-w-xl mb-8 leading-relaxed">
+          <p className="text-base sm:text-lg text-slate-300 font-light max-w-xl mb-6 leading-relaxed">
             {language === 'ar' ? (
               <>
-                هل حدث تغير حقيقي في هذا الجزء من السماء؟ استكشف أرصاد SPHEREx متعددة الحقب، واحسب خرائط الفروق الضوئية، ودقق في الأدلة العلمية مع{' '}
-                <span className="text-amber-400 font-medium">سبيكس (SPEX)</span>.
+                هل حدث تغير حقيقي في هذا الجزء من السماء؟ قارن بين لقطتين زمنيتين من مرصد SPHEREx الفضائي التابع لناسا، واحسب خريطة الفروق الضوئية، ودقق في الأدلة الفلكية مع{' '}
+                <span className="text-amber-400 font-medium">سبيكس (SPEX)</span>، قط الفضاء الذكي.
               </>
             ) : (
               <>
-                Did something actually change in this part of the sky? Explore real multi-epoch SPHEREx observations, compute difference maps, and investigate the scientific evidence with{' '}
-                <span className="text-amber-400 font-medium">SPEX</span>.
+                Did something actually change in this part of the sky? Compare multi-epoch infrared snapshots from NASA’s SPHEREx space observatory, compute difference maps, and investigate the evidence with{' '}
+                <span className="text-amber-400 font-medium">SPEX</span>, your astrophysicist companion.
               </>
             )}
           </p>
 
-          {/* Action Buttons */}
+          {/* Three-step visual orientation for first-time visitors */}
+          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
+              <div className="text-[11px] font-mono text-amber-400 font-bold mb-1">01. Two Looks</div>
+              <p className="text-xs text-slate-300 leading-snug">
+                {language === 'ar'
+                  ? 'رصد لنفس الحقل السماوي في أوقات مختلفة (أبريل ومايو 2025).'
+                  : 'SPHEREx observes the same sky months apart in the infrared.'}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
+              <div className="text-[11px] font-mono text-sky-400 font-bold mb-1">02. Subtract Sky</div>
+              <p className="text-xs text-slate-300 leading-snug">
+                {language === 'ar'
+                  ? 'طرح الصورتين يلغي الخلفية الثابتة ويظهر فقط ما ازداد أو قل بريقه.'
+                  : 'Subtracting leaves only objects that brightened, dimmed, or moved.'}
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
+              <div className="text-[11px] font-mono text-emerald-400 font-bold mb-1">03. Verify Facts</div>
+              <p className="text-xs text-slate-300 leading-snug">
+                {language === 'ar'
+                  ? 'فحص نسبة الإشارة وتصفية التشويش ومطابقة كتالوج غايا الفلكي.'
+                  : 'Check signal significance, eliminate artifacts, and cross-match Gaia.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Primary Action Buttons */}
           <div className="flex flex-wrap items-center gap-3.5 mb-8">
             <button
               onClick={() => onStartExplore()}
@@ -95,12 +125,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </button>
           </div>
 
-          {/* Quick Target Presets Strip */}
+          {/* Curated Case Presets */}
           <div className="w-full pt-6 border-t border-white/[0.08]">
             <p className="text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-3">
               {language === 'ar'
-                ? 'فحص حالات حقيقية من أرشيف SPHEREx QR2:'
-                : 'Explore Verified SPHEREx QR2 Calibration Fields:'}
+                ? 'حالات فلكية نموذجية من أرشيف SPHEREx QR2:'
+                : 'Verified Astronomical Benchmarks in SPHEREx QR2:'}
             </p>
             <div className="flex flex-wrap gap-2">
               <button
@@ -108,21 +138,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-amber-400/40"
               >
                 <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
-                <span>NEP Deep Variable Candidate</span>
+                <span>NEP Deep Variable (7.8σ Change)</span>
               </button>
               <button
                 onClick={() => onStartExplore('case-cal-stable-02')}
                 className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-cyan-400/40"
               >
                 <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#06b6d4]" />
-                <span>Stability Baseline (No Change)</span>
+                <span>Stability Standard (Zero Change)</span>
               </button>
               <button
                 onClick={() => onStartExplore('case-artifact-flag-03')}
                 className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-rose-400/40"
               >
                 <span className="h-2 w-2 rounded-full bg-rose-400 shadow-[0_0_6px_#f43f5e]" />
-                <span>Quality Bitmask (208σ Persistence Rejection)</span>
+                <span>DQ Mask (Rejects Saturation & Artifacts)</span>
               </button>
             </div>
           </div>
@@ -141,8 +171,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               />
             </div>
 
-            {/* Witty Speech Balloon */}
-            <div className="relative z-20 mt-4 w-full p-4 rounded-3xl border border-white/[0.1] bg-black/80 shadow-2xl backdrop-blur-2xl">
+            {/* Witty Speech Card */}
+            <div className="relative z-20 mt-4 w-full p-4 rounded-3xl border border-white/[0.1] bg-black/85 shadow-2xl backdrop-blur-2xl">
               <div className="flex items-center gap-2.5 mb-2">
                 <img
                   src={SPEX_ASSETS.greeting.imagePath}
@@ -152,35 +182,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 <span className="text-xs font-bold text-amber-300 tracking-wide">
                   {language === 'ar' ? 'سبيكس يرحب بك' : 'SPEX says hello!'}
                 </span>
-                <span className="text-[10px] text-slate-400 font-mono ml-auto">AI COMPANION</span>
+                <span className="text-[10px] text-slate-400 font-mono ml-auto">NASA ASTRONOMY GUIDE</span>
               </div>
               <p
                 className="text-xs text-slate-200 leading-relaxed font-mono"
                 dir={isRtl ? 'rtl' : 'ltr'}
               >
                 {language === 'ar'
-                  ? '«يا هلا بيك يا نجم في مرصد SPHEREx! 🚀 جاهزين نفحص أرصاد تحت الحمراء؟ بس خلي بالك، مش أي نقطة منورة تبقى كائن فضائي 😂.. هنحسب الـstatistics والـWCS مظبوط الأول!»'
-                  : '“Welcome aboard the SPHEREx observatory! 🚀 Ready to inspect multi-epoch infrared skyframes? Just remember: an unmasked persistence spike is not an alien lighthouse 😂—we verify the physics and WCS first!”'}
+                  ? '«أنا سبيكس، حارس سماء SPHEREx والرفيق الفلكي! بساعدك تطرح صور الأشعة تحت الحمراء، ونعرف سوا لو النجم ومض بجد ولا مجرد بكسل مشوش. ادخل المعمل ويلا نبدأ!»'
+                  : '"I am SPEX, guardian of the SPHEREx infrared sky! I help you subtract observations to see whether a star genuinely fluctuated or if it is just detector noise. Step into the workspace and let’s explore!"'}
               </p>
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Bottom Mission Transparency Assurance */}
-      <div className="mx-auto max-w-6xl w-full pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 border-t border-white/[0.08] gap-3">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-emerald-400 flex-shrink-0" />
-          <span className="font-mono text-[11px]">
-            {t.auditBadge}
-          </span>
-        </div>
-        <div className="flex items-center gap-4 text-slate-400 font-mono text-[11px]">
-          <span>MJD: ±10⁻⁴ d</span>
-          <span aria-hidden="true">·</span>
-          <span>Diff: Bilinear Reg.</span>
-          <span aria-hidden="true">·</span>
-          <span>Catalog: Gaia DR3</span>
         </div>
       </div>
     </div>

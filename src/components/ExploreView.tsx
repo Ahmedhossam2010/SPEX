@@ -28,6 +28,9 @@ import {
   Loader2,
   Grid,
   Database,
+  Calendar,
+  Eye,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   CandidateDetection,
@@ -69,7 +72,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [displayMode, setDisplayMode] = useState<DisplayMode>('science');
   const [stretch, setStretch] = useState<StretchMode>('asinh');
   const [colormap, setColormap] = useState<ColormapMode>('diff_diverging');
-  const [zoom, setZoom] = useState<number>(1.2);
+  const [zoom, setZoom] = useState<number>(1.15);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -95,6 +98,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showProvenance, setShowProvenance] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [isMobileControlsOpen, setIsMobileControlsOpen] = useState<boolean>(false);
+  const [showExplanationDeck, setShowExplanationDeck] = useState<boolean>(true);
+  const [explanationMode, setExplanationMode] = useState<'simple' | 'scientific'>('simple');
+  const [showWhyChecksMatter, setShowWhyChecksMatter] = useState<boolean>(false);
 
   // Candidate Explorer pagination & filtering
   const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
@@ -135,7 +141,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         setSelectedCandidate(null);
       }
       setPan({ x: 0, y: 0 });
-      setZoom(1.2);
+      setZoom(1.15);
       setCandidatePage(1);
     }
   }, [currentResult?.caseId]);
@@ -344,35 +350,35 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     switch (classification) {
       case 'SIGNIFICANT CHANGE DETECTED':
         return {
-          label: t.statusSignificant,
+          label: language === 'ar' ? 'تغير حقيقي مرصود' : 'Significant Change Detected',
           border: 'border-emerald-500/40',
           bg: 'bg-emerald-500/15 text-emerald-200',
           dot: 'bg-emerald-400',
         };
       case 'NO SIGNIFICANT CHANGE DETECTED':
         return {
-          label: t.statusStable,
+          label: language === 'ar' ? 'ثبات كوني تام' : 'Stable Photometric Baseline',
           border: 'border-cyan-500/40',
           bg: 'bg-cyan-500/15 text-cyan-200',
           dot: 'bg-cyan-400',
         };
       case 'POSSIBLE ARTIFACT':
         return {
-          label: t.statusArtifact,
+          label: language === 'ar' ? 'تشويش مستشعر مستبعد' : 'Artifact Rejection',
           border: 'border-amber-500/40',
           bg: 'bg-amber-500/15 text-amber-200',
           dot: 'bg-amber-400',
         };
       case 'INSUFFICIENT DATA':
         return {
-          label: t.statusIncompatible,
-          border: 'border-rose-500/40',
-          bg: 'bg-rose-500/15 text-rose-200',
-          dot: 'bg-rose-400',
+          label: language === 'ar' ? 'نطاقات غير متطابقة' : 'Cross-Band Comparison',
+          border: 'border-purple-500/40',
+          bg: 'bg-purple-500/15 text-purple-200',
+          dot: 'bg-purple-400',
         };
       default:
         return {
-          label: t.statusUnknown,
+          label: classification,
           border: 'border-slate-500/40',
           bg: 'bg-slate-800/80 text-slate-300',
           dot: 'bg-slate-400',
@@ -383,18 +389,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   if (isLoading || !currentResult) {
     return (
       <div className="relative w-full h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] flex flex-col items-center justify-center bg-[#02040a] text-slate-200 overflow-hidden px-4">
-        <div className="relative flex flex-col items-center gap-4 sm:gap-5 p-6 sm:p-8 rounded-3xl border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] max-w-sm sm:max-w-md text-center">
+        <div className="relative flex flex-col items-center gap-4 sm:gap-5 p-6 sm:p-8 rounded-3xl border border-white/10 bg-[#030712]/90 backdrop-blur-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.8)] max-w-sm sm:max-w-md text-center">
           <div className="relative flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl border border-amber-400/40 bg-gradient-to-br from-amber-500/20 to-sky-500/20 text-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.2)]">
             <Telescope className="h-6 w-6 sm:h-7 sm:w-7 animate-pulse text-amber-300" />
           </div>
           <div>
             <h3 className="font-['Outfit'] text-sm sm:text-base font-bold text-slate-100">
-              {language === 'ar' ? 'جاري الاتصال بأرشيف IRSA ومرصد SPHEREx...' : 'Accessing NASA/IPAC IRSA SPHEREx Archive...'}
+              {language === 'ar' ? 'الاتصال بأرشيف ناسا SPHEREx...' : 'Accessing NASA/IPAC IRSA SPHEREx Data...'}
             </h3>
             <p className="text-[11px] sm:text-xs font-mono text-slate-400 mt-1.5 leading-relaxed">
               {language === 'ar'
-                ? 'استرجاع ملفات FITS ومحاذاة WCS الدقيقة وحساب خريطة الفروق...'
-                : 'Downloading calibrated FITS cutouts & computing sub-pixel difference maps...'}
+                ? 'استرجاع صور FITS الأصلية وحساب خريطة الفروق واستخراج المرشحات...'
+                : 'Retrieving calibrated FITS arrays, aligning epochs & computing difference residuals...'}
             </p>
           </div>
         </div>
@@ -403,7 +409,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   }
 
   const statusBadge = getStatusBadge(currentResult.evidence.classification);
-  const isLiveInvestigation = currentResult.sourceMode === 'live' || currentResult.provenance?.sourceMode === 'live';
 
   return (
     <div
@@ -436,13 +441,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         >
           <canvas
             ref={canvasRef}
-            className="block w-[340px] h-[340px] xs:w-[420px] xs:h-[420px] sm:w-[512px] sm:h-[512px] pointer-events-auto"
+            className="block w-[320px] h-[320px] xs:w-[380px] xs:h-[380px] sm:w-[480px] sm:h-[480px] md:w-[512px] md:h-[512px] pointer-events-auto"
             style={{
               imageRendering: displayMode === 'science' ? 'pixelated' : 'auto',
             }}
           />
 
-          {/* Subtle Detector Pixel Grid Overlay in Science Mode */}
+          {/* Detector Pixel Grid Overlay in Science Mode */}
           {showGrid && displayMode === 'science' && (
             <svg
               className="absolute inset-0 w-full h-full pointer-events-none z-10 opacity-30"
@@ -498,40 +503,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               );
             })}
         </div>
-
-        {/* Compact Scientific Provenance HUD */}
-        {currentResult && (
-          <div className="absolute top-28 sm:top-20 left-2 sm:left-4 z-20 pointer-events-none hidden lg:flex flex-col gap-1 p-2.5 rounded-2xl border border-white/10 bg-[#030712]/85 backdrop-blur-2xl text-[10px] font-mono text-slate-300 shadow-xl max-w-[260px]">
-            <div className="flex items-center gap-1.5 font-bold text-amber-300 text-[11px] pb-1 border-b border-white/10">
-              <Database className="h-3.5 w-3.5 text-amber-400" />
-              <span>SPHEREx QR2 · Level-2B</span>
-            </div>
-            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] pt-0.5">
-              <div><span className="text-slate-500">BUNIT:</span> <span className="text-slate-200">MJy/sr</span></div>
-              <div><span className="text-slate-500">Pixel Scale:</span> <span className="text-slate-200">~6.15"/px</span></div>
-              <div><span className="text-slate-500">Array:</span> <span className="text-slate-200">64 × 64 px</span></div>
-              <div><span className="text-slate-500">Source:</span> <span className="text-sky-300">NASA/IPAC IRSA</span></div>
-              <div className="col-span-2 truncate"><span className="text-slate-500">Registration:</span> <span className="text-slate-200">Rigid Translation</span></div>
-              <div className="col-span-2 truncate"><span className="text-slate-500">Mode:</span> <span className="text-amber-200 uppercase">{viewMode}</span></div>
-              <div className="col-span-2"><span className="text-slate-500">Candidates:</span> <span className="text-emerald-300 font-semibold">{currentResult.candidates.length} detected (|S| ≥ 4σ)</span></div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* =========================================================================
-          2. FLOATING TOP HUD (RESPONSIVE DUAL-TIER ON MOBILE, SLEEK ON DESKTOP)
+          2. TOP CONTROL HUD (CASE SELECTOR, MODE PICKER, ACTIONS)
           ========================================================================= */}
-      <div className="absolute top-2 sm:top-4 inset-x-2 sm:inset-x-4 pointer-events-none z-30 flex flex-col gap-1.5 sm:gap-2">
-        {/* Tier 1: Case Switcher + Primary Actions */}
+      <div className="absolute top-2 sm:top-3 inset-x-2 sm:inset-x-4 pointer-events-none z-30 flex flex-col gap-2">
         <div className="flex items-center justify-between gap-1.5">
           {/* Left: Case Selector */}
-          <div className="pointer-events-auto flex items-center gap-1 sm:gap-2">
+          <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2">
             <div className="relative">
               <select
                 value={currentResult.caseId}
                 onChange={(e) => onSelectCase(e.target.value)}
-                className="appearance-none pl-3 pr-7 sm:px-3.5 py-1.5 rounded-full border border-white/15 bg-[#030712]/80 hover:bg-[#030712]/95 backdrop-blur-2xl text-[11px] sm:text-xs font-mono text-slate-200 outline-none cursor-pointer max-w-[135px] xs:max-w-[170px] sm:max-w-xs truncate shadow-lg transition-colors"
+                className="appearance-none pl-3 pr-7 sm:px-3.5 py-1.5 rounded-full border border-white/15 bg-[#030712]/90 hover:bg-[#030712] backdrop-blur-2xl text-[11px] sm:text-xs font-mono text-slate-200 outline-none cursor-pointer max-w-[140px] xs:max-w-[190px] sm:max-w-xs truncate shadow-lg transition-colors"
               >
                 {cases.map((c) => (
                   <option key={c.id} value={c.id} className="bg-slate-900 text-slate-200">
@@ -542,98 +527,102 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <ChevronDown className="absolute right-2 sm:right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
             </div>
 
-            {/* Live vs Benchmark Pill */}
+            {/* Target Status Indicator */}
             <div
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-medium backdrop-blur-2xl ${
-                isLiveInvestigation
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                  : 'border-sky-500/30 bg-sky-500/10 text-sky-300'
-              }`}
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-medium backdrop-blur-2xl ${statusBadge.border} ${statusBadge.bg}`}
             >
-              <Radio className="h-2.5 w-2.5 animate-pulse" />
-              <span>{isLiveInvestigation ? 'Live IRSA' : 'Benchmark'}</span>
+              <span className={`h-2 w-2 rounded-full ${statusBadge.dot}`} />
+              <span>{statusBadge.label}</span>
             </div>
           </div>
 
-          {/* Desktop Center: Mode Pills (Hidden on Mobile) */}
-          <div className="pointer-events-auto hidden md:flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/70 backdrop-blur-2xl shadow-xl gap-0.5 font-mono text-xs">
+          {/* Desktop Center: Human-Friendly Mode Selector */}
+          <div className="pointer-events-auto hidden md:flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl gap-0.5 font-mono text-xs">
             <button
               onClick={() => handleViewModeChange('difference')}
-              className={`px-3 py-1 rounded-full transition-all ${
+              className={`px-3 py-1 rounded-full transition-all flex items-center gap-1 ${
                 viewMode === 'difference'
-                  ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                  ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40 font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)]'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="What Changed: difference image (I2 - I1) where unchanged stars cancel out"
             >
-              {t.viewDifference}
+              <span>{language === 'ar' ? 'ما الذي تغير؟' : 'What Changed'}</span>
+              <span className="text-[10px] text-slate-400">(I₂-I₁)</span>
             </button>
             <button
               onClick={() => handleViewModeChange('significance')}
-              className={`px-3 py-1 rounded-full transition-all ${
+              className={`px-2.5 py-1 rounded-full transition-all flex items-center gap-1 ${
                 viewMode === 'significance'
                   ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="How Strong: statistical significance in noise standard deviations (S/N in sigma)"
             >
-              {t.viewSignificance}
+              <span>{language === 'ar' ? 'قوة الإشارة' : 'Significance'}</span>
+              <span className="text-[10px] text-slate-400">(σ)</span>
             </button>
             <button
               onClick={() => handleViewModeChange('epoch1')}
               className={`px-2.5 py-1 rounded-full transition-all ${
                 viewMode === 'epoch1'
-                  ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                  ? 'bg-sky-500/20 text-sky-200 border border-sky-400/30 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="First Look: Initial observation (April 2025)"
             >
-              {t.viewEpoch1}
+              {language === 'ar' ? 'اللقطة 1' : 'Epoch 1'}
             </button>
             <button
               onClick={() => handleViewModeChange('epoch2')}
               className={`px-2.5 py-1 rounded-full transition-all ${
                 viewMode === 'epoch2'
-                  ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                  ? 'bg-sky-500/20 text-sky-200 border border-sky-400/30 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Second Look: Subsequent observation (May 2025)"
             >
-              {t.viewEpoch2}
+              {language === 'ar' ? 'اللقطة 2' : 'Epoch 2'}
             </button>
             <button
               onClick={() => handleViewModeChange('blink')}
-              className={`px-2.5 py-1 rounded-full transition-all ${
+              className={`px-2 py-1 rounded-full transition-all ${
                 viewMode === 'blink'
-                  ? 'bg-white/15 text-emerald-300 border border-white/20 font-semibold'
+                  ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Blink: rapid cadence toggle between both epochs"
             >
-              {t.viewBlink}
+              {language === 'ar' ? 'وميض' : 'Blink'}
             </button>
             <button
               onClick={() => handleViewModeChange('split')}
-              className={`px-2.5 py-1 rounded-full transition-all ${
+              className={`px-2 py-1 rounded-full transition-all ${
                 viewMode === 'split'
-                  ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                  ? 'bg-white/15 text-slate-200 border border-white/20 font-semibold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
+              title="Split Wipe: curtain slider"
             >
-              {t.viewSplit}
+              {language === 'ar' ? 'ستارة' : 'Split'}
             </button>
           </div>
 
-          {/* Right: Candidate Explorer, Search Sky & Provenance Action Buttons */}
+          {/* Right: Candidates Drawer, Search Sky & Provenance Action Buttons */}
           <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5">
             {/* Candidates Button */}
             <button
               onClick={() => setShowCandidateDrawer(!showCandidateDrawer)}
               className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border backdrop-blur-2xl text-[11px] sm:text-xs font-mono transition-all ${
                 showCandidateDrawer
-                  ? 'border-amber-400/50 bg-amber-500/25 text-amber-300'
-                  : 'border-white/15 bg-[#030712]/75 hover:bg-white/10 text-slate-300'
+                  ? 'border-amber-400/60 bg-amber-500/25 text-amber-200 font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                  : 'border-white/15 bg-[#030712]/85 hover:bg-white/10 text-slate-300'
               }`}
-              title="Detected Candidates Explorer"
+              title="View Candidate Detections"
             >
               <Crosshair className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
-              <span className="hidden xs:inline">Candidates</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-400/15 text-amber-300 border border-amber-400/25 text-[10px] font-bold">
+              <span className="hidden xs:inline">{language === 'ar' ? 'المرشحات' : 'Candidates'}</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold">
                 {currentResult?.candidates.length || 0}
               </span>
             </button>
@@ -641,85 +630,85 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             {/* Search Sky Modal Trigger */}
             <button
               onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border border-white/15 bg-[#030712]/75 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-amber-300 text-[11px] sm:text-xs font-mono transition-colors shadow-md"
-              title="Search Sky / Explore More"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border border-white/15 bg-[#030712]/85 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-amber-300 text-[11px] sm:text-xs font-mono transition-colors shadow-md"
+              title="Query New Astronomical Coordinates"
             >
               <Search className="h-3.5 w-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Search Sky</span>
+              <span className="hidden sm:inline">{language === 'ar' ? 'إحداثيات' : 'Search Sky'}</span>
             </button>
 
             {/* Provenance Audit Trigger */}
             <button
               onClick={() => setShowProvenance(true)}
-              className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-white/15 bg-[#030712]/75 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-emerald-400 transition-colors shadow-md"
-              title="Scientific Provenance Audit"
+              className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-white/15 bg-[#030712]/85 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-emerald-400 transition-colors shadow-md"
+              title="Inspect FITS Provenance & Data Quality"
             >
               <ShieldCheck className="h-4 w-4 text-emerald-400" />
             </button>
           </div>
         </div>
 
-        {/* Tier 2 (Mobile only): Mode Selector Scrollable Strip */}
-        <div className="pointer-events-auto md:hidden flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/80 backdrop-blur-2xl shadow-xl gap-1 font-mono text-[11px] overflow-x-auto no-scrollbar scrollbar-none w-fit mx-auto max-w-full">
+        {/* Mobile-Only Mode Selector Scrollable Strip */}
+        <div className="pointer-events-auto md:hidden flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/90 backdrop-blur-2xl shadow-xl gap-1 font-mono text-[11px] overflow-x-auto no-scrollbar scrollbar-none w-fit mx-auto max-w-full">
           <button
             onClick={() => handleViewModeChange('difference')}
             className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'difference'
-                ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40 font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewDifference}
+            {language === 'ar' ? 'ما الذي تغير؟' : 'What Changed'}
           </button>
           <button
             onClick={() => handleViewModeChange('significance')}
-            className={`px-2.5 py-1 rounded-full whitespace-nowrap transition-all ${
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'significance'
                 ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewSignificance}
+            {language === 'ar' ? 'قوة الإشارة' : 'Significance'}
           </button>
           <button
             onClick={() => handleViewModeChange('epoch1')}
             className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'epoch1'
-                ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                ? 'bg-sky-500/20 text-sky-200 border border-sky-400/30 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewEpoch1}
+            Epoch 1
           </button>
           <button
             onClick={() => handleViewModeChange('epoch2')}
             className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'epoch2'
-                ? 'bg-white/15 text-sky-300 border border-white/20 font-semibold'
+                ? 'bg-sky-500/20 text-sky-200 border border-sky-400/30 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewEpoch2}
+            Epoch 2
           </button>
           <button
             onClick={() => handleViewModeChange('blink')}
             className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'blink'
-                ? 'bg-white/15 text-emerald-300 border border-white/20 font-semibold'
+                ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewBlink}
+            Blink
           </button>
           <button
             onClick={() => handleViewModeChange('split')}
             className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
               viewMode === 'split'
-                ? 'bg-white/15 text-amber-300 border border-white/20 font-semibold'
+                ? 'bg-white/15 text-slate-200 border border-white/20 font-semibold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            {t.viewSplit}
+            Split
           </button>
         </div>
       </div>
@@ -727,8 +716,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       {/* Special Context Slider for Split Wipe */}
       {viewMode === 'split' && (
         <div className="absolute top-20 sm:top-16 inset-x-0 pointer-events-none z-30 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
-            <span className="text-sky-300 font-semibold text-[11px] sm:text-xs">{t.viewEpoch1}</span>
+          <div className="pointer-events-auto flex items-center gap-2 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/90 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+            <span className="text-sky-300 font-semibold text-[11px] sm:text-xs">Epoch 1</span>
             <input
               type="range"
               min="0"
@@ -738,7 +727,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               onChange={(e) => setSliderPos(parseFloat(e.target.value))}
               className="w-28 sm:w-36 accent-amber-400 cursor-pointer"
             />
-            <span className="text-amber-300 font-semibold text-[11px] sm:text-xs">{t.viewEpoch2}</span>
+            <span className="text-amber-300 font-semibold text-[11px] sm:text-xs">Epoch 2</span>
           </div>
         </div>
       )}
@@ -746,7 +735,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       {/* Special Context Control for Blink Cadence */}
       {viewMode === 'blink' && (
         <div className="absolute top-20 sm:top-16 inset-x-0 pointer-events-none z-30 flex justify-center px-4">
-          <div className="pointer-events-auto flex items-center gap-2.5 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
+          <div className="pointer-events-auto flex items-center gap-2.5 sm:gap-3 px-3.5 py-1.5 sm:py-2 rounded-full border border-white/10 bg-[#030712]/90 backdrop-blur-2xl shadow-xl text-xs font-mono text-slate-300">
             <button
               onClick={() => setIsBlinking(!isBlinking)}
               className="p-1 rounded-full bg-white/10 hover:bg-white/20 text-amber-300"
@@ -754,7 +743,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               {isBlinking ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
             </button>
             <span className="px-2 py-0.5 rounded bg-white/10 text-amber-300 font-bold uppercase text-[10px]">
-              {blinkEpoch === 'epoch1' ? t.viewEpoch1 : t.viewEpoch2}
+              {blinkEpoch === 'epoch1' ? 'Epoch 1 (Apr 2025)' : 'Epoch 2 (May 2025)'}
             </span>
             <span className="text-slate-400 text-[11px]">{blinkSpeedMs}ms</span>
           </div>
@@ -762,17 +751,91 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       )}
 
       {/* =========================================================================
-          3. FULL CANDIDATE EXPLORER DRAWER (PAGINATED & FILTERABLE - NO 4 LIMIT)
+          3. PROGRESSIVE DISCLOSURE EXPLAINER DECK (UNDER/OVER CANVAS)
+          ========================================================================= */}
+      {showExplanationDeck && (
+        <div className="absolute top-20 sm:top-16 left-2 sm:left-4 z-20 pointer-events-auto max-w-[280px] sm:max-w-xs rounded-2xl border border-white/10 bg-[#030712]/90 backdrop-blur-2xl p-3 shadow-xl text-xs font-mono text-slate-300 hidden md:block">
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+            <div className="flex items-center gap-1.5 text-amber-300 font-bold text-[11px]">
+              <Eye className="h-3.5 w-3.5" />
+              <span>{language === 'ar' ? 'ما الذي أراه الآن؟' : 'What am I looking at?'}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setExplanationMode(explanationMode === 'simple' ? 'scientific' : 'simple')}
+                className="text-[9px] px-1.5 py-0.5 rounded border border-white/10 bg-white/5 text-slate-300 hover:text-amber-300 transition-colors"
+                title="Toggle Simple Summary / Deep Scientific Telemetry"
+              >
+                {explanationMode === 'simple' ? 'Simple' : 'Scientific'}
+              </button>
+              <button
+                onClick={() => setShowExplanationDeck(false)}
+                className="text-slate-400 hover:text-slate-200 p-0.5"
+                title="Hide Explainer"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+
+          {explanationMode === 'simple' ? (
+            <div className="space-y-1.5 text-[11px] text-slate-300 leading-relaxed font-sans">
+              {viewMode === 'difference' ? (
+                <>
+                  <p>
+                    <strong className="text-amber-300">خريطة الفروق (Difference Map):</strong> نطرح اللقطة الأولى من الثانية.
+                  </p>
+                  <p className="text-slate-400 text-[10px]">
+                    • <span className="text-emerald-300 font-bold">بقعة ساطعة/بيضاء:</span> النجم ازداد بريقه.<br />
+                    • <span className="text-rose-300 font-bold">بقعة داكنة/سوداء:</span> النجم خفت بريقه.<br />
+                    • <span className="text-slate-400 font-bold">رمادي محايد:</span> سماء هادئة لم تتغير.
+                  </p>
+                </>
+              ) : viewMode === 'significance' ? (
+                <p>
+                  <strong className="text-amber-300">مقياس قوة الإشارة (Significance):</strong> يوضح الفارق مقسومًا على ضوضاء الكاشف. أي قيمة فوق <strong className="text-emerald-300">4σ</strong> تعتبر انحرافًا إحصائيًا يستحق التحقيق.
+                </p>
+              ) : (
+                <p>
+                  <strong className="text-sky-300">صورة الأشعة تحت الحمراء الأصلية:</strong> مسجلة بواسطة تلسكوب SPHEREx بطول موجي 0.93 ميكرومتر.
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-1 text-[10px] text-slate-300">
+              <div className="flex justify-between"><span className="text-slate-500">BUNIT:</span> <span className="text-slate-200">MJy/sr</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Pixel Scale:</span> <span className="text-slate-200">~6.15"/px</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Noise (MAD σ):</span> <span className="text-amber-300">{currentResult.difference.stats.noiseSigma.toFixed(3)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Time Baseline:</span> <span className="text-slate-200">{currentResult.compatibility.timeBaselineDays.toFixed(1)} days</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Registration:</span> <span className="text-emerald-300">Rigid Translation (WCS)</span></div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Button to restore explainer deck if hidden */}
+      {!showExplanationDeck && (
+        <button
+          onClick={() => setShowExplanationDeck(true)}
+          className="absolute top-20 sm:top-16 left-2 sm:left-4 z-20 pointer-events-auto hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-white/10 bg-[#030712]/80 backdrop-blur-xl text-[10px] font-mono text-slate-400 hover:text-amber-300 shadow-md transition-colors"
+        >
+          <Info className="h-3 w-3 text-amber-400" />
+          <span>{language === 'ar' ? 'دليل الخريطة' : 'Map Guide'}</span>
+        </button>
+      )}
+
+      {/* =========================================================================
+          4. CANDIDATE EXPLORER DRAWER (FILTERABLE & PAGINATED)
           ========================================================================= */}
       {showCandidateDrawer && (
-        <div className="absolute top-20 sm:top-16 left-2 sm:left-4 z-40 pointer-events-auto w-[calc(100vw-16px)] sm:w-96 max-h-[82vh] overflow-hidden flex flex-col rounded-3xl border border-white/15 bg-[#030712]/90 backdrop-blur-2xl shadow-[0_16px_50px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute top-20 sm:top-16 left-2 sm:left-4 z-40 pointer-events-auto w-[calc(100vw-16px)] sm:w-96 max-h-[82vh] overflow-hidden flex flex-col rounded-3xl border border-white/15 bg-[#030712]/95 backdrop-blur-2xl shadow-[0_16px_50px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-150">
           {/* Header */}
           <div className="p-3.5 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Crosshair className="h-4 w-4 text-amber-400" />
               <div>
                 <h4 className="font-['Outfit'] text-xs font-bold text-slate-100">
-                  {language === 'ar' ? 'المرشحات الفلكية (انحرافات إحصائية)' : 'Candidate Detections (Statistical Anomalies)'}
+                  {language === 'ar' ? 'المرشحات الفلكية المرصودة' : 'Candidate Detections (Statistical Excursions)'}
                 </h4>
                 <p className="text-[10px] font-mono text-slate-400">
                   {filteredCandidates.length} of {currentResult.candidates.length} sources · Page {candidatePage} of {totalCandidatePages}
@@ -782,15 +845,31 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <button
               onClick={() => setShowCandidateDrawer(false)}
               className="p-1.5 rounded-xl text-slate-400 hover:text-slate-100 hover:bg-white/10"
+              title="Close Drawer"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          {/* Scientific Guidance Banner */}
-          <div className="px-3.5 py-1.5 bg-black/40 border-b border-white/5 text-[9px] font-mono text-slate-400 leading-tight">
-            Peaks are statistical anomalies (|S| ≥ 4.0σ). Full transient confirmation requires multi-band and multi-epoch verification.
+          {/* Educational "Why these checks matter" toggle */}
+          <div className="px-3.5 py-2 bg-black/40 border-b border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+            <span>Statistical peaks (|S| ≥ 4.0σ)</span>
+            <button
+              onClick={() => setShowWhyChecksMatter(!showWhyChecksMatter)}
+              className="text-amber-300 hover:underline flex items-center gap-1"
+            >
+              <Info className="h-3 w-3" />
+              <span>{showWhyChecksMatter ? 'Hide Info' : 'Why checks matter'}</span>
+            </button>
           </div>
+
+          {showWhyChecksMatter && (
+            <div className="p-3 bg-amber-500/[0.04] border-b border-amber-500/20 text-[10px] text-slate-300 font-mono space-y-1 leading-relaxed">
+              <p><strong className="text-amber-300">1. Significance (≥4σ):</strong> Distinguishes true astrophysical flux excursions from Gaussian instrumental noise.</p>
+              <p><strong className="text-amber-300">2. DQ Bitmask:</strong> Disqualifies saturated cores (0x02) and persistence outliers (0x80000).</p>
+              <p><strong className="text-amber-300">3. Gaia DR3 Match:</strong> Confirms alignment with cataloged point source within 3.5" cone.</p>
+            </div>
+          )}
 
           {/* Filter & Sort Bar */}
           <div className="p-2 border-b border-white/5 bg-black/30 flex items-center justify-between gap-1 text-[10px] font-mono">
@@ -877,25 +956,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       ICRS: {cand.ra.toFixed(4)}°, {cand.dec.toFixed(4)}°
                     </div>
 
-                    {/* Scientific details & Heuristic Artifact Index if selected */}
+                    {/* Scientific details if selected */}
                     {isSelected && (
                       <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-slate-300 leading-relaxed space-y-1">
                         <div className="flex items-center justify-between text-[9px] text-slate-400">
-                          <span>Heuristic Artifact Index:</span>
+                          <span>Artifact Check Penalty:</span>
                           <span className={isArtifact ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
-                            {cand.artifactScore.toFixed(2)} / 1.00 (Empirical Penalty)
+                            {cand.artifactScore.toFixed(2)} / 1.00
                           </span>
                         </div>
                         {isArtifact ? (
-                          <div className="text-amber-300">⚠️ {cand.whyFlagged || 'Flagged by FITS bitmask or dipole filter.'}</div>
+                          <div className="text-amber-300">⚠️ {cand.whyFlagged || 'Flagged by detector bitmask or dipole filter.'}</div>
                         ) : hasGaiaMatch ? (
                           <div className="text-cyan-300">
                             ⭐ Gaia DR3: {cand.catalogMatches[0].identifier} ({cand.catalogMatches[0].separationArcsec}" sep)
-                            <span className="block text-[9px] text-slate-400 mt-0.5">Catalog point-source association (not proof of physical variability).</span>
+                            <span className="block text-[9px] text-slate-400 mt-0.5">Known catalog point source in field.</span>
                           </div>
                         ) : (
                           <div className="text-emerald-300">
-                            🌌 Statistical anomaly candidate (|S| ≥ 4σ) without detector bitmask flags. Requires multi-band cross-epoch spectroscopic confirmation.
+                            🌌 Uncataloged candidate anomaly (|S| ≥ 4σ) with clean quality bitmask.
                           </div>
                         )}
                       </div>
@@ -934,11 +1013,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       )}
 
       {/* =========================================================================
-          4. FLOATING BOTTOM GLASS CONTROL DOCK (DESKTOP DOCK + MOBILE SLIDERS BUTTON)
+          5. FLOATING BOTTOM GLASS CONTROL DOCK
           ========================================================================= */}
       <div className="absolute bottom-3 sm:bottom-4 inset-x-2 sm:inset-x-4 pointer-events-none z-30 flex items-center justify-between">
         {/* Desktop Left: Live Cursor Inspector Pill */}
-        <div className="pointer-events-auto hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-[#030712]/75 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-lg">
+        <div className="pointer-events-auto hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 bg-[#030712]/80 backdrop-blur-2xl text-[11px] font-mono text-slate-300 shadow-lg">
           <Crosshair className="h-3.5 w-3.5 text-amber-400" />
           {cursorPos ? (
             <div className="flex items-center gap-2">
@@ -949,12 +1028,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <span className="text-sky-300">{cursorPos.val != null ? cursorPos.val.toFixed(3) : '--'} MJy/sr</span>
             </div>
           ) : (
-            <span className="text-slate-500">Hover canvas for celestial coordinates</span>
+            <span className="text-slate-500">Hover canvas to inspect celestial coordinates</span>
           )}
         </div>
 
-        {/* Center: Image Controls (Desktop: full bar; Mobile: compact bar with drawer button) */}
-        <div className="pointer-events-auto flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/85 backdrop-blur-2xl shadow-xl gap-1 font-mono text-xs mx-auto md:mx-auto">
+        {/* Center: Image Controls (Desktop: full dock; Mobile: compact dock + drawer button) */}
+        <div className="pointer-events-auto flex items-center p-1 rounded-full border border-white/10 bg-[#030712]/90 backdrop-blur-2xl shadow-xl gap-1 font-mono text-xs mx-auto md:mx-auto">
           {/* Zoom Out */}
           <button
             onClick={() => setZoom((z) => Math.max(0.6, z - 0.25))}
@@ -976,7 +1055,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           <button
             onClick={() => {
               setPan({ x: 0, y: 0 });
-              setZoom(1.2);
+              setZoom(1.15);
             }}
             className="p-1.5 rounded-full text-slate-400 hover:text-slate-100 hover:bg-white/10 transition-colors"
             title="Reset Pan/Zoom"
@@ -984,7 +1063,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <RotateCcw className="h-3.5 w-3.5" />
           </button>
 
-          {/* Desktop Controls (Hidden on Mobile) */}
           <span className="hidden md:inline-block h-3.5 w-[1px] bg-white/10 mx-0.5" />
 
           {/* Science vs Presentation Toggle (Desktop) */}
@@ -998,7 +1076,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             title={displayMode === 'science' ? 'Science Mode: Native 6.15"/px detector sampling' : 'Presentation Mode: Smoothed Visualization'}
           >
             <Binary className="h-3 w-3" />
-            <span>{displayMode === 'science' ? 'Science (Native)' : 'Presentation (Smooth)'}</span>
+            <span>{displayMode === 'science' ? 'Science (Native)' : 'Smooth'}</span>
           </button>
 
           {/* Grid Toggle (Desktop, Science Mode only) */}
@@ -1057,12 +1135,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </div>
 
       {/* =========================================================================
-          5. MOBILE COLLAPSIBLE CONTROLS BOTTOM SHEET
+          6. MOBILE COLLAPSIBLE CONTROLS BOTTOM SHEET
           ========================================================================= */}
       {isMobileControlsOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm md:hidden animate-in fade-in duration-150">
           <div className="w-full rounded-t-3xl border-t border-white/20 bg-[#030712]/95 backdrop-blur-2xl p-5 shadow-2xl max-h-[85vh] overflow-y-auto font-mono text-xs text-slate-200">
-            {/* Drawer Handle & Header */}
+            {/* Header */}
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-white/10">
               <div className="flex items-center gap-2">
                 <Sliders className="h-4 w-4 text-amber-400" />
@@ -1198,7 +1276,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
 
-            {/* Close Button */}
+            {/* Done Button */}
             <button
               onClick={() => setIsMobileControlsOpen(false)}
               className="w-full py-3 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-200 font-bold transition-colors"
@@ -1210,7 +1288,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       )}
 
       {/* =========================================================================
-          6. SPEX AI FLOATING POPUP & LAUNCHER
+          7. SPEX AI POPUP COMPANION
           ========================================================================= */}
       <SpexPopup
         currentResult={currentResult}
@@ -1230,7 +1308,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       )}
 
       {/* =========================================================================
-          7. SEARCH SKY / EXPLORE MORE DIALOG (TAP QUERY & DIRECT FITS DISCOVERY)
+          8. SEARCH SKY / EXPLORE MORE DIALOG
           ========================================================================= */}
       {isSearchOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">

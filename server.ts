@@ -342,18 +342,21 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     // Run scientific difference imaging pipeline
     const diffResult = ScientificPipeline.processDifference(obs1, obs2, fitsData1, fitsData2);
 
-    // If candidates detected, cross-match top candidates with real Gaia DR3 (3.5" radius)
-    for (const cand of diffResult.candidates.slice(0, 10)) {
-      try {
-        const matches = await CatalogMatcher.crossmatch(cand.ra, cand.dec, 3.5);
-        cand.catalogMatches = matches;
-        if (matches.length > 0 && cand.status === 'Candidate') {
-          cand.status = 'Likely known source';
+    // Cross-match top candidate detections with Gaia DR3 (3.5" radius) concurrently
+    const topCandidates = diffResult.candidates.slice(0, 5);
+    await Promise.allSettled(
+      topCandidates.map(async (cand) => {
+        try {
+          const matches = await CatalogMatcher.crossmatch(cand.ra, cand.dec, 3.5);
+          cand.catalogMatches = matches;
+          if (matches.length > 0 && cand.status === 'Candidate') {
+            cand.status = 'Likely known source';
+          }
+        } catch {
+          // Gracefully default to empty catalog matches without failing pipeline
         }
-      } catch (err) {
-        console.warn('Crossmatch error for candidate', cand.id, err);
-      }
-    }
+      })
+    );
 
     const provenance: ProvenanceRecord = {
       caseId: caseIdToUse,

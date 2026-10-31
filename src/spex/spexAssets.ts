@@ -2,6 +2,7 @@ export type SPEXMood =
   | 'greeting'
   | 'explaining'
   | 'thinking'
+  | 'curious'
   | 'investigator'
   | 'eureka'
   | 'sassy'
@@ -22,6 +23,11 @@ export interface SPEXAsset {
 }
 
 export const SPEX_ASSETS: Record<SPEXMood, SPEXAsset> = {
+  curious: {
+    mood: 'curious',
+    imagePath: '/assets/aistudio/03_face_curious_cfd683b2.png',
+    label: 'فضول فلكي',
+  },
   greeting: {
     mood: 'greeting',
     imagePath: '/assets/aistudio/10_pose_friendly_greeting_d504707f.png',

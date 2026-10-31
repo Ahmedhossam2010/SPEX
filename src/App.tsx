@@ -17,24 +17,37 @@ export function App() {
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
 
-  // Check URL query parameters (e.g. ?autostart=1 or ?tab=explore or ?lang=ar)
+  // Check URL query parameters (e.g. ?case=case-cal-stable-02 or ?ra=276.2614&dec=64.8258 or ?tab=explore or ?lang=ar)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('autostart') === '1' || params.get('tab') === 'explore') {
-      setActiveTab('explore');
-    }
-    if (params.get('lang') === 'ar') {
+    const caseParam = params.get('case');
+    const raParam = params.get('ra');
+    const decParam = params.get('dec');
+    const tabParam = params.get('tab');
+    const autostartParam = params.get('autostart');
+    const langParam = params.get('lang');
+
+    if (langParam === 'ar') {
       setLanguage('ar');
     }
-  }, []);
 
-  // Fetch curated real cases on startup
-  useEffect(() => {
+    if (autostartParam === '1' || tabParam === 'explore' || caseParam || (raParam && decParam)) {
+      setActiveTab('explore');
+    }
+
+    // Fetch curated real cases on startup
     fetch('/api/spherex/cases')
       .then((r) => r.json())
       .then((data) => {
         setCases(data);
-        if (data && data.length > 0) {
+        if (caseParam && data.some((c: any) => c.id === caseParam)) {
+          loadCase(caseParam);
+        } else if (raParam && decParam && !Number.isNaN(parseFloat(raParam)) && !Number.isNaN(parseFloat(decParam))) {
+          loadCase(data[0]?.id || 'case-nep-var-01', {
+            ra: parseFloat(raParam),
+            dec: parseFloat(decParam),
+          });
+        } else if (data && data.length > 0) {
           loadCase(data[0].id);
         }
       })
