@@ -370,6 +370,7 @@ export class ScientificPipeline {
     const diffAbsDev = diffValues.map((v) => Math.abs(v - medianD));
     diffAbsDev.sort((a, b) => a - b);
     const noiseSigma = 1.4826 * (diffAbsDev[mid] || stdD);
+    const timeBaselineDays = Math.abs(obs2.t_min - obs1.t_min);
 
     const candidates = this.detectCandidates(
       diff,
@@ -382,7 +383,8 @@ export class ScientificPipeline {
       width,
       height,
       fits2.wcs,
-      noiseSigma
+      noiseSigma,
+      timeBaselineDays
     );
 
     const evidence = this.evaluateEvidence(candidates, compatibility, obs1, obs2, noiseSigma);
@@ -425,7 +427,8 @@ export class ScientificPipeline {
     width: number,
     height: number,
     wcs: any,
-    noiseSigma: number
+    noiseSigma: number,
+    timeBaselineDays = 0
   ): CandidateDetection[] {
     const candidates: CandidateDetection[] = [];
     const minSignificanceThreshold = 4.0; // 4.0 sigma threshold
@@ -531,6 +534,76 @@ export class ScientificPipeline {
             });
           }
         }
+      }
+    }
+
+    // -------------------------------------------------------------
+    // MOTION / ASTEROID DETECTION ALGORITHM:
+    // Identifies moving objects (e.g. Solar System asteroids or high-proper-motion stars)
+    // by searching for a complementary opposite-sign counterpart in the difference frame
+    // separated by >= 1.8 pixels (beyond unaligned PSF pointing jitter).
+    // -------------------------------------------------------------
+    const positiveCandidates = candidates.filter((c) => c.deltaFlux > 0);
+    const negativeCandidates = candidates.filter((c) => c.deltaFlux < 0);
+
+    for (const posCand of positiveCandidates) {
+      let bestMatch: CandidateDetection | null = null;
+      let minDiscrepancy = Infinity;
+
+      for (const negCand of negativeCandidates) {
+        const dx = posCand.x - negCand.x;
+        const dy = posCand.y - negCand.y;
+        const distPix = Math.hypot(dx, dy);
+
+        // Displaced dipole condition: spatial displacement between 1.8 and 30 pixels
+        if (distPix >= 1.8 && distPix <= 30.0) {
+          const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
+          // Flux balance condition (within a factor of 2.8)
+          if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
+            const discrepancy = Math.abs(1.0 - fluxRatio) + distPix * 0.04;
+            if (discrepancy < minDiscrepancy) {
+              minDiscrepancy = discrepancy;
+              bestMatch = negCand;
+            }
+          }
+        }
+      }
+
+      if (bestMatch) {
+        const sepArcsec = WCS.angularSeparationArcsec(posCand.ra, posCand.dec, bestMatch.ra, bestMatch.dec);
+        const dtDays = timeBaselineDays > 0 ? timeBaselineDays : 1.0;
+        const speedArcsecDay = sepArcsec / dtDays;
+        const properMotionMasYr = (sepArcsec * 1000) / (dtDays * 365.25);
+
+        // Bearing / Position Angle from Epoch 1 (negative trough) to Epoch 2 (positive peak)
+        const dAlpha = (posCand.ra - bestMatch.ra) * (Math.PI / 180);
+        const d1 = bestMatch.dec * (Math.PI / 180);
+        const d2 = posCand.dec * (Math.PI / 180);
+        const yBearing = Math.sin(dAlpha) * Math.cos(d2);
+        const xBearing = Math.cos(d1) * Math.sin(d2) - Math.sin(d1) * Math.cos(d2) * Math.cos(dAlpha);
+        let paDeg = (Math.atan2(yBearing, xBearing) * (180 / Math.PI)) % 360;
+        if (paDeg < 0) paDeg += 360;
+
+        posCand.motion = {
+          isMoving: true,
+          speedArcsecPerDay: Number(speedArcsecDay.toFixed(2)),
+          properMotionMasYr: Number(properMotionMasYr.toFixed(1)),
+          positionAngleDeg: Number(paDeg.toFixed(1)),
+          separationArcsec: Number(sepArcsec.toFixed(2)),
+          counterpart: {
+            x: bestMatch.x,
+            y: bestMatch.y,
+            ra: bestMatch.ra,
+            dec: bestMatch.dec,
+            flux: bestMatch.deltaFlux,
+          },
+        };
+
+        posCand.status = 'Moving object candidate';
+        posCand.artifactScore = Math.min(posCand.artifactScore, 0.20);
+        // Clear registration dipole flag since this is a genuine displaced moving source
+        posCand.artifactFlags = posCand.artifactFlags.filter((f) => f !== 'REGISTRATION_OR_PSF_DIPOLE');
+        posCand.whyFlagged = `Moving object candidate: displacement of ${sepArcsec.toFixed(1)}" detected across ${dtDays.toFixed(1)} days (apparent speed ${speedArcsecDay.toFixed(2)}"/day, PA ${paDeg.toFixed(1)}°).`;
       }
     }
 
@@ -832,14 +905,24 @@ export class ScientificPipeline {
       };
     }
 
-    const cleanCandidates = candidates.filter((c) => c.status === 'Candidate' && c.artifactScore < 0.4);
+    const movingCandidates = candidates.filter((c) => c.status === 'Moving object candidate' || c.motion?.isMoving);
+    const cleanCandidates = candidates.filter(
+      (c) => (c.status === 'Candidate' || c.status === 'Moving object candidate') && c.artifactScore < 0.4
+    );
     const artifactCandidates = candidates.filter((c) => c.artifactScore >= 0.5);
 
     let classification: InvestigationClassification = 'NO SIGNIFICANT CHANGE DETECTED';
     let summaryProse = 'No statistically significant flux change was detected above the 3.5σ observational noise threshold.';
     let statisticalJustification = `The difference image is consistent with Gaussian noise (σ_diff = ${noiseSigma.toFixed(4)}). No point sources exceeded the detection threshold without artifact disqualification.`;
 
-    if (cleanCandidates.length > 0) {
+    if (movingCandidates.length > 0) {
+      const topMove = movingCandidates[0];
+      classification = 'SIGNIFICANT CHANGE DETECTED';
+      const speed = topMove.motion?.speedArcsecPerDay ? `${topMove.motion.speedArcsecPerDay.toFixed(2)}"/day` : 'measurable velocity';
+      const sep = topMove.motion?.separationArcsec ? `${topMove.motion.separationArcsec.toFixed(1)}"` : 'significant';
+      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline (speed ~${speed}).`;
+      statisticalJustification = `Complementary Epoch 1 / Epoch 2 difference dipole exhibits spatially displaced point-like morphology consistent with an asteroid or high-proper-motion source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? 'N/A'}°).`;
+    } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       if (Math.abs(top.peakSignificance) >= 4.0) {
         classification = 'SIGNIFICANT CHANGE DETECTED';
@@ -878,7 +961,12 @@ export class ScientificPipeline {
       `Difference image noise floor: σ_diff = ${noiseSigma.toFixed(4)} MJy/sr.`,
     ];
 
-    if (cleanCandidates.length > 0) {
+    if (movingCandidates.length > 0) {
+      const topMove = movingCandidates[0];
+      whatWeKnow.push(
+        `Detected moving candidate with apparent speed ~${topMove.motion?.speedArcsecPerDay?.toFixed(2)} arcsec/day (proper motion ~${topMove.motion?.properMotionMasYr?.toFixed(0)} mas/yr).`
+      );
+    } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       whatWeKnow.push(`Detected candidate at RA: ${top.ra.toFixed(5)}°, Dec: ${top.dec.toFixed(5)}° with S/N = ${top.peakSignificance}σ.`);
     }

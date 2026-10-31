@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { WCS } from './wcs';
 import { ScientificPipeline } from './pipeline';
 import { FITSReader } from './fitsReader';
-import { WCSParams } from './types';
+import { CatalogMatcher } from './catalogMatcher';
+import { WCSParams, SPHERExObservation } from './types';
 
 test('WCS: converts pixel to celestial coordinates and back with high precision', () => {
   const wcs: WCSParams = {
@@ -535,6 +536,217 @@ test('Pipeline: assessArtifact produces heuristic penalty bounded between 0.0 an
   assert.ok(satResult.artifactScore >= 0.8, 'Saturation must incur major heuristic penalty');
   assert.ok(satResult.flags.includes('SATURATION'));
 });
+
+test('CatalogMatcher: concurrently cross-matches Gaia DR3 and AllWISE multi-wavelength catalogs', async () => {
+  const ra = 276.26084;
+  const dec = 64.82562;
+  const matches = await CatalogMatcher.crossmatch(ra, dec, 3.5);
+
+  assert.ok(Array.isArray(matches), 'Matches must be an array');
+  assert.ok(matches.length >= 2, `Expected at least 2 catalog matches (Gaia + AllWISE), got ${matches.length}`);
+
+  const gaiaMatch = matches.find((m) => m.catalog === 'Gaia DR3');
+  assert.ok(gaiaMatch, 'Must contain a Gaia DR3 counterpart');
+  assert.ok(gaiaMatch.identifier.includes('2256659625017767168'));
+  assert.ok(gaiaMatch.separationArcsec <= 3.5);
+
+  const wiseMatch = matches.find((m) => m.catalog === 'AllWISE');
+  assert.ok(wiseMatch, 'Must contain an AllWISE infrared counterpart');
+  assert.ok(wiseMatch.identifier.includes('AllWISE'));
+  assert.ok(wiseMatch.photometry?.includes('W1 ='), 'AllWISE match must report mid-IR photometry');
+});
+
+test('Pipeline: motion detection identifies moving asteroid / transient candidate from displaced dipole', () => {
+  const width = 64;
+  const height = 64;
+  const size = width * height;
+
+  const data1 = new Float32Array(size).fill(5.0);
+  const data2 = new Float32Array(size).fill(5.0);
+  const varMap = new Float32Array(size).fill(0.25);
+  const diff = new Float32Array(size).fill(0.0);
+  const sig = new Float32Array(size).fill(0.0);
+
+  // In Epoch 1: asteroid at (20, 30) with flux 20.0
+  data1[30 * width + 20] = 20.0;
+  // In Epoch 2: asteroid moved to (26, 30) with flux 20.0 (displacement = 6 pixels)
+  data2[30 * width + 26] = 20.0;
+
+  // In difference D = I2 - I1:
+  // (20, 30) is -15.0 (trough)
+  // (26, 30) is +15.0 (peak)
+  diff[30 * width + 20] = -15.0;
+  diff[30 * width + 26] = +15.0;
+  sig[30 * width + 20] = -15.0 / Math.sqrt(0.5); // S/N ≈ -21.2σ
+  sig[30 * width + 26] = +15.0 / Math.sqrt(0.5); // S/N ≈ +21.2σ
+
+  const wcs: WCSParams = {
+    crval1: 276.26,
+    crval2: 64.82,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: -6.15 / 3600,
+    cdelt2: 6.15 / 3600,
+    cd1_1: -6.15 / 3600,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: 6.15 / 3600,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.15,
+  };
+
+  const timeBaselineDays = 2.0; // 2 days between observations
+  const candidates = ScientificPipeline.detectCandidates(
+    diff,
+    varMap,
+    sig,
+    data1,
+    data2,
+    null,
+    null,
+    width,
+    height,
+    wcs,
+    0.5,
+    timeBaselineDays
+  );
+
+  const movingCandidate = candidates.find((c) => c.motion?.isMoving);
+  assert.ok(movingCandidate, 'Pipeline must detect a moving object candidate');
+  assert.equal(movingCandidate.status, 'Moving object candidate');
+  assert.ok(movingCandidate.motion!.separationArcsec! > 30.0, 'Displacement must be ~36.9 arcsec (6 px * 6.15")');
+  assert.ok(movingCandidate.motion!.speedArcsecPerDay! > 15.0, 'Apparent velocity must be ~18.4 arcsec/day');
+  assert.ok(movingCandidate.motion!.properMotionMasYr! > 0, 'Proper motion must be calculated');
+  assert.equal(movingCandidate.motion!.counterpart?.x, 20);
+  assert.equal(movingCandidate.motion!.counterpart?.y, 30);
+});
+
+test('Integration Test: End-to-end multi-extension FITS generation, WCS ingestion, differencing, and catalog cross-match', async () => {
+  // Construct valid FITS file headers and data arrays
+  const width = 64;
+  const height = 64;
+  const numPixels = width * height;
+
+  // Helper to build 80-char FITS card
+  const makeCard = (key: string, value: string | number) => {
+    let str = key.padEnd(8, ' ') + '= ';
+    if (typeof value === 'number') {
+      str += String(value).padStart(20, ' ');
+    } else {
+      str += `'${value}'`.padEnd(20, ' ');
+    }
+    return str.padEnd(80, ' ');
+  };
+
+  const buildHDU = (cards: string[], dataBytes: Buffer) => {
+    let headerText = cards.join('');
+    headerText += 'END'.padEnd(80, ' ');
+    const padLen = 2880 - (headerText.length % 2880);
+    if (padLen < 2880) headerText += ' '.repeat(padLen);
+
+    const headerBuf = Buffer.from(headerText, 'ascii');
+    const dataPad = 2880 - (dataBytes.length % 2880);
+    const paddedData = dataPad < 2880 ? Buffer.concat([dataBytes, Buffer.alloc(dataPad)]) : dataBytes;
+    return Buffer.concat([headerBuf, paddedData]);
+  };
+
+  // Primary HDU (WCS & Metadata)
+  const primaryCards = [
+    makeCard('SIMPLE', 'T'),
+    makeCard('BITPIX', -32),
+    makeCard('NAXIS', 2),
+    makeCard('NAXIS1', width),
+    makeCard('NAXIS2', height),
+    makeCard('EXTEND', 'T'),
+    makeCard('BUNIT', 'MJy/sr'),
+    makeCard('CRVAL1', 276.26084),
+    makeCard('CRVAL2', 64.82562),
+    makeCard('CRPIX1', 33.0),
+    makeCard('CRPIX2', 33.0),
+    makeCard('PC1_1', -0.0017083),
+    makeCard('PC1_2', 0.0),
+    makeCard('PC2_1', 0.0),
+    makeCard('PC2_2', 0.0017083),
+    makeCard('CDELT1', 1.0),
+    makeCard('CDELT2', 1.0),
+    makeCard('CTYPE1', 'RA---TAN'),
+    makeCard('CTYPE2', 'DEC--TAN'),
+  ];
+
+  // Image data buffers (Big-Endian IEEE 754 float32)
+  const img1Buf = Buffer.alloc(numPixels * 4);
+  const img2Buf = Buffer.alloc(numPixels * 4);
+  const varBuf = Buffer.alloc(numPixels * 4);
+
+  for (let i = 0; i < numPixels; i++) {
+    img1Buf.writeFloatBE(10.0, i * 4);
+    img2Buf.writeFloatBE(10.0, i * 4);
+    varBuf.writeFloatBE(0.5, i * 4);
+  }
+
+  // Inject realistic astronomical point-source signal with PSF wings at center pixel (32, 32)
+  for (let dy = -2; dy <= 2; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      const distSq = dx * dx + dy * dy;
+      const psfWeight = Math.exp(-distSq / (2 * 1.3 * 1.3)); // SPHEREx PSF profile sigma ≈ 1.3 px
+      const idx = (32 + dy) * width + (32 + dx);
+      img2Buf.writeFloatBE(10.0 + 15.0 * psfWeight, idx * 4);
+    }
+  }
+
+  const hdu1 = buildHDU(primaryCards, img1Buf);
+  const hdu2 = buildHDU(primaryCards, img2Buf);
+
+  // 1. Ingestion: FITSReader parse
+  const fits1 = FITSReader.parse(hdu1.buffer.slice(hdu1.byteOffset, hdu1.byteOffset + hdu1.byteLength));
+  const fits2 = FITSReader.parse(hdu2.buffer.slice(hdu2.byteOffset, hdu2.byteOffset + hdu2.byteLength));
+
+  assert.equal(fits1.width, 64);
+  assert.equal(fits1.height, 64);
+  assert.ok(fits1.wcs.pixelScaleArcsec > 6.0, 'WCS pixel scale must be ~6.15"');
+
+  // 2. Differencing: ScientificPipeline
+  const obs1: SPHERExObservation = {
+    obs_id: 'SPX-TEST-01',
+    s_ra: 276.26084,
+    s_dec: 64.82562,
+    t_min: 60790.0,
+    t_max: 60790.1,
+    em_min: 0.75e-6,
+    em_max: 1.11e-6,
+    wavelength_um: 0.93,
+    dataproduct_type: 'image',
+    access_url: '',
+    fits_url: '',
+    access_format: 'application/fits',
+  };
+  const obs2: SPHERExObservation = {
+    ...obs1,
+    obs_id: 'SPX-TEST-02',
+    t_min: 60795.0,
+    t_max: 60795.1,
+  };
+
+  const diffResult = ScientificPipeline.processDifference(obs1, obs2, fits1, fits2);
+  assert.equal(diffResult.evidence.classification, 'SIGNIFICANT CHANGE DETECTED');
+  assert.ok(diffResult.candidates.length > 0, 'Must detect significant variable candidate');
+
+  const topCand = diffResult.candidates[0];
+  assert.equal(topCand.x, 32);
+  assert.equal(topCand.y, 32);
+  assert.ok(topCand.peakSignificance > 10.0, 'Candidate S/N must exceed 10σ');
+
+  // 3. Multi-wavelength catalog match (Gaia + AllWISE)
+  const matches = await CatalogMatcher.crossmatch(topCand.ra, topCand.dec, 3.5);
+  assert.ok(matches.length >= 2, 'Candidate must crossmatch with Gaia DR3 and AllWISE');
+  topCand.catalogMatches = matches;
+  assert.ok(topCand.catalogMatches.some((m) => m.catalog === 'Gaia DR3'));
+  assert.ok(topCand.catalogMatches.some((m) => m.catalog === 'AllWISE'));
+});
+
 
 
 

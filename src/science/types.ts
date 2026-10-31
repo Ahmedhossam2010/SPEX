@@ -77,7 +77,23 @@ export type CandidateStatus =
   | 'Likely known source'
   | 'Possible artifact'
   | 'Insufficient evidence'
-  | 'No significant change';
+  | 'No significant change'
+  | 'Moving object candidate';
+
+export interface CandidateMotion {
+  isMoving: boolean;
+  speedArcsecPerDay?: number;
+  properMotionMasYr?: number;
+  positionAngleDeg?: number;
+  separationArcsec?: number;
+  counterpart?: {
+    x: number;
+    y: number;
+    ra: number;
+    dec: number;
+    flux: number;
+  };
+}
 
 export interface CandidateDetection {
   id: string;
@@ -100,6 +116,7 @@ export interface CandidateDetection {
   catalogMatches: CatalogMatch[];
   fwhmPixels?: number;
   morphology?: 'point-like' | 'extended' | 'sharp-spike' | 'dipole';
+  motion?: CandidateMotion;
 }
 
 export type InvestigationClassification =

@@ -958,19 +958,37 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
                     {/* Scientific details if selected */}
                     {isSelected && (
-                      <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-slate-300 leading-relaxed space-y-1">
+                      <div className="mt-2 pt-2 border-t border-white/10 text-[10px] text-slate-300 leading-relaxed space-y-1.5">
                         <div className="flex items-center justify-between text-[9px] text-slate-400">
                           <span>Artifact Check Penalty:</span>
                           <span className={isArtifact ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold'}>
                             {cand.artifactScore.toFixed(2)} / 1.00
                           </span>
                         </div>
+
+                        {cand.motion?.isMoving && (
+                          <div className="p-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[10px]">
+                            <div className="flex items-center justify-between font-bold">
+                              <span>☄️ Moving Transient / Asteroid</span>
+                              <span>{cand.motion.speedArcsecPerDay?.toFixed(1)}"/day</span>
+                            </div>
+                            <div className="text-[9px] text-slate-400 mt-0.5 flex justify-between">
+                              <span>Displacement: {cand.motion.separationArcsec?.toFixed(1)}"</span>
+                              <span>PA: {cand.motion.positionAngleDeg?.toFixed(0)}°</span>
+                            </div>
+                          </div>
+                        )}
+
                         {isArtifact ? (
                           <div className="text-amber-300">⚠️ {cand.whyFlagged || 'Flagged by detector bitmask or dipole filter.'}</div>
-                        ) : hasGaiaMatch ? (
-                          <div className="text-cyan-300">
-                            ⭐ Gaia DR3: {cand.catalogMatches[0].identifier} ({cand.catalogMatches[0].separationArcsec}" sep)
-                            <span className="block text-[9px] text-slate-400 mt-0.5">Known catalog point source in field.</span>
+                        ) : cand.catalogMatches.length > 0 ? (
+                          <div className="space-y-1 pt-0.5">
+                            {cand.catalogMatches.map((m, mIdx) => (
+                              <div key={mIdx} className="text-cyan-300 text-[10px] flex items-center justify-between bg-white/[0.03] px-2 py-1 rounded">
+                                <span>{m.catalog === 'AllWISE' ? '🛰️ AllWISE' : '⭐ Gaia DR3'}: {m.identifier}</span>
+                                <span className="text-slate-400 text-[9px] font-mono">{m.separationArcsec}" sep</span>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <div className="text-emerald-300">

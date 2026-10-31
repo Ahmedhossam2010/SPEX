@@ -379,7 +379,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
         noiseEstimation: 'Robust Median Absolute Deviation (MAD: 1.4826 * MAD)',
         photometry: 'Aperture Photometry (r=2.5px, annulus 4.0-6.0px)',
         artifactFilter: 'Quality Bitmask + Dipole Residual + Sharp Spike Morphology',
-        catalogMatcher: 'CDS VizieR Gaia DR3 Cross-Match (3.5" cone)',
+        catalogMatcher: 'CDS VizieR Multi-Catalog Cross-Match (Gaia DR3 optical + AllWISE mid-IR, 3.5" cone)',
       },
     };
 

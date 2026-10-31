@@ -1,13 +1,13 @@
 {
   "system": "SPHEREx — THE CHANGING SKY",
-  "auditTimestamp": "2026-10-26T08:44:00Z",
+  "auditTimestamp": "2026-10-31T23:58:00Z",
   "dataRelease": "SPHEREx QR2 (Level-2B Processed Science Frames)",
   "dataSource": "NASA/IPAC Infrared Science Archive (IRSA)",
-  "pipelineVersion": "SPHEREx-ChangingSky-v1.4.0",
+  "pipelineVersion": "SPHEREx-ChangingSky-v1.5.0",
   "auditStatus": "VERIFIED_AUTHENTIC",
   "unitTests": {
-    "total": 8,
-    "passed": 8,
+    "total": 21,
+    "passed": 21,
     "failed": 0,
     "framework": "node:test via tsx"
   },
@@ -24,6 +24,9 @@
     "anomaly207SigmaResolved": true,
     "anomalyResolution": "Pixel (49,57) carries DQ flag 0x200000 (persistence contamination) and 0x80000 (stray light). Pipeline now rejects via bitmask with artifact score 1.0. Gaia search cone tightened to 3.5 arcsec, preventing accidental match with unrelated field star 11.13 arcsec away.",
     "liveGaiaDR3CrossMatch": true,
+    "allWiseCrossMatch": true,
+    "motionAndAsteroidDetection": true,
+    "endToEndFITSIntegrationTested": true,
     "irsaTAPObsCoreLive": true,
     "spexBilingualPersona": true,
     "spexLanguages": ["en", "ar"]

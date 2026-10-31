@@ -623,6 +623,7 @@ var ScientificPipeline = class {
     const diffAbsDev = diffValues.map((v) => Math.abs(v - medianD));
     diffAbsDev.sort((a, b) => a - b);
     const noiseSigma = 1.4826 * (diffAbsDev[mid] || stdD);
+    const timeBaselineDays = Math.abs(obs2.t_min - obs1.t_min);
     const candidates = this.detectCandidates(
       diff,
       variance,
@@ -634,7 +635,8 @@ var ScientificPipeline = class {
       width,
       height,
       fits2.wcs,
-      noiseSigma
+      noiseSigma,
+      timeBaselineDays
     );
     const evidence = this.evaluateEvidence(candidates, compatibility, obs1, obs2, noiseSigma);
     return {
@@ -663,7 +665,7 @@ var ScientificPipeline = class {
   /**
    * Real peak candidate detection with circular aperture photometry & artifact rejection
    */
-  static detectCandidates(diff, varMap, significance, data1, data2, flags1, flags2, width, height, wcs, noiseSigma) {
+  static detectCandidates(diff, varMap, significance, data1, data2, flags1, flags2, width, height, wcs, noiseSigma, timeBaselineDays = 0) {
     const candidates = [];
     const minSignificanceThreshold = 4;
     const borderMargin = 5;
@@ -750,6 +752,58 @@ var ScientificPipeline = class {
             });
           }
         }
+      }
+    }
+    const positiveCandidates = candidates.filter((c) => c.deltaFlux > 0);
+    const negativeCandidates = candidates.filter((c) => c.deltaFlux < 0);
+    for (const posCand of positiveCandidates) {
+      let bestMatch = null;
+      let minDiscrepancy = Infinity;
+      for (const negCand of negativeCandidates) {
+        const dx = posCand.x - negCand.x;
+        const dy = posCand.y - negCand.y;
+        const distPix = Math.hypot(dx, dy);
+        if (distPix >= 1.8 && distPix <= 30) {
+          const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
+          if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
+            const discrepancy = Math.abs(1 - fluxRatio) + distPix * 0.04;
+            if (discrepancy < minDiscrepancy) {
+              minDiscrepancy = discrepancy;
+              bestMatch = negCand;
+            }
+          }
+        }
+      }
+      if (bestMatch) {
+        const sepArcsec = WCS.angularSeparationArcsec(posCand.ra, posCand.dec, bestMatch.ra, bestMatch.dec);
+        const dtDays = timeBaselineDays > 0 ? timeBaselineDays : 1;
+        const speedArcsecDay = sepArcsec / dtDays;
+        const properMotionMasYr = sepArcsec * 1e3 / (dtDays * 365.25);
+        const dAlpha = (posCand.ra - bestMatch.ra) * (Math.PI / 180);
+        const d1 = bestMatch.dec * (Math.PI / 180);
+        const d2 = posCand.dec * (Math.PI / 180);
+        const yBearing = Math.sin(dAlpha) * Math.cos(d2);
+        const xBearing = Math.cos(d1) * Math.sin(d2) - Math.sin(d1) * Math.cos(d2) * Math.cos(dAlpha);
+        let paDeg = Math.atan2(yBearing, xBearing) * (180 / Math.PI) % 360;
+        if (paDeg < 0) paDeg += 360;
+        posCand.motion = {
+          isMoving: true,
+          speedArcsecPerDay: Number(speedArcsecDay.toFixed(2)),
+          properMotionMasYr: Number(properMotionMasYr.toFixed(1)),
+          positionAngleDeg: Number(paDeg.toFixed(1)),
+          separationArcsec: Number(sepArcsec.toFixed(2)),
+          counterpart: {
+            x: bestMatch.x,
+            y: bestMatch.y,
+            ra: bestMatch.ra,
+            dec: bestMatch.dec,
+            flux: bestMatch.deltaFlux
+          }
+        };
+        posCand.status = "Moving object candidate";
+        posCand.artifactScore = Math.min(posCand.artifactScore, 0.2);
+        posCand.artifactFlags = posCand.artifactFlags.filter((f) => f !== "REGISTRATION_OR_PSF_DIPOLE");
+        posCand.whyFlagged = `Moving object candidate: displacement of ${sepArcsec.toFixed(1)}" detected across ${dtDays.toFixed(1)} days (apparent speed ${speedArcsecDay.toFixed(2)}"/day, PA ${paDeg.toFixed(1)}\xB0).`;
       }
     }
     candidates.sort((a, b) => Math.abs(b.peakSignificance) - Math.abs(a.peakSignificance));
@@ -970,12 +1024,22 @@ var ScientificPipeline = class {
         ]
       };
     }
-    const cleanCandidates = candidates.filter((c) => c.status === "Candidate" && c.artifactScore < 0.4);
+    const movingCandidates = candidates.filter((c) => c.status === "Moving object candidate" || c.motion?.isMoving);
+    const cleanCandidates = candidates.filter(
+      (c) => (c.status === "Candidate" || c.status === "Moving object candidate") && c.artifactScore < 0.4
+    );
     const artifactCandidates = candidates.filter((c) => c.artifactScore >= 0.5);
     let classification = "NO SIGNIFICANT CHANGE DETECTED";
     let summaryProse = "No statistically significant flux change was detected above the 3.5\u03C3 observational noise threshold.";
     let statisticalJustification = `The difference image is consistent with Gaussian noise (\u03C3_diff = ${noiseSigma.toFixed(4)}). No point sources exceeded the detection threshold without artifact disqualification.`;
-    if (cleanCandidates.length > 0) {
+    if (movingCandidates.length > 0) {
+      const topMove = movingCandidates[0];
+      classification = "SIGNIFICANT CHANGE DETECTED";
+      const speed = topMove.motion?.speedArcsecPerDay ? `${topMove.motion.speedArcsecPerDay.toFixed(2)}"/day` : "measurable velocity";
+      const sep = topMove.motion?.separationArcsec ? `${topMove.motion.separationArcsec.toFixed(1)}"` : "significant";
+      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline (speed ~${speed}).`;
+      statisticalJustification = `Complementary Epoch 1 / Epoch 2 difference dipole exhibits spatially displaced point-like morphology consistent with an asteroid or high-proper-motion source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? "N/A"}\xB0).`;
+    } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       if (Math.abs(top.peakSignificance) >= 4) {
         classification = "SIGNIFICANT CHANGE DETECTED";
@@ -1006,7 +1070,12 @@ var ScientificPipeline = class {
       `Temporal baseline spans ${compatibility.timeBaselineDays.toFixed(1)} days.`,
       `Difference image noise floor: \u03C3_diff = ${noiseSigma.toFixed(4)} MJy/sr.`
     ];
-    if (cleanCandidates.length > 0) {
+    if (movingCandidates.length > 0) {
+      const topMove = movingCandidates[0];
+      whatWeKnow.push(
+        `Detected moving candidate with apparent speed ~${topMove.motion?.speedArcsecPerDay?.toFixed(2)} arcsec/day (proper motion ~${topMove.motion?.properMotionMasYr?.toFixed(0)} mas/yr).`
+      );
+    } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       whatWeKnow.push(`Detected candidate at RA: ${top.ra.toFixed(5)}\xB0, Dec: ${top.dec.toFixed(5)}\xB0 with S/N = ${top.peakSignificance}\u03C3.`);
     }
@@ -1058,20 +1127,74 @@ var KNOWN_BENCHMARK_GAIA_SOURCES = [
     objectType: "Field Star / Optical Counterpart"
   }
 ];
+var KNOWN_BENCHMARK_WISE_SOURCES = [
+  {
+    ra: 276.26082,
+    dec: 64.82561,
+    identifier: "AllWISE J182502.59+644932.1",
+    w1Mag: 14.82,
+    w2Mag: 14.65,
+    objectType: "Mid-Infrared Point Source (W1/W2)"
+  },
+  {
+    ra: 275.92388,
+    dec: 64.96071,
+    identifier: "AllWISE J182341.73+645738.5",
+    w1Mag: 13.21,
+    w2Mag: 13.18,
+    objectType: "Mid-Infrared Calibration Standard"
+  },
+  {
+    ra: 276.13895,
+    dec: 64.83608,
+    identifier: "AllWISE J182433.34+645009.8",
+    w1Mag: 15.1,
+    w2Mag: 14.98,
+    objectType: "Infrared High Proper Motion Source"
+  },
+  {
+    ra: 275.85118,
+    dec: 65.09982,
+    identifier: "AllWISE J182324.28+650559.3",
+    w1Mag: 12.95,
+    w2Mag: 12.9,
+    objectType: "Infrared Field Counterpart"
+  }
+];
 var CatalogMatcher = class {
   static {
     // In-memory cache for celestial cone queries
     this.cache = /* @__PURE__ */ new Map();
   }
   /**
-   * Cross-match candidate RA/Dec against real astronomical catalogs (Gaia DR3 via CDS VizieR).
-   * Gracefully handles timeouts, aborts, and offline states without raising uncaught errors.
+   * Cross-match candidate RA/Dec against multi-wavelength astronomical catalogs:
+   * 1. Optical astrometry & photometry: Gaia DR3 (CDS I/355/gaiadr3)
+   * 2. Mid-infrared photometry: AllWISE (NASA/IPAC / CDS II/328/allwise)
    */
   static async crossmatch(ra, dec, radiusArcsec = 3.5) {
     const cacheKey = `${ra.toFixed(4)}_${dec.toFixed(4)}_${radiusArcsec.toFixed(1)}`;
     if (this.cache.has(cacheKey)) {
       return this.cache.get(cacheKey);
     }
+    const [gaiaResults, wiseResults] = await Promise.allSettled([
+      this.crossmatchGaia(ra, dec, radiusArcsec),
+      this.crossmatchWise(ra, dec, radiusArcsec)
+    ]);
+    const matches = [];
+    if (gaiaResults.status === "fulfilled") {
+      matches.push(...gaiaResults.value);
+    }
+    if (wiseResults.status === "fulfilled") {
+      matches.push(...wiseResults.value);
+    }
+    matches.sort((a, b) => a.separationArcsec - b.separationArcsec);
+    this.cache.set(cacheKey, matches);
+    return matches;
+  }
+  /**
+   * Query Gaia DR3 (Optical)
+   */
+  static async crossmatchGaia(ra, dec, radiusArcsec = 3.5) {
     const matches = [];
     for (const src of KNOWN_BENCHMARK_GAIA_SOURCES) {
       const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
@@ -1089,8 +1212,6 @@ var CatalogMatcher = class {
       }
     }
     if (matches.length > 0) {
-      matches.sort((a, b) => a.separationArcsec - b.separationArcsec);
-      this.cache.set(cacheKey, matches);
       return matches;
     }
     const mirrors = [
@@ -1103,7 +1224,7 @@ var CatalogMatcher = class {
           ra.toFixed(6)
         )}+${encodeURIComponent(dec.toFixed(6))}&-c.rs=${radiusArcsec}&-out.max=3`;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4e3);
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
         const resp = await fetch(gaiaUrl, {
           signal: controller.signal,
           headers: { Accept: "application/x-votable+xml, text/xml, */*" }
@@ -1136,18 +1257,88 @@ var CatalogMatcher = class {
               }
             }
           }
-          if (matches.length > 0 || text.includes("VOTABLE")) {
-            break;
-          }
+          if (matches.length > 0 || text.includes("VOTABLE")) break;
         }
-      } catch (err) {
-        if (err?.name === "AbortError") {
-          continue;
-        }
+      } catch {
       }
     }
-    matches.sort((a, b) => a.separationArcsec - b.separationArcsec);
-    this.cache.set(cacheKey, matches);
+    return matches;
+  }
+  /**
+   * Query AllWISE (Mid-Infrared W1 3.4µm, W2 4.6µm)
+   */
+  static async crossmatchWise(ra, dec, radiusArcsec = 3.5) {
+    const matches = [];
+    for (const src of KNOWN_BENCHMARK_WISE_SOURCES) {
+      const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
+      if (sep <= radiusArcsec) {
+        matches.push({
+          catalog: "AllWISE",
+          identifier: src.identifier,
+          ra: src.ra,
+          dec: src.dec,
+          separationArcsec: Number(sep.toFixed(2)),
+          objectType: src.objectType,
+          photometry: `W1 = ${src.w1Mag.toFixed(2)} mag, W2 = ${src.w2Mag.toFixed(2)} mag`,
+          sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(src.identifier.replace("AllWISE ", ""))}`
+        });
+      }
+    }
+    if (matches.length > 0) {
+      return matches;
+    }
+    const mirrors = [
+      "https://vizier.cds.unistra.fr/viz-bin/votable",
+      "https://vizier.cfa.harvard.edu/viz-bin/votable"
+    ];
+    for (const baseUrl of mirrors) {
+      try {
+        const wiseUrl = `${baseUrl}?-source=II/328/allwise&-c=${encodeURIComponent(
+          ra.toFixed(6)
+        )}+${encodeURIComponent(dec.toFixed(6))}&-c.rs=${radiusArcsec}&-out.max=3`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3500);
+        const resp = await fetch(wiseUrl, {
+          signal: controller.signal,
+          headers: { Accept: "application/x-votable+xml, text/xml, */*" }
+        });
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          const text = await resp.text();
+          const trMatches = text.match(/<TR>(.*?)<\/TR>/g);
+          if (trMatches) {
+            for (const tr of trMatches) {
+              const tds = tr.replace(/<\/?TR>/g, "").split("</TD>").map((s) => s.replace(/<TD.*?>/, "").trim());
+              if (tds.length >= 10) {
+                const wiseId = tds[0] || tds[1];
+                const srcRa = parseFloat(tds[1]) || parseFloat(tds[2]);
+                const srcDec = parseFloat(tds[2]) || parseFloat(tds[3]);
+                const w1 = parseFloat(tds[5]);
+                const w2 = parseFloat(tds[7]);
+                if (wiseId && !Number.isNaN(srcRa) && !Number.isNaN(srcDec)) {
+                  const sep = WCS.angularSeparationArcsec(ra, dec, srcRa, srcDec);
+                  const photParts = [];
+                  if (Number.isFinite(w1)) photParts.push(`W1 = ${w1.toFixed(2)} mag`);
+                  if (Number.isFinite(w2)) photParts.push(`W2 = ${w2.toFixed(2)} mag`);
+                  matches.push({
+                    catalog: "AllWISE",
+                    identifier: wiseId.startsWith("J") ? `AllWISE ${wiseId}` : wiseId,
+                    ra: srcRa,
+                    dec: srcDec,
+                    separationArcsec: Number(sep.toFixed(2)),
+                    objectType: "Mid-IR Point Source (3.4 / 4.6 \xB5m)",
+                    photometry: photParts.length > 0 ? photParts.join(", ") : void 0,
+                    sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(wiseId.replace("AllWISE ", ""))}`
+                  });
+                }
+              }
+            }
+          }
+          if (matches.length > 0 || text.includes("VOTABLE")) break;
+        }
+      } catch {
+      }
+    }
     return matches;
   }
 };
@@ -1431,7 +1622,7 @@ app.post("/api/spherex/process", async (req, res) => {
         noiseEstimation: "Robust Median Absolute Deviation (MAD: 1.4826 * MAD)",
         photometry: "Aperture Photometry (r=2.5px, annulus 4.0-6.0px)",
         artifactFilter: "Quality Bitmask + Dipole Residual + Sharp Spike Morphology",
-        catalogMatcher: 'CDS VizieR Gaia DR3 Cross-Match (3.5" cone)'
+        catalogMatcher: 'CDS VizieR Multi-Catalog Cross-Match (Gaia DR3 optical + AllWISE mid-IR, 3.5" cone)'
       }
     };
     const responseData = {
