@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 .font-cairo, [dir="rtl"], [lang="ar"] {
   font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;

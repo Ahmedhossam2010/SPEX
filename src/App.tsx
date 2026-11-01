@@ -5,17 +5,44 @@ import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { InvestigationResult } from './science/types';
-import { Language } from './utils/translations';
+import { Language, translations } from './utils/translations';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'cases' | 'about'>('home');
-  const [language, setLanguage] = useState<Language>('en');
+  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'cases' | 'about'>('explore');
+  const [language, setLanguage] = useState<Language>(() => {
+    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const langParam = params.get('lang');
+    if (langParam === 'ar' || langParam === 'en') return langParam;
+    const saved = typeof window !== 'undefined' ? (localStorage.getItem('spherex_lang') as Language | null) : null;
+    return saved === 'ar' || saved === 'en' ? saved : 'en';
+  });
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [cases, setCases] = useState<any[]>([]);
   const [currentResult, setCurrentResult] = useState<InvestigationResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
+
+  // Initialize theme from localStorage
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('spherex_theme') as 'dark' | 'light' | null;
+    if (savedTheme === 'light' || savedTheme === 'dark') {
+      setTheme(savedTheme);
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    } else {
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const handleToggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('spherex_theme', next);
+      document.documentElement.classList.toggle('dark', next === 'dark');
+      return next;
+    });
+  };
 
   // Check URL query parameters (e.g. ?case=case-cal-stable-02 or ?ra=276.2614&dec=64.8258 or ?tab=explore or ?lang=ar)
   useEffect(() => {
@@ -24,14 +51,20 @@ export function App() {
     const raParam = params.get('ra');
     const decParam = params.get('dec');
     const tabParam = params.get('tab');
-    const autostartParam = params.get('autostart');
     const langParam = params.get('lang');
 
-    if (langParam === 'ar') {
-      setLanguage('ar');
+    if (langParam === 'ar' || langParam === 'en') {
+      setLanguage(langParam);
+      localStorage.setItem('spherex_lang', langParam);
     }
 
-    if (autostartParam === '1' || tabParam === 'explore' || caseParam || (raParam && decParam)) {
+    if (tabParam === 'home') {
+      setActiveTab('home');
+    } else if (tabParam === 'cases') {
+      setActiveTab('cases');
+    } else if (tabParam === 'about') {
+      setActiveTab('about');
+    } else {
       setActiveTab('explore');
     }
 
@@ -75,7 +108,8 @@ export function App() {
       setCurrentResult(data);
     } catch (err: any) {
       console.error('Case processing failed:', err);
-      setErrorMsg('Failed to process SPHEREx observation: ' + err.message);
+      const msg = err.message || 'Failed to process SPHEREx observation';
+      setErrorMsg(msg);
       setFailedQuery({ caseId, customCoords });
     } finally {
       setIsLoading(false);
@@ -99,12 +133,20 @@ export function App() {
   };
 
   const handleToggleLanguage = () => {
-    setLanguage((prev) => (prev === 'en' ? 'ar' : 'en'));
+    setLanguage((prev) => {
+      const next = prev === 'en' ? 'ar' : 'en';
+      localStorage.setItem('spherex_lang', next);
+      return next;
+    });
   };
+
+  const t = translations[language];
 
   return (
     <div
-      className={`min-h-screen flex flex-col bg-[#02040a] text-slate-100 selection:bg-amber-500/30 selection:text-amber-200 ${
+      className={`min-h-screen flex flex-col ${
+        theme === 'dark' ? 'bg-[#07090e] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
+      } selection:bg-amber-500/30 selection:text-amber-200 ${
         language === 'ar' ? 'font-cairo' : 'font-sans'
       }`}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
@@ -115,38 +157,38 @@ export function App() {
         targetCoords={currentResult?.targetCoords}
         language={language}
         onToggleLanguage={handleToggleLanguage}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       <main className="flex-1 w-full relative">
         {errorMsg && (
-          <div className="w-full bg-rose-950/90 border-b border-rose-500/40 px-4 py-3 text-xs text-rose-200 flex flex-wrap items-center justify-between gap-3 shadow-xl backdrop-blur-xl">
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-rose-400">⚠️ Error:</span>
-              <span>{errorMsg}</span>
+          <div className="w-full bg-amber-500/10 dark:bg-rose-950/80 border-b border-amber-500/30 dark:border-rose-500/40 px-4 py-3 text-xs text-slate-800 dark:text-rose-200 flex flex-wrap items-center justify-between gap-3 shadow-sm backdrop-blur-xl transition-colors">
+            <div className="flex items-center gap-2 max-w-2xl">
+              <span className="font-bold text-amber-700 dark:text-amber-400">
+                {errorMsg.includes('coverage') || errorMsg.includes('footprint')
+                  ? t.noticeSurveyCoverage
+                  : t.noticeGeneral}
+              </span>
+              <span className="leading-relaxed">{errorMsg}</span>
             </div>
             <div className="flex items-center gap-2 font-mono">
-              {failedQuery && (
-                <button
-                  onClick={() => loadCase(failedQuery.caseId, failedQuery.customCoords)}
-                  className="px-3 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-400/40 text-rose-200 font-bold transition-colors"
-                >
-                  Retry Investigation
-                </button>
-              )}
               <button
+                type="button"
                 onClick={() => {
                   setErrorMsg(null);
                   loadCase('case-nep-var-01');
                 }}
-                className="px-3 py-1 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-bold transition-colors"
+                className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold transition-all shadow-xs cursor-pointer"
               >
-                Inspect Saved Benchmark Case
+                {t.btnInspectNepBenchmark}
               </button>
               <button
+                type="button"
                 onClick={() => setErrorMsg(null)}
-                className="text-slate-400 hover:text-slate-200 ml-2 font-bold underline"
+                className="text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 ml-2 font-medium underline cursor-pointer"
               >
-                Dismiss
+                {t.btnDismissNotice}
               </button>
             </div>
           </div>

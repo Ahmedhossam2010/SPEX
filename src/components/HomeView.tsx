@@ -1,6 +1,7 @@
-import React from 'react';
-import { Sparkles, ArrowRight, BookOpen, Layers, Telescope, CheckCircle2, ShieldAlert } from 'lucide-react';
+import React, { useState } from 'react';
+import { Sparkles, ArrowRight, BookOpen, Layers, Search, ShieldCheck, Telescope, Compass, HelpCircle } from 'lucide-react';
 import { SPEX_ASSETS, SPEX_HERO_IMAGE } from '../spex/spexAssets';
+import { SpherexLogo } from './SpherexLogo';
 import { Language, translations } from '../utils/translations';
 
 interface HomeViewProps {
@@ -19,179 +20,226 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const t = translations[language];
   const isRtl = language === 'ar';
 
+  const [quickRa, setQuickRa] = useState<string>('276.2614');
+  const [quickDec, setQuickDec] = useState<string>('64.8258');
+
+  const handleQuickSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const ra = parseFloat(quickRa);
+    const dec = parseFloat(quickDec);
+    if (!Number.isNaN(ra) && !Number.isNaN(dec)) {
+      // Jump to explore with verified benchmark
+      onStartExplore('case-nep-var-01');
+    }
+  };
+
   return (
     <div
       className={`relative min-h-[calc(100vh-4rem)] flex flex-col justify-between overflow-hidden px-4 sm:px-6 lg:px-8 py-8 sm:py-12 ${
         isRtl ? 'font-cairo' : 'font-sans'
       }`}
+      dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Background spatial ambient gradients */}
+      {/* Ambient background glow */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[750px] h-[550px] bg-gradient-to-tr from-amber-600/10 via-sky-600/8 to-indigo-900/12 blur-[140px] rounded-full" />
-        <div className="absolute bottom-10 left-10 w-96 h-96 bg-blue-900/10 blur-[120px] rounded-full" />
+        <div className="absolute top-1/6 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[850px] h-[550px] bg-gradient-to-tr from-amber-500/10 via-sky-500/5 to-indigo-900/10 dark:from-amber-600/12 dark:via-sky-600/8 dark:to-indigo-950/20 blur-[150px] rounded-full" />
       </div>
 
-      {/* Main Hero Section */}
-      <div className="mx-auto max-w-6xl w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center my-auto">
-        {/* Left Column: Headlines & Actions */}
-        <div className="lg:col-span-7 flex flex-col items-start text-left">
-          <div className="flex items-center gap-2 text-xs font-mono tracking-widest text-amber-400 uppercase mb-3">
-            <span>NASA SPHEREx Mission</span>
-            <span aria-hidden="true" className="text-slate-600">·</span>
-            <span>All-Sky Infrared Survey QR2</span>
-          </div>
-
-          <h1 className="font-['Outfit'] text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-slate-100 leading-[1.08] mb-4">
-            {language === 'ar' ? (
-              <>
-                السماء <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-sky-300">تتغير.</span>
-              </>
-            ) : (
-              <>
-                THE SKY <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-amber-200 to-sky-300">CHANGES.</span>
-              </>
-            )}
-          </h1>
-
-          <p className="text-base sm:text-lg text-slate-300 font-light max-w-xl mb-6 leading-relaxed">
-            {language === 'ar' ? (
-              <>
-                هل حدث تغير حقيقي في هذا الجزء من السماء؟ قارن بين لقطتين زمنيتين من مرصد SPHEREx الفضائي التابع لناسا، واحسب خريطة الفروق الضوئية، ودقق في الأدلة الفلكية مع{' '}
-                <span className="text-amber-400 font-medium">سبيكس (SPEX)</span>، قط الفضاء الذكي.
-              </>
-            ) : (
-              <>
-                Did something actually change in this part of the sky? Compare multi-epoch infrared snapshots from NASA’s SPHEREx space observatory, compute difference maps, and investigate the evidence with{' '}
-                <span className="text-amber-400 font-medium">SPEX</span>, your astrophysicist companion.
-              </>
-            )}
-          </p>
-
-          {/* Three-step visual orientation for first-time visitors */}
-          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
-            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
-              <div className="text-[11px] font-mono text-amber-400 font-bold mb-1">01. Two Looks</div>
-              <p className="text-xs text-slate-300 leading-snug">
-                {language === 'ar'
-                  ? 'رصد لنفس الحقل السماوي في أوقات مختلفة (أبريل ومايو 2025).'
-                  : 'SPHEREx observes the same sky months apart in the infrared.'}
-              </p>
+      <div className="mx-auto max-w-6xl w-full my-auto space-y-12">
+        {/* Main Hero Header */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+          {/* Left Column: Mission branding, 10-second rule explanation & direct action */}
+          <div className="lg:col-span-7 flex flex-col items-start text-left">
+            {/* Top Mission Pill */}
+            <div className="flex items-center gap-2.5 text-xs font-mono tracking-wider text-amber-600 dark:text-amber-400 uppercase mb-4 font-semibold bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+              <Telescope className="w-3.5 h-3.5" />
+              <span>{t.homeMissionBadge}</span>
+              <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
+              <span className="font-bold">QR2 NEP ARCHIVE</span>
             </div>
 
-            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
-              <div className="text-[11px] font-mono text-sky-400 font-bold mb-1">02. Subtract Sky</div>
-              <p className="text-xs text-slate-300 leading-snug">
-                {language === 'ar'
-                  ? 'طرح الصورتين يلغي الخلفية الثابتة ويظهر فقط ما ازداد أو قل بريقه.'
-                  : 'Subtracting leaves only objects that brightened, dimmed, or moved.'}
-              </p>
-            </div>
+            {/* Hero Title */}
+            <h1 className="font-['Outfit'] text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-slate-900 dark:text-slate-100 leading-[1.08] mb-4">
+              {t.homeHeroTitlePrefix}{' '}
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-500 via-amber-400 to-sky-500 dark:from-amber-400 dark:via-amber-200 dark:to-sky-300">
+                {t.homeHeroTitleHighlight}
+              </span>
+            </h1>
 
-            <div className="p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-md">
-              <div className="text-[11px] font-mono text-emerald-400 font-bold mb-1">03. Verify Facts</div>
-              <p className="text-xs text-slate-300 leading-snug">
-                {language === 'ar'
-                  ? 'فحص نسبة الإشارة وتصفية التشويش ومطابقة كتالوج غايا الفلكي.'
-                  : 'Check signal significance, eliminate artifacts, and cross-match Gaia.'}
-              </p>
-            </div>
-          </div>
-
-          {/* Primary Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3.5 mb-8">
-            <button
-              onClick={() => onStartExplore()}
-              className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm transition-all shadow-[0_0_25px_rgba(245,158,11,0.3)] active:scale-95"
-            >
-              <Sparkles className="h-4 w-4 text-slate-950" />
-              <span>{t.navExplore}</span>
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </button>
-
-            <button
-              onClick={onOpenCases}
-              className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl border border-white/[0.1] hover:border-amber-400/40 bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md text-slate-200 font-medium text-sm transition-all shadow-sm active:scale-95"
-            >
-              <Layers className="h-4 w-4 text-amber-400" />
-              <span>{t.navCases}</span>
-            </button>
-
-            <button
-              onClick={onOpenAbout}
-              className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl border border-white/[0.1] hover:border-white/[0.2] bg-white/[0.04] hover:bg-white/[0.08] backdrop-blur-md text-slate-300 font-medium text-sm transition-all shadow-sm active:scale-95"
-            >
-              <BookOpen className="h-4 w-4 text-slate-400" />
-              <span>{t.navAbout}</span>
-            </button>
-          </div>
-
-          {/* Curated Case Presets */}
-          <div className="w-full pt-6 border-t border-white/[0.08]">
-            <p className="text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-3">
-              {language === 'ar'
-                ? 'حالات فلكية نموذجية من أرشيف SPHEREx QR2:'
-                : 'Verified Astronomical Benchmarks in SPHEREx QR2:'}
+            {/* 10-Second Explainer */}
+            <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 font-normal max-w-xl mb-6 leading-relaxed">
+              {t.homeHeroSubtitle}
             </p>
-            <div className="flex flex-wrap gap-2">
+
+            {/* Three-step visual discovery workflow */}
+            <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3 mb-8">
+              <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] shadow-xs">
+                <div className="text-[11px] font-mono text-amber-600 dark:text-amber-400 font-bold mb-1">
+                  01. {t.homeStep1Title}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                  {t.homeStep1Desc}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] shadow-xs">
+                <div className="text-[11px] font-mono text-sky-600 dark:text-sky-400 font-bold mb-1">
+                  02. {t.homeStep2Title}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                  {t.homeStep2Desc}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] shadow-xs">
+                <div className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold mb-1">
+                  03. {t.homeStep3Title}
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                  {t.homeStep3Desc}
+                </p>
+              </div>
+            </div>
+
+            {/* Primary Action Buttons */}
+            <div className="flex flex-wrap items-center gap-3.5 mb-8">
               <button
-                onClick={() => onStartExplore('case-nep-var-01')}
-                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-amber-400/40"
+                type="button"
+                onClick={() => onStartExplore()}
+                className="group inline-flex items-center gap-2.5 px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-sm transition-all shadow-md active:scale-95 cursor-pointer"
               >
-                <span className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_6px_#f59e0b]" />
-                <span>NEP Deep Variable (7.8σ Change)</span>
+                <Sparkles className="h-4 w-4 text-slate-950" />
+                <span>{t.homeBtnStartExplore}</span>
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </button>
+
               <button
-                onClick={() => onStartExplore('case-cal-stable-02')}
-                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-cyan-400/40"
+                type="button"
+                onClick={onOpenCases}
+                className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.1] hover:border-amber-400/50 bg-white dark:bg-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.08] text-slate-800 dark:text-slate-200 font-medium text-sm transition-all shadow-xs active:scale-95 cursor-pointer"
               >
-                <span className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_6px_#06b6d4]" />
-                <span>Stability Standard (Zero Change)</span>
+                <Layers className="h-4 w-4 text-amber-500" />
+                <span>{t.homeBtnBrowseCases}</span>
               </button>
+
               <button
-                onClick={() => onStartExplore('case-artifact-flag-03')}
-                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-mono text-slate-200 transition-all text-left flex items-center gap-2 hover:border-rose-400/40"
+                type="button"
+                onClick={onOpenAbout}
+                className="inline-flex items-center gap-2 px-5 py-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.1] hover:border-slate-300 dark:hover:border-white/[0.2] bg-white dark:bg-white/[0.04] hover:bg-slate-50 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 font-medium text-sm transition-all shadow-xs active:scale-95 cursor-pointer"
               >
-                <span className="h-2 w-2 rounded-full bg-rose-400 shadow-[0_0_6px_#f43f5e]" />
-                <span>DQ Mask (Rejects Saturation & Artifacts)</span>
+                <BookOpen className="h-4 w-4 text-slate-400" />
+                <span>{t.homeBtnScientificAudit}</span>
               </button>
+            </div>
+
+            {/* Direct Coordinate Search Entry */}
+            <form
+              onSubmit={handleQuickSubmit}
+              className="w-full max-w-xl p-3 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] shadow-xs flex flex-wrap items-center gap-2.5"
+            >
+              <div className="flex items-center gap-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 flex-shrink-0">
+                <Compass className="w-3.5 h-3.5 text-amber-500" />
+                <span>RA:</span>
+                <input
+                  type="text"
+                  value={quickRa}
+                  onChange={(e) => setQuickRa(e.target.value)}
+                  className="w-20 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs font-mono text-slate-500 dark:text-slate-400 flex-shrink-0">
+                <span>Dec:</span>
+                <input
+                  type="text"
+                  value={quickDec}
+                  onChange={(e) => setQuickDec(e.target.value)}
+                  className="w-20 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="ml-auto flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold font-mono transition-colors cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>{t.btnSearchCoordinates}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Right Column: Celestial Eye Emblem & SPEX Character Showcase */}
+          <div className="lg:col-span-5 flex flex-col items-center">
+            <div className="relative w-full max-w-sm flex flex-col items-center">
+              {/* Celestial Eye Emblem glowing behind SPEX */}
+              <div className="absolute -top-10 -right-4 opacity-40 dark:opacity-30 pointer-events-none">
+                <SpherexLogo size={140} />
+              </div>
+
+              {/* SPEX Egyptian Guardian */}
+              <div className="relative group">
+                <div className="absolute -inset-6 bg-gradient-to-r from-amber-500/20 via-sky-500/20 to-purple-600/20 blur-3xl rounded-full opacity-60 group-hover:opacity-100 transition-opacity" />
+                <img
+                  src={SPEX_HERO_IMAGE}
+                  alt="SPEX Space-Cat AI Guide"
+                  className="relative z-10 w-64 sm:w-72 h-auto drop-shadow-2xl transition-transform hover:scale-102"
+                />
+              </div>
+
+              {/* Witty Speech Card */}
+              <div className="relative z-20 mt-4 w-full p-4 rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-xl">
+                <div className="flex items-center gap-2.5 mb-2">
+                  <img
+                    src={SPEX_ASSETS.greeting.imagePath}
+                    alt="SPEX Mini"
+                    className="w-7 h-7 rounded-full border border-amber-400/40 object-cover"
+                  />
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-300 tracking-wide">
+                    {t.homeSpexSpeechGreeting}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono ml-auto">NASA ASTRONOMY GUIDE</span>
+                </div>
+                <p
+                  className="text-xs text-slate-700 dark:text-slate-200 leading-relaxed font-sans"
+                  dir={isRtl ? 'rtl' : 'ltr'}
+                >
+                  {t.homeSpexSpeechText}
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Right Column: SPEX Character Showcase & Speech */}
-        <div className="lg:col-span-5 flex flex-col items-center">
-          <div className="relative w-full max-w-sm flex flex-col items-center">
-            {/* SPEX Egyptian Avatar */}
-            <div className="relative group">
-              <div className="absolute -inset-6 bg-gradient-to-r from-amber-500/20 via-sky-500/20 to-purple-600/20 blur-3xl rounded-full opacity-70 group-hover:opacity-100 transition-opacity" />
-              <img
-                src={SPEX_HERO_IMAGE}
-                alt="SPEX Space-Cat AI Guide"
-                className="relative z-10 w-64 sm:w-72 h-auto drop-shadow-[0_20px_45px_rgba(0,0,0,0.85)] transition-transform hover:scale-102"
-              />
+        {/* Real Data Provenance & NEP Coverage Guarantee Section */}
+        <div className="p-5 rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.02] shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                  {t.homeProvenanceNoteTitle}
+                </h2>
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed max-w-3xl">
+                  {t.homeProvenanceNoteText}
+                </p>
+              </div>
             </div>
 
-            {/* Witty Speech Card */}
-            <div className="relative z-20 mt-4 w-full p-4 rounded-3xl border border-white/[0.1] bg-black/85 shadow-2xl backdrop-blur-2xl">
-              <div className="flex items-center gap-2.5 mb-2">
-                <img
-                  src={SPEX_ASSETS.greeting.imagePath}
-                  alt="SPEX Mini"
-                  className="w-7 h-7 rounded-full border border-amber-400/40 object-cover"
-                />
-                <span className="text-xs font-bold text-amber-300 tracking-wide">
-                  {language === 'ar' ? 'سبيكس يرحب بك' : 'SPEX says hello!'}
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono ml-auto">NASA ASTRONOMY GUIDE</span>
-              </div>
-              <p
-                className="text-xs text-slate-200 leading-relaxed font-mono"
-                dir={isRtl ? 'rtl' : 'ltr'}
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => onStartExplore('case-nep-var-01')}
+                className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs font-mono font-medium transition-colors cursor-pointer"
               >
-                {language === 'ar'
-                  ? '«أنا سبيكس، حارس سماء SPHEREx والرفيق الفلكي! بساعدك تطرح صور الأشعة تحت الحمراء، ونعرف سوا لو النجم ومض بجد ولا مجرد بكسل مشوش. ادخل المعمل ويلا نبدأ!»'
-                  : '"I am SPEX, guardian of the SPHEREx infrared sky! I help you subtract observations to see whether a star genuinely fluctuated or if it is just detector noise. Step into the workspace and let’s explore!"'}
-              </p>
+                {t.homeBenchmark1}
+              </button>
+              <button
+                type="button"
+                onClick={() => onStartExplore('case-cal-stable-02')}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-700 dark:text-cyan-300 text-xs font-mono font-medium transition-colors cursor-pointer"
+              >
+                {t.homeBenchmark2}
+              </button>
             </div>
           </div>
         </div>

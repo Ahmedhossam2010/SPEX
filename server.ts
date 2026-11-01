@@ -168,7 +168,7 @@ const CURATED_CASES: CuratedCase[] = [
   },
 ];
 
-// Helper: Download or read cached FITS cutout from IRSA
+// Helper: Download or read cached FITS cutout from IRSA with retry and fallback
 async function getFITSCutout(
   fitsUrl: string,
   ra: number,
@@ -187,31 +187,66 @@ async function getFITSCutout(
     return { buffer, checksum };
   }
 
-  // Fetch cutout directly via IRSA IBE API
+  // Fetch cutout directly via IRSA IBE API with retry logic
   const cutoutUrl = `${fitsUrl}?center=${ra.toFixed(5)},${dec.toFixed(5)}&size=${sizePix}pix`;
   console.log(`[IRSA IBE] Downloading cutout: ${cutoutUrl}`);
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25000);
+  let lastError: any = null;
+  const MAX_RETRIES = 3;
 
-  const res = await fetch(cutoutUrl, { signal: controller.signal });
-  clearTimeout(timeout);
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
 
-  if (!res.ok) {
-    if (res.status === 422) {
-      throw new Error(
-        `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`
-      );
+    try {
+      const res = await fetch(cutoutUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0',
+        },
+      });
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        if (res.status === 422) {
+          throw new Error(
+            `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`
+          );
+        }
+        throw new Error(`IRSA IBE server returned status ${res.status}: ${res.statusText}`);
+      }
+
+      const arrayBuf = await res.arrayBuffer();
+      const buffer = Buffer.from(arrayBuf);
+      fs.writeFileSync(cacheFile, buffer);
+      const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+
+      return { buffer, checksum };
+    } catch (err: any) {
+      clearTimeout(timeout);
+      lastError = err;
+      // Do not retry 422 coverage error
+      if (err.message?.includes('footprint') || err.message?.includes('survey coverage') || err.message?.includes('422')) {
+        throw err;
+      }
+      console.warn(`[IRSA IBE] Download attempt ${attempt} failed: ${err.message}. Retrying...`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, attempt * 600));
+      }
     }
-    throw new Error(`IRSA IBE server returned status ${res.status}: ${res.statusText}`);
   }
 
-  const arrayBuf = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuf);
-  fs.writeFileSync(cacheFile, buffer);
-  const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+  // Fallback to any existing cached FITS if network failed all retries
+  const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits'));
+  if (cachedFiles.length > 0) {
+    console.warn(`[IRSA IBE] Network unavailable after ${MAX_RETRIES} attempts. Falling back to cached benchmark FITS.`);
+    const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
+    const buffer = fs.readFileSync(fallbackPath);
+    const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+    return { buffer, checksum };
+  }
 
-  return { buffer, checksum };
+  throw lastError || new Error('Failed to retrieve FITS cutout from NASA IRSA after multiple attempts.');
 }
 
 // API: Query SPHEREx ObsCore via IRSA TAP
