@@ -198,6 +198,17 @@ export interface TranslationDictionary {
   aboutTableColTested: string;
   aboutTableColArchiveStatus: string;
   aboutStatusYes: string;
+
+  // New Feature Modals & Sequencer
+  btnSkyCoverage: string;
+  btnSpectralBands: string;
+  btnDiscoveryPassport: string;
+  btnCompareCandidates: string;
+  btnTimelinePlay: string;
+  btnTimelinePause: string;
+  labelFov: string;
+  labelEpochPair: string;
+  labelMultiEpochTimeline: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -413,6 +424,17 @@ export const translations: Record<Language, TranslationDictionary> = {
     aboutTableColTested: 'Tested',
     aboutTableColArchiveStatus: 'Archive Status',
     aboutStatusYes: 'Yes',
+
+    // New Feature Modals & Sequencer
+    btnSkyCoverage: 'Sky Coverage & Targets',
+    btnSpectralBands: '102 Spectral Bands',
+    btnDiscoveryPassport: 'Discovery Passport',
+    btnCompareCandidates: 'Compare Findings',
+    btnTimelinePlay: 'Play Visits Sequence',
+    btnTimelinePause: 'Pause Sequence',
+    labelFov: 'Field of View (FOV):',
+    labelEpochPair: 'Difference Pair:',
+    labelMultiEpochTimeline: 'Chronological Multi-Epoch Sequence:',
   },
   ar: {
     // Brand & Top Navigation
@@ -626,5 +648,16 @@ export const translations: Record<Language, TranslationDictionary> = {
     aboutTableColTested: 'تم الاختبار',
     aboutTableColArchiveStatus: 'حالة الأرشيف',
     aboutStatusYes: 'نعم',
+
+    // New Feature Modals & Sequencer
+    btnSkyCoverage: 'التغطية السماوية والأهداف',
+    btnSpectralBands: 'النطاقات الطيفية الـ 102',
+    btnDiscoveryPassport: 'جواز الاكتشاف الفلكي',
+    btnCompareCandidates: 'مقارنة المرشحين',
+    btnTimelinePlay: 'تشغيل تسلسل الرصدات',
+    btnTimelinePause: 'إيقاف التسلسل مؤقتاً',
+    labelFov: 'مجال الرؤية (FOV):',
+    labelEpochPair: 'زوج المقارنة:',
+    labelMultiEpochTimeline: 'التسلسل الزمني للرصدات المتعددة:',
   },
 };

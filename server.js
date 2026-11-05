@@ -1343,6 +1343,218 @@ var CatalogMatcher = class {
   }
 };
 
+// src/science/challengeTargets.ts
+var SPHEREX_QR2_FOOTPRINT = {
+  name: "SPHEREx QR2 North Ecliptic Pole (NEP) Deep Survey Field",
+  raMin: 275.5,
+  raMax: 276.8,
+  decMin: 64.5,
+  decMax: 65.2,
+  centerRa: 276.15,
+  centerDec: 64.85,
+  areaSqDeg: 0.39,
+  // Exact spherical solid angle: ΔRA * (sin(DecMax) - sin(DecMin)) * (180/π)^2 = 0.3867 sq deg (~0.39 sq deg)
+  mosaicAreaSqDeg: 0.55,
+  // Total dithered mosaic field including calibration margins spans ~0.55 sq deg
+  totalVisitsPerYear: 180,
+  // High cadence at ecliptic pole
+  dataRelease: "SPHEREx Quick Release 2 (QR2, Level 2B)",
+  archiveSource: "NASA/IPAC Infrared Science Archive (IRSA)"
+};
+function checkCoordinatesInQR2(ra, dec) {
+  const inside = ra >= SPHEREX_QR2_FOOTPRINT.raMin && ra <= SPHEREX_QR2_FOOTPRINT.raMax && dec >= SPHEREX_QR2_FOOTPRINT.decMin && dec <= SPHEREX_QR2_FOOTPRINT.decMax;
+  const separationArcsec = WCS.angularSeparationArcsec(
+    ra,
+    dec,
+    SPHEREX_QR2_FOOTPRINT.centerRa,
+    SPHEREX_QR2_FOOTPRINT.centerDec
+  );
+  const distanceDeg = separationArcsec / 3600;
+  if (inside) {
+    return {
+      inside: true,
+      distanceDeg,
+      reason: "Coordinates fall inside the high-cadence SPHEREx QR2 North Ecliptic Pole deep footprint."
+    };
+  }
+  return {
+    inside: false,
+    distanceDeg,
+    reason: `Coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0) lie ${distanceDeg.toFixed(1)}\xB0 away from the currently published SPHEREx QR2 North Ecliptic Pole deep strip (RA 275.5\xB0\u2013276.8\xB0, Dec +64.5\xB0\u201365.2\xB0). Full all-sky coverage will expand in subsequent NASA/IPAC data releases.`
+  };
+}
+var OFFICIAL_CHALLENGE_TARGETS = [
+  {
+    id: "target-barnards-star",
+    name: "Barnard's Star (GJ 699)",
+    ra: 269.45208,
+    dec: 4.69339,
+    constellation: "Ophiuchus",
+    scienceType: "High-Proper-Motion M4V Red Dwarf",
+    description: "The second-closest known stellar system to the Sun (~5.96 ly), celebrated for having the highest known proper motion of any star (10.36\u2033/year). Ideal for testing stellar dipole detection across multi-epoch infrared surveys.",
+    qr2Coverage: "outside_footprint",
+    angularDistanceDegToNEP: 60.2,
+    recommendedBenchmarkId: "case-nep-var-01",
+    expectedBehavior: "Located in Ophiuchus (equatorial region), ~60.2\xB0 away from the QR2 NEP deep strip. IRSA returns HTTP 422 survey coverage limit. Use the verified NEP high-motion benchmark as analogue."
+  },
+  {
+    id: "target-epsilon-indi-b",
+    name: "Epsilon Indi B & C",
+    ra: 330.84042,
+    dec: -56.78601,
+    constellation: "Indus",
+    scienceType: "Cold Binary Brown Dwarf (T1V + T6V)",
+    description: "A benchmark binary methane-dwarf system at ~11.8 ly. Its extreme near-infrared spectral features (methane absorption at 1.6 and 3.3 \xB5m) make it a key target for SPHEREx 102-band low-temperature spectroscopy.",
+    qr2Coverage: "outside_footprint",
+    angularDistanceDegToNEP: 125.8,
+    recommendedBenchmarkId: "case-nep-var-01",
+    expectedBehavior: "Located in the Southern Celestial Hemisphere (Dec -56.8\xB0), ~125.8\xB0 away from the North Ecliptic Pole. Outside current QR2 release footprint; will be observed in all-sky survey releases."
+  },
+  {
+    id: "target-wise-0855",
+    name: "WISE 0855-0714",
+    ra: 133.86462,
+    dec: -7.24115,
+    constellation: "Hydra",
+    scienceType: "Sub-Brown Dwarf (Y-Dwarf, ~250 K)",
+    description: "The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225\u2013260 K), exhibiting atmospheric water-ice clouds. Detectable predominantly in mid-infrared channels (3.5\u20135.0 \xB5m).",
+    qr2Coverage: "outside_footprint",
+    angularDistanceDegToNEP: 118.4,
+    recommendedBenchmarkId: "case-nep-var-01",
+    expectedBehavior: "Located in Hydra near the celestial equator, ~118.4\xB0 away from the NEP deep strip. Outside current QR2 footprint."
+  },
+  {
+    id: "target-rw-aurigae",
+    name: "RW Aurigae (RW Aur)",
+    ra: 77.45833,
+    dec: 30.40142,
+    constellation: "Auriga",
+    scienceType: "Young Stellar Object (Classical T Tauri Star Binary)",
+    description: "A complex pre-main-sequence binary star with a protoplanetary circumstellar disk undergoing dramatic multi-magnitude occultations and infrared accretion outbursts.",
+    qr2Coverage: "outside_footprint",
+    angularDistanceDegToNEP: 71.6,
+    recommendedBenchmarkId: "case-nep-var-01",
+    expectedBehavior: "Located in Taurus-Auriga star-forming complex (Dec +30.4\xB0), ~71.6\xB0 from the NEP footprint. Outside current QR2 release."
+  },
+  {
+    id: "target-r-draconis",
+    name: "R Draconis (R Dra)",
+    ra: 248.33004,
+    dec: 66.70281,
+    constellation: "Draco",
+    scienceType: "Mira-Type Pulsating Variable Giant (M5e-M9e)",
+    description: "A long-period asymptotic giant branch (AGB) pulsating variable star with a 245-day period, varying by over 6 magnitudes between maximum and minimum as circumstellar dust cools and condensates.",
+    qr2Coverage: "outside_footprint",
+    angularDistanceDegToNEP: 11.3,
+    recommendedBenchmarkId: "case-nep-var-01",
+    expectedBehavior: "Located in Draco at high northern declination (+66.7\xB0), only ~11.3\xB0 west of the QR2 North Ecliptic Pole strip boundary. While close, it lies just outside the narrow QR2 calibration corridor."
+  }
+];
+
+// src/science/spectralBands.ts
+var SPHEREX_DETECTOR_ARRAYS = [
+  {
+    detectorNumber: 1,
+    name: "Detector 1 (Band 1)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 1.15 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [0.75, 1.11],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 41 (\u0394\u03BB \u2248 0.022 \xB5m)",
+    scienceTarget: "Large-scale cosmic galaxy clustering, stellar photospheres, low-redshift galaxy spectra"
+  },
+  {
+    detectorNumber: 2,
+    name: "Detector 2 (Band 2)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 1.75 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [1.11, 1.64],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 41 (\u0394\u03BB \u2248 0.033 \xB5m)",
+    scienceTarget: "1.6 \xB5m H- opacity peak in stellar atmospheres, cool brown dwarf near-IR classification"
+  },
+  {
+    detectorNumber: 3,
+    name: "Detector 3 (Band 3)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 2.50 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [1.64, 2.42],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 41 (\u0394\u03BB \u2248 0.048 \xB5m)",
+    scienceTarget: "Diffuse Extragalactic Background Light (EBL), water ice 2.0 \xB5m absorption, CO overtone"
+  },
+  {
+    detectorNumber: 4,
+    name: "Detector 4 (Band 4)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 3.90 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [2.42, 3.82],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 35 (\u0394\u03BB \u2248 0.088 \xB5m)",
+    scienceTarget: "3.05 \xB5m solid H2O ice mantle absorption, 3.3 \xB5m polycyclic aromatic hydrocarbon (PAH)"
+  },
+  {
+    detectorNumber: 5,
+    name: "Detector 5 (Band 5)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 5.30 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [3.82, 4.42],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 130 (\u0394\u03BB \u2248 0.032 \xB5m, High Resolution)",
+    scienceTarget: "4.27 \xB5m interstellar CO2 ice absorption resonance in molecular clouds and protoplanetary disks"
+  },
+  {
+    detectorNumber: 6,
+    name: "Detector 6 (Band 6)",
+    technology: "Teledyne H2RG HgCdTe (Cutoff 5.30 \xB5m)",
+    format: "2048 \xD7 2048 (4 Mpix)",
+    pixelScaleArcsec: 6.2,
+    wavelengthRangeUm: [4.42, 5],
+    channelsCount: 17,
+    resolvingPower: "R \u2248 130 (\u0394\u03BB \u2248 0.035 \xB5m, High Resolution)",
+    scienceTarget: "4.67 \xB5m solid CO ice band, XCN feature, cold thermal circumstellar dust emission"
+  }
+];
+function generate102SpectralChannels() {
+  const channels = [];
+  let channelIdx = 1;
+  for (const det of SPHEREX_DETECTOR_ARRAYS) {
+    const [wMin, wMax] = det.wavelengthRangeUm;
+    const step = (wMax - wMin) / det.channelsCount;
+    for (let i = 0; i < det.channelsCount; i++) {
+      const wCenter = Number((wMin + (i + 0.5) * step).toFixed(3));
+      const bandwidth = Number(step.toFixed(4));
+      const resolvingPower = det.detectorNumber >= 5 ? 130 : det.detectorNumber === 4 ? 35 : 41;
+      let features = "Stellar continuum";
+      if (wCenter >= 0.9 && wCenter <= 0.95) features = "SPHEREx QR2 Band 1 primary calibration channel";
+      else if (wCenter >= 1.55 && wCenter <= 1.65) features = "1.6 \xB5m H- opacity peak / cold dwarf SED maximum";
+      else if (wCenter >= 2 && wCenter <= 2.05) features = "2.02 \xB5m solid H2O ice absorption wing";
+      else if (wCenter >= 2.28 && wCenter <= 2.35) features = "2.3 \xB5m 12CO absorption bandhead in red giants";
+      else if (wCenter >= 3 && wCenter <= 3.1) features = "3.05 \xB5m fundamental OH stretching vibration in H2O ice";
+      else if (wCenter >= 3.28 && wCenter <= 3.32) features = "3.3 \xB5m C-H stretching mode in aromatic hydrocarbons (PAHs)";
+      else if (wCenter >= 4.25 && wCenter <= 4.3) features = "4.27 \xB5m asymmetric stretch (v3) in interstellar CO2 ice";
+      else if (wCenter >= 4.65 && wCenter <= 4.7) features = "4.67 \xB5m fundamental C-O stretching mode in solid CO ice";
+      channels.push({
+        channelIndex: channelIdx,
+        detector: det.detectorNumber,
+        bandName: `Band ${det.detectorNumber} (Ch ${channelIdx})`,
+        wavelengthUm: wCenter,
+        bandwidthUm: bandwidth,
+        resolvingPower,
+        primaryScienceFeatures: features
+      });
+      channelIdx++;
+    }
+  }
+  return channels;
+}
+var SPHEREX_102_CHANNELS = generate102SpectralChannels();
+
 // server.ts
 var app = express();
 var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
@@ -1378,7 +1590,33 @@ var CURATED_CASES = [
       band: "Band 1 (0.75 - 1.11 \xB5m)",
       wavelength_um: 0.93,
       date: "2025-05-19 05:24 UTC"
-    }
+    },
+    epochs: [
+      {
+        obs_id: "2025W18_1B_0001_1",
+        fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits",
+        mjd: 60793.5418,
+        band: "Band 1 (0.75 - 1.11 \xB5m)",
+        wavelength_um: 0.93,
+        date: "2025-04-28 13:00 UTC"
+      },
+      {
+        obs_id: "2025W18_1B_0001_3",
+        fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits",
+        mjd: 60805.112,
+        band: "Band 1 (0.75 - 1.11 \xB5m)",
+        wavelength_um: 0.93,
+        date: "2025-05-10 02:41 UTC"
+      },
+      {
+        obs_id: "2025W18_1B_0001_2",
+        fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits",
+        mjd: 60814.225,
+        band: "Band 1 (0.75 - 1.11 \xB5m)",
+        wavelength_um: 0.93,
+        date: "2025-05-19 05:24 UTC"
+      }
+    ]
   },
   {
     id: "case-cal-stable-02",
@@ -1562,9 +1800,56 @@ app.get("/api/spherex/query", async (req, res) => {
 app.get("/api/spherex/cases", (_req, res) => {
   return res.json(CURATED_CASES);
 });
+app.get("/api/spherex/targets", (req, res) => {
+  const raQuery = parseFloat(req.query.ra);
+  const decQuery = parseFloat(req.query.dec);
+  const targets = OFFICIAL_CHALLENGE_TARGETS.map((tgt) => {
+    let customSeparationDeg = tgt.angularDistanceDegToNEP;
+    if (Number.isFinite(raQuery) && Number.isFinite(decQuery)) {
+      customSeparationDeg = Number((WCS.angularSeparationArcsec(raQuery, decQuery, tgt.ra, tgt.dec) / 3600).toFixed(1));
+    }
+    return {
+      ...tgt,
+      userSeparationDeg: customSeparationDeg
+    };
+  });
+  return res.json({
+    footprint: SPHEREX_QR2_FOOTPRINT,
+    targets
+  });
+});
+app.get("/api/spherex/coverage", (req, res) => {
+  const ra = parseFloat(req.query.ra);
+  const dec = parseFloat(req.query.dec);
+  let userCoordCheck = null;
+  if (Number.isFinite(ra) && Number.isFinite(dec)) {
+    userCoordCheck = checkCoordinatesInQR2(ra, dec);
+  }
+  return res.json({
+    footprint: SPHEREX_QR2_FOOTPRINT,
+    userQuery: Number.isFinite(ra) && Number.isFinite(dec) ? { ra, dec, ...userCoordCheck } : null,
+    benchmarks: CURATED_CASES.map((c) => ({
+      id: c.id,
+      title: c.title,
+      ra: c.ra,
+      dec: c.dec,
+      category: c.category,
+      insideFootprint: true
+    })),
+    challengeTargets: OFFICIAL_CHALLENGE_TARGETS
+  });
+});
+app.get("/api/spherex/spectral-bands", (_req, res) => {
+  return res.json({
+    mission: "SPHEREx (Spectro-Photometer for the History of the Universe, Epoch of Reionization and Ices Explorer)",
+    detectors: SPHEREX_DETECTOR_ARRAYS,
+    totalChannels: SPHEREX_102_CHANNELS.length,
+    channels: SPHEREX_102_CHANNELS
+  });
+});
 app.post("/api/spherex/process", async (req, res) => {
   try {
-    const { caseId, customCoords } = req.body;
+    const { caseId, customCoords, sizePix: requestedSizePix, epochPair = "1-3" } = req.body;
     const isCustomSearch = !!customCoords;
     let selectedCase = CURATED_CASES.find((c) => c.id === caseId);
     let ra = customCoords?.ra ?? selectedCase?.ra ?? 276.2614;
@@ -1581,44 +1866,83 @@ app.post("/api/spherex/process", async (req, res) => {
         });
       }
     }
+    const validSizes = [32, 64, 112, 160];
+    const sizePix = validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
+    const fovArcmin = Number((sizePix * 6.2 / 60).toFixed(1));
+    let ep1 = selectedCase.epoch1;
+    let ep2 = selectedCase.epoch2;
+    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
+      if (epochPair === "1-2") {
+        ep1 = selectedCase.epochs[0];
+        ep2 = selectedCase.epochs[1];
+      } else if (epochPair === "2-3") {
+        ep1 = selectedCase.epochs[1];
+        ep2 = selectedCase.epochs[2];
+      } else {
+        ep1 = selectedCase.epochs[0];
+        ep2 = selectedCase.epochs[2];
+      }
+    }
     const sourceMode = isCustomSearch ? "live" : "saved_benchmark";
     const caseIdToUse = isCustomSearch ? "custom-irsa-target" : selectedCase.id;
     const caseTitle = isCustomSearch ? `Live IRSA Cutout (RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0)` : selectedCase.title;
     const caseDescription = isCustomSearch ? `Live query requesting NASA/IPAC IRSA calibrated Level-2B FITS cutouts at RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0. Processed directly via difference imaging pipeline.` : selectedCase.description;
-    const fits1Res = await getFITSCutout(selectedCase.epoch1.fits_url, ra, dec, 64);
-    const fits2Res = await getFITSCutout(selectedCase.epoch2.fits_url, ra, dec, 64);
+    const fits1Res = await getFITSCutout(ep1.fits_url, ra, dec, sizePix);
+    const fits2Res = await getFITSCutout(ep2.fits_url, ra, dec, sizePix);
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
     const fitsData2 = FITSReader.parse(fits2Res.buffer);
     const obs1 = {
-      obs_id: selectedCase.epoch1.obs_id,
+      obs_id: ep1.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: selectedCase.epoch1.mjd,
-      t_max: selectedCase.epoch1.mjd + 1e-3,
-      em_min: (selectedCase.epoch1.wavelength_um - 0.15) * 1e-6,
-      em_max: (selectedCase.epoch1.wavelength_um + 0.15) * 1e-6,
-      wavelength_um: selectedCase.epoch1.wavelength_um,
+      t_min: ep1.mjd,
+      t_max: ep1.mjd + 1e-3,
+      em_min: (ep1.wavelength_um - 0.15) * 1e-6,
+      em_max: (ep1.wavelength_um + 0.15) * 1e-6,
+      wavelength_um: ep1.wavelength_um,
       dataproduct_type: "image",
-      access_url: selectedCase.epoch1.fits_url,
-      fits_url: selectedCase.epoch1.fits_url,
+      access_url: ep1.fits_url,
+      fits_url: ep1.fits_url,
       access_format: "application/fits"
     };
     const obs2 = {
-      obs_id: selectedCase.epoch2.obs_id,
+      obs_id: ep2.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: selectedCase.epoch2.mjd,
-      t_max: selectedCase.epoch2.mjd + 1e-3,
-      em_min: (selectedCase.epoch2.wavelength_um - 0.15) * 1e-6,
-      em_max: (selectedCase.epoch2.wavelength_um + 0.15) * 1e-6,
-      wavelength_um: selectedCase.epoch2.wavelength_um,
+      t_min: ep2.mjd,
+      t_max: ep2.mjd + 1e-3,
+      em_min: (ep2.wavelength_um - 0.15) * 1e-6,
+      em_max: (ep2.wavelength_um + 0.15) * 1e-6,
+      wavelength_um: ep2.wavelength_um,
       dataproduct_type: "image",
-      access_url: selectedCase.epoch2.fits_url,
-      fits_url: selectedCase.epoch2.fits_url,
+      access_url: ep2.fits_url,
+      fits_url: ep2.fits_url,
       access_format: "application/fits"
     };
+    let multiEpochArray = void 0;
+    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
+      try {
+        const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
+          const resF = await getFITSCutout(ep.fits_url, ra, dec, sizePix);
+          const parsed = FITSReader.parse(resF.buffer);
+          return {
+            epochIndex: idx + 1,
+            obsId: ep.obs_id,
+            date: ep.date,
+            mjd: ep.mjd,
+            flux: Array.from(parsed.data),
+            width: parsed.width,
+            height: parsed.height,
+            wcs: parsed.wcs
+          };
+        });
+        multiEpochArray = await Promise.all(visitPromises);
+      } catch (multiErr) {
+        console.warn("Could not load full multi-epoch sequence; continuing with 2-epoch difference:", multiErr);
+      }
+    }
     const diffResult = ScientificPipeline.processDifference(obs1, obs2, fitsData1, fitsData2);
-    const topCandidates = diffResult.candidates.slice(0, 5);
+    const topCandidates = diffResult.candidates.slice(0, 6);
     await Promise.allSettled(
       topCandidates.map(async (cand) => {
         try {
@@ -1639,12 +1963,12 @@ app.post("/api/spherex/process", async (req, res) => {
       irsaArchiveSource: "NASA/IPAC Infrared Science Archive (IRSA) \u2014 SPHEREx Public Data Release QR2",
       obsId1: obs1.obs_id,
       obsId2: obs2.obs_id,
-      fitsUrl1: selectedCase.epoch1.fits_url,
-      fitsUrl2: selectedCase.epoch2.fits_url,
+      fitsUrl1: ep1.fits_url,
+      fitsUrl2: ep2.fits_url,
       fitsChecksum1: fits1Res.checksum,
       fitsChecksum2: fits2Res.checksum,
       dataRelease: "SPHEREx QR2 (Level 2B Processed Science Frames)",
-      pipelineVersion: "SPHEREx-ChangingSky-v1.4.0 (astronomical difference imaging engine)",
+      pipelineVersion: "SPHEREx-ChangingSky-v1.5.0 (astronomical difference imaging engine)",
       algorithms: {
         fitsParser: "FITS-MEF IEEE-754 Big-Endian HDU extractor",
         wcsReprojection: "Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)",
@@ -1661,6 +1985,8 @@ app.post("/api/spherex/process", async (req, res) => {
       title: caseTitle,
       description: caseDescription,
       targetCoords: { ra, dec },
+      fovArcmin,
+      sizePix,
       epoch1: {
         metadata: obs1,
         width: fitsData1.width,
@@ -1679,6 +2005,7 @@ app.post("/api/spherex/process", async (req, res) => {
         stats: fitsData2.stats,
         wcs: fitsData2.wcs
       },
+      epochs: multiEpochArray,
       difference: {
         width: diffResult.width,
         height: diffResult.height,

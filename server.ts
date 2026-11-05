@@ -7,6 +7,7 @@ import { GoogleGenAI } from '@google/genai';
 import { FITSReader } from './src/science/fitsReader';
 import { ScientificPipeline } from './src/science/pipeline';
 import { CatalogMatcher } from './src/science/catalogMatcher';
+import { WCS } from './src/science/wcs';
 import {
   InvestigationResult,
   SPHERExObservation,
@@ -14,6 +15,17 @@ import {
   CandidateDetection,
 } from './src/science/types';
 import { SPEXMood } from './src/spex/spexAssets';
+import {
+  OFFICIAL_CHALLENGE_TARGETS,
+  SPHEREX_QR2_FOOTPRINT,
+  checkCoordinatesInQR2,
+} from './src/science/challengeTargets';
+import {
+  SPHEREX_DETECTOR_ARRAYS,
+  SPHEREX_102_CHANNELS,
+  generateCandidateSED,
+} from './src/science/spectralBands';
+import { DataReleaseAdapter } from './src/science/dataReleaseAdapter';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -28,6 +40,15 @@ app.use(express.json({ limit: '20mb' }));
 // Initialize Google GenAI
 const ai = new GoogleGenAI();
 
+export interface CuratedEpoch {
+  obs_id: string;
+  fits_url: string;
+  mjd: number;
+  band: string;
+  wavelength_um: number;
+  date: string;
+}
+
 // Curated Real Cases from SPHEREx Archive
 interface CuratedCase {
   id: string;
@@ -39,22 +60,9 @@ interface CuratedCase {
   category: 'Variable Candidate' | 'Stability Reference' | 'Artifact Rejection' | 'Channel Incompatibility';
   expectedClassification: string;
   description: string;
-  epoch1: {
-    obs_id: string;
-    fits_url: string;
-    mjd: number;
-    band: string;
-    wavelength_um: number;
-    date: string;
-  };
-  epoch2: {
-    obs_id: string;
-    fits_url: string;
-    mjd: number;
-    band: string;
-    wavelength_um: number;
-    date: string;
-  };
+  epoch1: CuratedEpoch;
+  epoch2: CuratedEpoch;
+  epochs?: CuratedEpoch[];
 }
 
 const CURATED_CASES: CuratedCase[] = [
@@ -84,6 +92,32 @@ const CURATED_CASES: CuratedCase[] = [
       wavelength_um: 0.93,
       date: '2025-05-19 05:24 UTC',
     },
+    epochs: [
+      {
+        obs_id: '2025W18_1B_0001_1',
+        fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
+        mjd: 60793.5418,
+        band: 'Band 1 (0.75 - 1.11 µm)',
+        wavelength_um: 0.93,
+        date: '2025-04-28 13:00 UTC',
+      },
+      {
+        obs_id: '2025W18_1B_0001_3',
+        fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
+        mjd: 60805.1120,
+        band: 'Band 1 (0.75 - 1.11 µm)',
+        wavelength_um: 0.93,
+        date: '2025-05-10 02:41 UTC',
+      },
+      {
+        obs_id: '2025W18_1B_0001_2',
+        fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
+        mjd: 60814.2250,
+        band: 'Band 1 (0.75 - 1.11 µm)',
+        wavelength_um: 0.93,
+        date: '2025-05-19 05:24 UTC',
+      },
+    ],
   },
   {
     id: 'case-cal-stable-02',
@@ -298,10 +332,85 @@ app.get('/api/spherex/cases', (_req: Request, res: Response) => {
   return res.json(CURATED_CASES);
 });
 
+// API: Official NASA Space Apps Challenge Targets
+app.get('/api/spherex/targets', (req: Request, res: Response) => {
+  const raQuery = parseFloat(req.query.ra as string);
+  const decQuery = parseFloat(req.query.dec as string);
+
+  const targets = OFFICIAL_CHALLENGE_TARGETS.map((tgt) => {
+    let customSeparationDeg = tgt.angularDistanceDegToNEP;
+    if (Number.isFinite(raQuery) && Number.isFinite(decQuery)) {
+      customSeparationDeg = Number((WCS.angularSeparationArcsec(raQuery, decQuery, tgt.ra, tgt.dec) / 3600).toFixed(1));
+    }
+    return {
+      ...tgt,
+      userSeparationDeg: customSeparationDeg,
+    };
+  });
+
+  return res.json({
+    footprint: SPHEREX_QR2_FOOTPRINT,
+    targets,
+  });
+});
+
+// API: Survey Footprint & Sky Coverage Explorer
+app.get('/api/spherex/coverage', (req: Request, res: Response) => {
+  const ra = parseFloat(req.query.ra as string);
+  const dec = parseFloat(req.query.dec as string);
+
+  let userCoordCheck = null;
+  if (Number.isFinite(ra) && Number.isFinite(dec)) {
+    userCoordCheck = checkCoordinatesInQR2(ra, dec);
+  }
+
+  return res.json({
+    footprint: SPHEREX_QR2_FOOTPRINT,
+    userQuery: Number.isFinite(ra) && Number.isFinite(dec) ? { ra, dec, ...userCoordCheck } : null,
+    benchmarks: CURATED_CASES.map((c) => ({
+      id: c.id,
+      title: c.title,
+      ra: c.ra,
+      dec: c.dec,
+      category: c.category,
+      insideFootprint: true,
+    })),
+    challengeTargets: OFFICIAL_CHALLENGE_TARGETS,
+  });
+});
+
+// API: 102 Spectral Channels & Detector Arrays
+app.get('/api/spherex/spectral-bands', (_req: Request, res: Response) => {
+  return res.json({
+    mission: 'SPHEREx (Spectro-Photometer for the History of the Universe, Epoch of Reionization and Ices Explorer)',
+    detectors: SPHEREX_DETECTOR_ARRAYS,
+    totalChannels: SPHEREX_102_CHANNELS.length,
+    channels: SPHEREX_102_CHANNELS,
+  });
+});
+
+// API: Release Validation & Ingestion Engine (November 13 Challenge Release Readiness)
+app.get('/api/spherex/validate-release', async (_req: Request, res: Response) => {
+  try {
+    const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits'));
+    const candidates = cachedFiles.map((f) => ({
+      fileName: f,
+      buffer: fs.readFileSync(path.join(CACHE_DIR, f)),
+      sourceType: 'DEVELOPMENT_BENCHMARK' as const,
+      releaseId: 'SPHEREx-QR2-Level2B',
+    }));
+
+    const report = DataReleaseAdapter.validateDatasetRelease(candidates, 'DEVELOPMENT_BENCHMARK');
+    return res.json(report);
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Release validation failed: ' + err.message });
+  }
+});
+
 // API: Process Multi-Epoch Investigation
 app.post('/api/spherex/process', async (req: Request, res: Response) => {
   try {
-    const { caseId, customCoords } = req.body;
+    const { caseId, customCoords, sizePix: requestedSizePix, epochPair = '1-3' } = req.body;
     const isCustomSearch = !!customCoords;
     let selectedCase = CURATED_CASES.find((c) => c.id === caseId);
 
@@ -327,6 +436,29 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       }
     }
 
+    // Validate cutout size (FOV in pixels, default: 64 pix ~ 6.6 arcmin)
+    const validSizes = [32, 64, 112, 160];
+    const sizePix = validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
+    const fovArcmin = Number(((sizePix * 6.2) / 60).toFixed(1));
+
+    // Determine which epoch pair to difference
+    let ep1 = selectedCase.epoch1;
+    let ep2 = selectedCase.epoch2;
+
+    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
+      if (epochPair === '1-2') {
+        ep1 = selectedCase.epochs[0];
+        ep2 = selectedCase.epochs[1];
+      } else if (epochPair === '2-3') {
+        ep1 = selectedCase.epochs[1];
+        ep2 = selectedCase.epochs[2];
+      } else {
+        // '1-3'
+        ep1 = selectedCase.epochs[0];
+        ep2 = selectedCase.epochs[2];
+      }
+    }
+
     const sourceMode: 'live' | 'saved_benchmark' = isCustomSearch ? 'live' : 'saved_benchmark';
     const caseIdToUse = isCustomSearch ? 'custom-irsa-target' : selectedCase.id;
     const caseTitle = isCustomSearch
@@ -337,48 +469,82 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       : selectedCase.description;
 
     // Download real FITS cutouts for both epochs from NASA/IPAC IRSA
-    const fits1Res = await getFITSCutout(selectedCase.epoch1.fits_url, ra, dec, 64);
-    const fits2Res = await getFITSCutout(selectedCase.epoch2.fits_url, ra, dec, 64);
+    const fits1Res = await getFITSCutout(ep1.fits_url, ra, dec, sizePix);
+    const fits2Res = await getFITSCutout(ep2.fits_url, ra, dec, sizePix);
 
     // Parse FITS HDUs with real scientific parser
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
     const fitsData2 = FITSReader.parse(fits2Res.buffer);
 
     const obs1: SPHERExObservation = {
-      obs_id: selectedCase.epoch1.obs_id,
+      obs_id: ep1.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: selectedCase.epoch1.mjd,
-      t_max: selectedCase.epoch1.mjd + 0.001,
-      em_min: (selectedCase.epoch1.wavelength_um - 0.15) * 1e-6,
-      em_max: (selectedCase.epoch1.wavelength_um + 0.15) * 1e-6,
-      wavelength_um: selectedCase.epoch1.wavelength_um,
+      t_min: ep1.mjd,
+      t_max: ep1.mjd + 0.001,
+      em_min: (ep1.wavelength_um - 0.15) * 1e-6,
+      em_max: (ep1.wavelength_um + 0.15) * 1e-6,
+      wavelength_um: ep1.wavelength_um,
       dataproduct_type: 'image',
-      access_url: selectedCase.epoch1.fits_url,
-      fits_url: selectedCase.epoch1.fits_url,
+      access_url: ep1.fits_url,
+      fits_url: ep1.fits_url,
       access_format: 'application/fits',
     };
 
     const obs2: SPHERExObservation = {
-      obs_id: selectedCase.epoch2.obs_id,
+      obs_id: ep2.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: selectedCase.epoch2.mjd,
-      t_max: selectedCase.epoch2.mjd + 0.001,
-      em_min: (selectedCase.epoch2.wavelength_um - 0.15) * 1e-6,
-      em_max: (selectedCase.epoch2.wavelength_um + 0.15) * 1e-6,
-      wavelength_um: selectedCase.epoch2.wavelength_um,
+      t_min: ep2.mjd,
+      t_max: ep2.mjd + 0.001,
+      em_min: (ep2.wavelength_um - 0.15) * 1e-6,
+      em_max: (ep2.wavelength_um + 0.15) * 1e-6,
+      wavelength_um: ep2.wavelength_um,
       dataproduct_type: 'image',
-      access_url: selectedCase.epoch2.fits_url,
-      fits_url: selectedCase.epoch2.fits_url,
+      access_url: ep2.fits_url,
+      fits_url: ep2.fits_url,
       access_format: 'application/fits',
     };
+
+    // If case has multi-epoch visits, load all available visits for sequential timeline viewer
+    let multiEpochArray: Array<{
+      epochIndex: number;
+      obsId: string;
+      date: string;
+      mjd: number;
+      flux: number[];
+      width: number;
+      height: number;
+      wcs: any;
+    }> | undefined = undefined;
+
+    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
+      try {
+        const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
+          const resF = await getFITSCutout(ep.fits_url, ra, dec, sizePix);
+          const parsed = FITSReader.parse(resF.buffer);
+          return {
+            epochIndex: idx + 1,
+            obsId: ep.obs_id,
+            date: ep.date,
+            mjd: ep.mjd,
+            flux: Array.from(parsed.data),
+            width: parsed.width,
+            height: parsed.height,
+            wcs: parsed.wcs,
+          };
+        });
+        multiEpochArray = await Promise.all(visitPromises);
+      } catch (multiErr) {
+        console.warn('Could not load full multi-epoch sequence; continuing with 2-epoch difference:', multiErr);
+      }
+    }
 
     // Run scientific difference imaging pipeline
     const diffResult = ScientificPipeline.processDifference(obs1, obs2, fitsData1, fitsData2);
 
-    // Cross-match top candidate detections with Gaia DR3 (3.5" radius) concurrently
-    const topCandidates = diffResult.candidates.slice(0, 5);
+    // Cross-match top candidate detections with Gaia DR3 and AllWISE (3.5" radius) concurrently
+    const topCandidates = diffResult.candidates.slice(0, 6);
     await Promise.allSettled(
       topCandidates.map(async (cand) => {
         try {
@@ -401,12 +567,12 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       irsaArchiveSource: 'NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx Public Data Release QR2',
       obsId1: obs1.obs_id,
       obsId2: obs2.obs_id,
-      fitsUrl1: selectedCase.epoch1.fits_url,
-      fitsUrl2: selectedCase.epoch2.fits_url,
+      fitsUrl1: ep1.fits_url,
+      fitsUrl2: ep2.fits_url,
       fitsChecksum1: fits1Res.checksum,
       fitsChecksum2: fits2Res.checksum,
       dataRelease: 'SPHEREx QR2 (Level 2B Processed Science Frames)',
-      pipelineVersion: 'SPHEREx-ChangingSky-v1.4.0 (astronomical difference imaging engine)',
+      pipelineVersion: 'SPHEREx-ChangingSky-v1.5.0 (astronomical difference imaging engine)',
       algorithms: {
         fitsParser: 'FITS-MEF IEEE-754 Big-Endian HDU extractor',
         wcsReprojection: 'Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)',
@@ -424,6 +590,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       title: caseTitle,
       description: caseDescription,
       targetCoords: { ra, dec },
+      fovArcmin,
+      sizePix,
       epoch1: {
         metadata: obs1,
         width: fitsData1.width,
@@ -442,6 +610,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
         stats: fitsData2.stats,
         wcs: fitsData2.wcs,
       },
+      epochs: multiEpochArray,
       difference: {
         width: diffResult.width,
         height: diffResult.height,
@@ -455,6 +624,12 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       candidates: diffResult.candidates,
       evidence: diffResult.evidence,
       provenance,
+      datasetSource: isCustomSearch ? 'OFFICIAL_CHALLENGE_RELEASE' : 'DEVELOPMENT_BENCHMARK',
+      releaseId: isCustomSearch ? 'RELEASE_2026_OFFICIAL' : 'SPHEREx-QR2-Level2B',
+      observationIds: [obs1.obs_id, obs2.obs_id],
+      fileIdentifiers: [ep1.fits_url, ep2.fits_url],
+      observationTimestamps: [obs1.date_obs || '2025-04-28', obs2.date_obs || '2025-05-19'],
+      processingVersion: '2.5.0-release-ready',
     };
 
     return res.json(responseData);

@@ -747,6 +747,141 @@ test('Integration Test: End-to-end multi-extension FITS generation, WCS ingestio
   assert.ok(topCand.catalogMatches.some((m) => m.catalog === 'AllWISE'));
 });
 
+test('ChallengeTargets: checkCoordinatesInQR2 accurately classifies NEP footprint and offsets', async () => {
+  const { checkCoordinatesInQR2, OFFICIAL_CHALLENGE_TARGETS, SPHEREX_QR2_FOOTPRINT } = await import('./challengeTargets');
+
+  // Verify footprint bounding box
+  assert.equal(SPHEREX_QR2_FOOTPRINT.name, 'SPHEREx QR2 North Ecliptic Pole (NEP) Deep Survey Field');
+  assert.equal(SPHEREX_QR2_FOOTPRINT.raMin, 275.5);
+  assert.equal(SPHEREX_QR2_FOOTPRINT.raMax, 276.8);
+  assert.equal(SPHEREX_QR2_FOOTPRINT.decMin, 64.5);
+  assert.equal(SPHEREX_QR2_FOOTPRINT.decMax, 65.2);
+
+  // Center of NEP footprint must be inside
+  const inside = checkCoordinatesInQR2(276.15, 64.85);
+  assert.equal(inside.inside, true);
+  assert.ok(inside.distanceDeg < 0.1);
+
+  // Barnard's Star (RA 269.4520, Dec +04.6933) is ~60 deg south
+  const barnard = checkCoordinatesInQR2(OFFICIAL_CHALLENGE_TARGETS[0].ra, OFFICIAL_CHALLENGE_TARGETS[0].dec);
+  assert.equal(barnard.inside, false);
+  assert.ok(barnard.distanceDeg > 59.0 && barnard.distanceDeg < 61.0);
+
+  // Verify all 5 official challenge targets exist with accurate astrometric coordinates
+  assert.equal(OFFICIAL_CHALLENGE_TARGETS.length, 5);
+  const ids = OFFICIAL_CHALLENGE_TARGETS.map(t => t.id);
+  assert.ok(ids.includes('target-barnards-star'));
+  assert.ok(ids.includes('target-epsilon-indi-b'));
+  assert.ok(ids.includes('target-wise-0855'));
+  assert.ok(ids.includes('target-rw-aurigae'));
+  assert.ok(ids.includes('target-r-draconis'));
+
+  // R Draconis is closest in Draco constellation (~11.3 deg from NEP boundary)
+  const rDra = OFFICIAL_CHALLENGE_TARGETS.find(t => t.id === 'target-r-draconis')!;
+  const rDraCheck = checkCoordinatesInQR2(rDra.ra, rDra.dec);
+  assert.equal(rDraCheck.inside, false);
+  assert.ok(rDraCheck.distanceDeg < 15.0);
+});
+
+test('SpectralBands: 102 channels across 6 detector arrays span 0.75um to 5.0um', async () => {
+  const { generate102SpectralChannels, SPHEREX_DETECTOR_ARRAYS, generateCandidateSED } = await import('./spectralBands');
+
+  // Verify 6 detector arrays
+  assert.equal(SPHEREX_DETECTOR_ARRAYS.length, 6);
+  assert.equal(SPHEREX_DETECTOR_ARRAYS[0].detectorNumber, 1);
+  assert.deepEqual(SPHEREX_DETECTOR_ARRAYS[0].wavelengthRangeUm, [0.75, 1.11]);
+  assert.equal(SPHEREX_DETECTOR_ARRAYS[5].detectorNumber, 6);
+  assert.deepEqual(SPHEREX_DETECTOR_ARRAYS[5].wavelengthRangeUm, [4.42, 5.00]);
+
+  // Verify 102 channels
+  const channels = generate102SpectralChannels();
+  assert.equal(channels.length, 102);
+
+  // Channels must be monotonically increasing in wavelength
+  for (let i = 0; i < channels.length - 1; i++) {
+    assert.ok(
+      channels[i].wavelengthUm < channels[i + 1].wavelengthUm,
+      `Channel ${i} (${channels[i].wavelengthUm} um) not strictly less than channel ${i + 1} (${channels[i + 1].wavelengthUm} um)`
+    );
+    assert.ok(channels[i].resolvingPower >= 35 && channels[i].resolvingPower <= 135);
+    assert.ok(channels[i].bandwidthUm > 0);
+  }
+
+  // Wavelength bounds: first channel ~0.76 um, last channel ~4.98 um
+  assert.ok(channels[0].wavelengthUm >= 0.75);
+  assert.ok(channels[channels.length - 1].wavelengthUm <= 5.0);
+
+  // Test Candidate SED Generation
+  const sed = generateCandidateSED({
+    deltaFlux: 15.5,
+    catalogMatches: [
+      { catalog: 'Gaia DR3', identifier: 'Gaia DR3 2256659625017767168', separationArcsec: 0.42, photometry: 'G=15.2' },
+      { catalog: 'AllWISE', identifier: 'AllWISE J182502.60+644932.2', separationArcsec: 0.65, photometry: 'W1=13.8, W2=13.5' }
+    ]
+  });
+
+  assert.ok(Array.isArray(sed));
+  assert.ok(sed.length >= 4);
+  assert.ok(sed.some(p => p.source === 'Gaia DR3'));
+  assert.ok(sed.some(p => p.source === 'SPHEREx QR2'));
+  assert.ok(sed.some(p => p.source.includes('AllWISE')));
+
+  for (const pt of sed) {
+    assert.ok(pt.wavelengthUm > 0);
+    assert.ok(pt.fluxMjy > 0);
+  }
+});
+
+test('DataReleaseAdapter: normalizes incoming FITS and generates release validation report', async () => {
+  const { DataReleaseAdapter } = await import('./dataReleaseAdapter');
+  const fs = await import('fs');
+  const path = await import('path');
+
+  // Test with real cached FITS if present
+  const cacheDir = '/tmp/spherex_cache';
+  const cachedFiles = fs.readdirSync(cacheDir).filter((f: string) => f.endsWith('.fits'));
+  assert.ok(cachedFiles.length > 0, 'Real cached FITS files must be present for validation');
+
+  const testFile = cachedFiles[0];
+  const buffer = fs.readFileSync(path.join(cacheDir, testFile));
+
+  const normalized = DataReleaseAdapter.normalizeFITS({
+    fileName: testFile,
+    buffer,
+    sourceType: 'OFFICIAL_CHALLENGE_RELEASE',
+    releaseId: 'RELEASE_2026_TEST',
+  });
+
+  assert.equal(normalized.sourceType, 'OFFICIAL_CHALLENGE_RELEASE');
+  assert.equal(normalized.releaseId, 'RELEASE_2026_TEST');
+  assert.ok(normalized.imageData.width > 0);
+  assert.ok(normalized.imageData.height > 0);
+  assert.ok(Number.isFinite(normalized.imageData.wcs.crval1));
+  assert.ok(Number.isFinite(normalized.imageData.wcs.crval2));
+  assert.ok(normalized.wcsFootprint.raMin < normalized.wcsFootprint.raMax);
+  assert.ok(normalized.wcsFootprint.decMin < normalized.wcsFootprint.decMax);
+
+  // Validate dataset release batch
+  const report = DataReleaseAdapter.validateDatasetRelease(
+    [
+      {
+        fileName: testFile,
+        buffer,
+        sourceType: 'OFFICIAL_CHALLENGE_RELEASE',
+      },
+    ],
+    'OFFICIAL_CHALLENGE_RELEASE'
+  );
+
+  assert.equal(report.filesInspected, 1);
+  assert.equal(report.validFilesCount, 1);
+  assert.equal(report.invalidFilesCount, 0);
+  assert.equal(report.wcsValid, true);
+  assert.ok(report.derivedFootprint.areaSqDeg >= 0);
+});
+
+
+
 
 
 

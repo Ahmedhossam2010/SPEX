@@ -9,6 +9,7 @@ import {
   Crosshair,
   ShieldCheck,
   Move,
+  FileText,
 } from 'lucide-react';
 import { CandidateDetection } from '../science/types';
 import { ScienceTerm } from './ScienceTerm';
@@ -20,6 +21,7 @@ interface FindingCardProps {
   onSelect: (candidate: CandidateDetection) => void;
   onLocate: (candidate: CandidateDetection) => void;
   onAskSpex: (prompt: string) => void;
+  onOpenPassport?: (candidate: CandidateDetection) => void;
   language: Language;
 }
 
@@ -29,6 +31,7 @@ export const FindingCard: React.FC<FindingCardProps> = ({
   onSelect,
   onLocate,
   onAskSpex,
+  onOpenPassport,
   language,
 }) => {
   const [showTechnical, setShowTechnical] = useState(false);
@@ -204,6 +207,21 @@ export const FindingCard: React.FC<FindingCardProps> = ({
             <Sparkles className="w-3.5 h-3.5" />
             <span>{isRtl ? 'اسأل SPEX' : 'Ask SPEX'}</span>
           </button>
+
+          {onOpenPassport && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenPassport(candidate);
+              }}
+              className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              title="Open full discovery report passport"
+            >
+              <FileText className="w-3.5 h-3.5 text-amber-500" />
+              <span>{isRtl ? 'الجواز' : 'Passport'}</span>
+            </button>
+          )}
         </div>
 
         {/* Technical Drawer Toggle */}

@@ -89,8 +89,12 @@ export function App() {
       });
   }, []);
 
-  // Process a case by ID
-  const loadCase = async (caseId: string, customCoords?: { ra: number; dec: number }) => {
+  // Process a case by ID with optional custom coordinates, FOV sizePix, and epochPair
+  const loadCase = async (
+    caseId: string,
+    customCoords?: { ra: number; dec: number },
+    options?: { sizePix?: number; epochPair?: string }
+  ) => {
     setIsLoading(true);
     setErrorMsg(null);
     setFailedQuery(null);
@@ -98,7 +102,12 @@ export function App() {
       const res = await fetch('/api/spherex/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caseId, customCoords }),
+        body: JSON.stringify({
+          caseId,
+          customCoords,
+          sizePix: options?.sizePix,
+          epochPair: options?.epochPair,
+        }),
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -123,13 +132,13 @@ export function App() {
     setActiveTab('explore');
   };
 
-  const handleSelectCase = (caseId: string) => {
-    loadCase(caseId);
+  const handleSelectCase = (caseId: string, options?: { sizePix?: number; epochPair?: string }) => {
+    loadCase(caseId, undefined, options);
     setActiveTab('explore');
   };
 
-  const handleSearchTarget = (ra: number, dec: number) => {
-    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
+  const handleSearchTarget = (ra: number, dec: number, sizePix?: number) => {
+    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec }, { sizePix });
   };
 
   const handleToggleLanguage = () => {

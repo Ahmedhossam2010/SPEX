@@ -162,12 +162,48 @@ export interface ProvenanceRecord {
   };
 }
 
+export interface ChallengeTarget {
+  id: string;
+  name: string;
+  ra: number;
+  dec: number;
+  constellation: string;
+  scienceType: string;
+  description: string;
+  qr2Coverage: 'outside_footprint' | 'inside_footprint';
+  angularDistanceDegToNEP: number;
+  recommendedBenchmarkId: string;
+  expectedBehavior: string;
+}
+
+export interface SpectralBandInfo {
+  channelIndex: number; // 1 to 102
+  detector: number; // 1 to 6
+  bandName: string;
+  wavelengthUm: number;
+  bandwidthUm: number;
+  resolvingPower: number; // R = lambda / delta_lambda
+  primaryScienceFeatures: string;
+}
+
+export interface MultiEpochVisit {
+  epochIndex: number;
+  obsId: string;
+  dateStr: string;
+  mjd: number;
+  wavelengthUm: number;
+  band: string;
+  fitsUrl: string;
+}
+
 export interface InvestigationResult {
   caseId: string;
   sourceMode?: 'live' | 'saved_benchmark';
   title: string;
   description: string;
   targetCoords: { ra: number; dec: number };
+  fovArcmin?: number;
+  sizePix?: number;
   epoch1: {
     metadata: SPHERExObservation;
     width: number;
@@ -190,6 +226,16 @@ export interface InvestigationResult {
     stats: FITSImageData['stats'];
     wcs: WCSParams;
   };
+  epochs?: Array<{
+    epochIndex: number;
+    obsId: string;
+    date: string;
+    mjd: number;
+    flux: number[];
+    width: number;
+    height: number;
+    wcs: WCSParams;
+  }>;
   difference: {
     width: number;
     height: number;
@@ -218,4 +264,41 @@ export interface InvestigationResult {
   candidates: CandidateDetection[];
   evidence: EvidenceSummary;
   provenance: ProvenanceRecord;
+  datasetSource?: DatasetSourceType;
+  releaseId?: string;
+  observationIds?: string[];
+  fileIdentifiers?: string[];
+  observationTimestamps?: string[];
+  processingVersion?: string;
 }
+
+export type DatasetSourceType = 'DEVELOPMENT_BENCHMARK' | 'OFFICIAL_CHALLENGE_RELEASE';
+
+export interface ReleaseValidationReport {
+  timestamp: string;
+  datasetSource: DatasetSourceType;
+  releaseId: string;
+  filesInspected: number;
+  validFilesCount: number;
+  invalidFilesCount: number;
+  wcsValid: boolean;
+  varianceExtensionPresent: boolean;
+  flagsExtensionPresent: boolean;
+  derivedFootprint: {
+    raMin: number;
+    raMax: number;
+    decMin: number;
+    decMax: number;
+    areaSqDeg: number;
+  };
+  detectedEpochs: Array<{
+    obsId: string;
+    mjd: number;
+    date: string;
+    wavelengthUm?: number;
+  }>;
+  detectedBands: string[];
+  issues: string[];
+  status: 'READY' | 'WARNINGS' | 'INCOMPATIBLE';
+}
+
