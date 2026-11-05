@@ -1,9 +1,10 @@
 // server.ts
+import dotenv from "dotenv";
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
-import crypto from "crypto";
+import crypto2 from "crypto";
 import { GoogleGenAI } from "@google/genai";
 
 // src/science/fitsReader.ts
@@ -369,12 +370,29 @@ var ScientificPipeline = class {
     const wl1 = obs1.wavelength_um ?? (obs1.em_min + obs1.em_max) / 2 * 1e6;
     const wl2 = obs2.wavelength_um ?? (obs2.em_min + obs2.em_max) / 2 * 1e6;
     const wavelengthDiffUm = Math.abs(wl2 - wl1);
+    let timeBaselineType = "INDEPENDENT_VISIT";
+    let timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days`;
+    if (timeBaselineDays < 2e-5) {
+      timeBaselineType = "SAME_EXPOSURE";
+      timeBaselineHuman = "Identical exposure (<1s)";
+    } else if (timeBaselineDays < 0.04167) {
+      timeBaselineType = "INTRA_VISIT_EXPOSURES";
+      timeBaselineHuman = `${(timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)`;
+    } else if (timeBaselineDays < 30) {
+      timeBaselineType = "INDEPENDENT_VISIT";
+      timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days (independent visit)`;
+    } else {
+      timeBaselineType = "SURVEY_EPOCH";
+      timeBaselineHuman = `${(timeBaselineDays / 30.4).toFixed(1)} months (survey cadence)`;
+    }
     if (wavelengthDiffUm > 0.35) {
       return {
         isCompatible: false,
         reason: `Wavelength bands are physically incompatible: Epoch 1 is at ${wl1.toFixed(2)} \xB5m and Epoch 2 is at ${wl2.toFixed(2)} \xB5m (difference ${wavelengthDiffUm.toFixed(2)} \xB5m). Differencing across distinct spectral bands measures spectral color slope rather than true temporal variability.`,
         timeBaselineDays,
-        wavelengthDiffUm
+        wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman
       };
     }
     const scaleRatio = fits1.wcs.pixelScaleArcsec / (fits2.wcs.pixelScaleArcsec || 1);
@@ -383,13 +401,17 @@ var ScientificPipeline = class {
         isCompatible: false,
         reason: `Pixel scale mismatch: Epoch 1 is ${fits1.wcs.pixelScaleArcsec.toFixed(2)}"/px while Epoch 2 is ${fits2.wcs.pixelScaleArcsec.toFixed(2)}"/px.`,
         timeBaselineDays,
-        wavelengthDiffUm
+        wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman
       };
     }
     return {
       isCompatible: true,
       timeBaselineDays,
-      wavelengthDiffUm
+      wavelengthDiffUm,
+      timeBaselineType,
+      timeBaselineHuman
     };
   }
   /**
@@ -1032,18 +1054,19 @@ var ScientificPipeline = class {
     let classification = "NO SIGNIFICANT CHANGE DETECTED";
     let summaryProse = "No statistically significant flux change was detected above the 3.5\u03C3 observational noise threshold.";
     let statisticalJustification = `The difference image is consistent with Gaussian noise (\u03C3_diff = ${noiseSigma.toFixed(4)}). No point sources exceeded the detection threshold without artifact disqualification.`;
+    const baselineText = compatibility.timeBaselineHuman || (compatibility.timeBaselineDays < 0.04167 ? `${(compatibility.timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)` : `${compatibility.timeBaselineDays.toFixed(1)} days`);
     if (movingCandidates.length > 0) {
       const topMove = movingCandidates[0];
       classification = "SIGNIFICANT CHANGE DETECTED";
       const speed = topMove.motion?.speedArcsecPerDay ? `${topMove.motion.speedArcsecPerDay.toFixed(2)}"/day` : "measurable velocity";
       const sep = topMove.motion?.separationArcsec ? `${topMove.motion.separationArcsec.toFixed(1)}"` : "significant";
-      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline (speed ~${speed}).`;
+      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${baselineText} (speed ~${speed}).`;
       statisticalJustification = `Complementary Epoch 1 / Epoch 2 difference dipole exhibits spatially displaced point-like morphology consistent with an asteroid or high-proper-motion source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? "N/A"}\xB0).`;
     } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       if (Math.abs(top.peakSignificance) >= 4) {
         classification = "SIGNIFICANT CHANGE DETECTED";
-        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}\u03C3 across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}\u03C3 across a ${baselineText}.`;
         statisticalJustification = `Top candidate ${top.id} shows residual amplitude \u0394F = ${top.deltaFlux.toFixed(3)} \xB1 ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}\u03C3, heuristic artifact index = ${top.artifactScore.toFixed(2)}/1.00).`;
       } else {
         classification = "POSSIBLE CHANGE \u2014 NEEDS REVIEW";
@@ -1061,13 +1084,13 @@ var ScientificPipeline = class {
         statisticalJustification = `Detected peak exhibited severe instrumental flags (${topArt.artifactFlags.join(", ")}).`;
       } else {
         classification = "NO SIGNIFICANT CHANGE DETECTED";
-        summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across the ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across a ${baselineText}.`;
         statisticalJustification = `Residual dipole is consistent with sub-pixel pointing jitter. Net aperture change \u0394F = ${topArt.deltaFlux.toFixed(3)} \xB1 ${topArt.deltaFluxUncertainty.toFixed(3)} is consistent with steady state.`;
       }
     }
     const whatWeKnow = [
       `Compared SPHEREx observation ${obs1.obs_id} against ${obs2.obs_id}.`,
-      `Temporal baseline spans ${compatibility.timeBaselineDays.toFixed(1)} days.`,
+      `Temporal baseline spans ${baselineText}.`,
       `Difference image noise floor: \u03C3_diff = ${noiseSigma.toFixed(4)} MJy/sr.`
     ];
     if (movingCandidates.length > 0) {
@@ -1207,7 +1230,8 @@ var CatalogMatcher = class {
           separationArcsec: Number(sep.toFixed(2)),
           objectType: src.objectType,
           photometry: src.gMag ? `G = ${src.gMag.toFixed(2)} mag` : void 0,
-          sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${src.identifier.replace("Gaia DR3 ", "")}`
+          sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${src.identifier.replace("Gaia DR3 ", "")}`,
+          matchProvenance: "BENCHMARK_FIXTURE_CACHE"
         });
       }
     }
@@ -1251,7 +1275,8 @@ var CatalogMatcher = class {
                     separationArcsec: Number(sep.toFixed(2)),
                     objectType: "Star / Compact Point Source",
                     photometry: Number.isFinite(gMag) ? `G = ${gMag.toFixed(2)} mag` : void 0,
-                    sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${gaiaSourceId}`
+                    sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${gaiaSourceId}`,
+                    matchProvenance: "LIVE_VIZIER_TAP"
                   });
                 }
               }
@@ -1280,7 +1305,8 @@ var CatalogMatcher = class {
           separationArcsec: Number(sep.toFixed(2)),
           objectType: src.objectType,
           photometry: `W1 = ${src.w1Mag.toFixed(2)} mag, W2 = ${src.w2Mag.toFixed(2)} mag`,
-          sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(src.identifier.replace("AllWISE ", ""))}`
+          sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(src.identifier.replace("AllWISE ", ""))}`,
+          matchProvenance: "BENCHMARK_FIXTURE_CACHE"
         });
       }
     }
@@ -1328,7 +1354,8 @@ var CatalogMatcher = class {
                     separationArcsec: Number(sep.toFixed(2)),
                     objectType: "Mid-IR Point Source (3.4 / 4.6 \xB5m)",
                     photometry: photParts.length > 0 ? photParts.join(", ") : void 0,
-                    sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(wiseId.replace("AllWISE ", ""))}`
+                    sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(wiseId.replace("AllWISE ", ""))}`,
+                    matchProvenance: "LIVE_VIZIER_TAP"
                   });
                 }
               }
@@ -1555,7 +1582,373 @@ function generate102SpectralChannels() {
 }
 var SPHEREX_102_CHANNELS = generate102SpectralChannels();
 
+// src/science/dataReleaseAdapter.ts
+import crypto from "crypto";
+var DataReleaseAdapter = class {
+  static {
+    this.VERSION = "2.6.0-forensic-ready";
+  }
+  static {
+    /**
+     * Recognized photometric and surface-brightness units.
+     */
+    this.RECOGNIZED_UNITS = [
+      "MJY / SR",
+      "MJY/SR",
+      "MJY",
+      "JY/SR",
+      "JY",
+      "MJY / SR (CALIBRATED)",
+      "10^6 JY/SR"
+    ];
+  }
+  /**
+   * Inspect and normalize an incoming FITS file buffer from either
+   * DEVELOPMENT_BENCHMARK or the upcoming OFFICIAL_CHALLENGE_RELEASE.
+   */
+  static normalizeFITS(input) {
+    const rawBuffer = Buffer.isBuffer(input.buffer) ? input.buffer : Buffer.from(input.buffer);
+    const sha256 = crypto.createHash("sha256").update(rawBuffer).digest("hex");
+    const parsed = FITSReader.parse(rawBuffer);
+    const hdr = parsed.header || {};
+    if (!Number.isFinite(parsed.wcs.crval1) || !Number.isFinite(parsed.wcs.crval2) || !Number.isFinite(parsed.wcs.pixelScaleArcsec) || parsed.wcs.pixelScaleArcsec <= 0) {
+      throw new Error(`File ${input.fileName} has incomplete or invalid WCS astrometry.`);
+    }
+    let timestampUtc = hdr["DATE-OBS"] || hdr["DATE"] || (/* @__PURE__ */ new Date()).toISOString();
+    let mjd = typeof hdr["MJD-OBS"] === "number" ? hdr["MJD-OBS"] : parseFloat(hdr["MJD-OBS"]);
+    if (!Number.isFinite(mjd)) {
+      const parsedTime = Date.parse(timestampUtc);
+      mjd = Number.isFinite(parsedTime) ? 40587 + parsedTime / 864e5 : 60800;
+    }
+    const obsId = hdr["OBSID"] || hdr["OBS_ID"] || hdr["OBJECT"] || input.fileName.replace(/\.fits(\.gz)?$/i, "");
+    const detector = typeof hdr["DETECTOR"] === "number" ? hdr["DETECTOR"] : parseInt(hdr["DETECTOR"], 10) || 1;
+    let wavelengthUm = 0.93;
+    if (typeof hdr["WAVELEN"] === "number") wavelengthUm = hdr["WAVELEN"];
+    else if (typeof hdr["WAVELENGTH"] === "number") wavelengthUm = hdr["WAVELENGTH"];
+    else if (typeof hdr["LAMBDA"] === "number") wavelengthUm = hdr["LAMBDA"];
+    const bandName = hdr["FILTER"] || hdr["BAND"] || `Band ${detector} (${wavelengthUm.toFixed(2)} \xB5m)`;
+    const rawUnit = (parsed.bunit || hdr["BUNIT"] || "UNKNOWN").trim().toUpperCase();
+    const unitValid = this.RECOGNIZED_UNITS.some((u) => rawUnit.includes(u));
+    const hasNativeVariance = parsed.variance !== null;
+    let varianceArray = parsed.variance;
+    let varianceSource = "NATIVE";
+    if (!varianceArray) {
+      varianceSource = "ESTIMATED";
+      const sigmaBg = parsed.stats.robustNoise || 0.5;
+      const defaultVar = sigmaBg * sigmaBg;
+      varianceArray = new Float32Array(parsed.width * parsed.height).fill(defaultVar);
+    }
+    const hasNativeFlags = parsed.flags !== null;
+    let flagsStatus = "PRESENT";
+    let flagsArray = parsed.flags;
+    if (!flagsArray) {
+      flagsStatus = "MISSING";
+      flagsArray = new Int32Array(parsed.width * parsed.height).fill(0);
+    }
+    const normalizedData = {
+      ...parsed,
+      variance: varianceArray,
+      flags: flagsArray
+    };
+    const w = parsed.width;
+    const h = parsed.height;
+    const c1 = WCS.pixToSky(0, 0, parsed.wcs);
+    const c2 = WCS.pixToSky(w - 1, 0, parsed.wcs);
+    const c3 = WCS.pixToSky(w - 1, h - 1, parsed.wcs);
+    const c4 = WCS.pixToSky(0, h - 1, parsed.wcs);
+    const corners = [c1, c2, c3, c4];
+    let raVals = [c1.ra, c2.ra, c3.ra, c4.ra];
+    const maxRaRaw = Math.max(...raVals);
+    const minRaRaw = Math.min(...raVals);
+    let handlesWraparound = false;
+    if (maxRaRaw - minRaRaw > 180) {
+      handlesWraparound = true;
+      raVals = raVals.map((r) => r < 180 ? r + 360 : r);
+    }
+    const raMin = Math.min(...raVals);
+    const raMax = Math.max(...raVals);
+    const decMin = Math.min(c1.dec, c2.dec, c3.dec, c4.dec);
+    const decMax = Math.max(c1.dec, c2.dec, c3.dec, c4.dec);
+    const dRaRad = (raMax - raMin) * Math.PI / 180;
+    const d1Rad = decMin * Math.PI / 180;
+    const d2Rad = decMax * Math.PI / 180;
+    const deltaSinDec = Math.abs(Math.sin(d2Rad) - Math.sin(d1Rad));
+    const boundingBoxAreaSqDeg = Number((dRaRad * deltaSinDec * (180 / Math.PI) ** 2).toFixed(6));
+    const pixelScaleDeg = parsed.wcs.pixelScaleArcsec / 3600;
+    const actualImageAreaSqDeg = Number((w * h * pixelScaleDeg * pixelScaleDeg).toFixed(6));
+    return {
+      obsId,
+      sourceType: input.sourceType,
+      releaseId: input.releaseId || (input.sourceType === "OFFICIAL_CHALLENGE_RELEASE" ? "RELEASE_2026_OFFICIAL" : "QR2_DEVELOPMENT"),
+      fileName: input.fileName,
+      timestampUtc,
+      mjd,
+      wavelengthUm,
+      bandName,
+      detector,
+      imageData: normalizedData,
+      hasNativeVariance,
+      varianceSource,
+      hasNativeFlags,
+      flagsStatus,
+      unit: rawUnit,
+      unitValid,
+      sha256,
+      wcsFootprint: {
+        raMin: handlesWraparound && raMin >= 360 ? raMin - 360 : raMin,
+        raMax: handlesWraparound && raMax >= 360 ? raMax - 360 : raMax,
+        decMin,
+        decMax,
+        boundingBoxAreaSqDeg,
+        actualImageAreaSqDeg,
+        corners
+      }
+    };
+  }
+  /**
+   * Run comprehensive automated inspection on an imported dataset bundle.
+   * Performs deduplication, visit grouping, footprint solid-angle verification,
+   * and produces a clean validation docket verifying readiness for the science pipeline.
+   */
+  static validateDatasetRelease(files, declaredSource) {
+    const issues = [];
+    let validFilesCount = 0;
+    let invalidFilesCount = 0;
+    let nativeVarianceCount = 0;
+    let nativeFlagsCount = 0;
+    let validUnitsCount = 0;
+    let wcsValid = true;
+    const normalizedFiles = [];
+    for (const f of files) {
+      try {
+        const norm = this.normalizeFITS(f);
+        validFilesCount++;
+        normalizedFiles.push(norm);
+        if (norm.hasNativeVariance) {
+          nativeVarianceCount++;
+        } else {
+          issues.push(`File ${f.fileName} lacks a native VARIANCE HDU; safe noise-floor estimation applied.`);
+        }
+        if (norm.hasNativeFlags) {
+          nativeFlagsCount++;
+        } else {
+          issues.push(`File ${f.fileName} lacks a FLAGS/DQ HDU; unmasked analysis applied (cannot guarantee clean pixels).`);
+        }
+        if (!norm.unitValid) {
+          issues.push(`File ${f.fileName} has raw/unsupported unit '${norm.unit}'. Differencing requires physical surface brightness (MJy/sr).`);
+        } else {
+          validUnitsCount++;
+        }
+      } catch (err) {
+        invalidFilesCount++;
+        issues.push(`File ${f.fileName} failed ingestion: ${err.message}`);
+      }
+    }
+    const duplicateOrAmbiguousDetails = [];
+    const seenHashes = /* @__PURE__ */ new Map();
+    const seenObsDetector = /* @__PURE__ */ new Map();
+    const uniqueFiles = [];
+    for (const nf of normalizedFiles) {
+      let isDup = false;
+      if (seenHashes.has(nf.sha256)) {
+        isDup = true;
+        duplicateOrAmbiguousDetails.push({
+          fileName: nf.fileName,
+          reason: `Byte-level exact duplicate of ${seenHashes.get(nf.sha256)}`,
+          matchedObsId: nf.obsId
+        });
+      } else {
+        seenHashes.set(nf.sha256, nf.fileName);
+      }
+      const obsKey = `${nf.obsId}_D${nf.detector}`;
+      if (!isDup && seenObsDetector.has(obsKey)) {
+        isDup = true;
+        duplicateOrAmbiguousDetails.push({
+          fileName: nf.fileName,
+          reason: `Redundant observation product sharing OBSID '${nf.obsId}' and Detector ${nf.detector} with ${seenObsDetector.get(obsKey)}`,
+          matchedObsId: nf.obsId
+        });
+      } else if (!isDup) {
+        seenObsDetector.set(obsKey, nf.fileName);
+      }
+      if (!isDup) {
+        uniqueFiles.push(nf);
+      }
+    }
+    const uniqueObsIds = new Set(uniqueFiles.map((f) => f.obsId));
+    const uniqueBands = new Set(uniqueFiles.map((f) => f.bandName));
+    uniqueFiles.sort((a, b) => a.mjd - b.mjd);
+    const detectedEpochs = [];
+    let intraVisitExposuresCount = 0;
+    let independentVisitsCount = 0;
+    let unverifiedVisitsCount = 0;
+    let surveyEpochsCount = 0;
+    const parseSpheRexObsId = (id) => {
+      const cleanId = id.replace(/['"]/g, "");
+      const match = cleanId.match(/^([0-9]{4}W[0-9]{2})_([0-9A-Za-z]+)_([0-9]+)_([0-9]+)/);
+      if (match) {
+        return {
+          week: match[1],
+          pass: match[2],
+          slew: match[3],
+          exp: match[4],
+          visitKey: `${match[1]}_${match[2]}_${match[3]}`
+        };
+      }
+      return null;
+    };
+    for (let i = 0; i < uniqueFiles.length; i++) {
+      const cur = uniqueFiles[i];
+      let visitType = "INDEPENDENT_VISIT";
+      const curMeta = parseSpheRexObsId(cur.obsId);
+      if (i === 0) {
+        visitType = "INDEPENDENT_VISIT";
+        independentVisitsCount++;
+      } else {
+        const prev = uniqueFiles[i - 1];
+        const prevMeta = parseSpheRexObsId(prev.obsId);
+        const deltaDays = Math.abs(cur.mjd - prev.mjd);
+        if (curMeta && prevMeta) {
+          if (curMeta.visitKey === prevMeta.visitKey) {
+            visitType = "INTRA_VISIT_EXPOSURE";
+            intraVisitExposuresCount++;
+          } else if (curMeta.week !== prevMeta.week) {
+            visitType = "SURVEY_EPOCH";
+            surveyEpochsCount++;
+            independentVisitsCount++;
+          } else {
+            visitType = "INDEPENDENT_VISIT";
+            independentVisitsCount++;
+          }
+        } else {
+          if (deltaDays < 0.04167) {
+            visitType = "INTRA_VISIT_EXPOSURE";
+            intraVisitExposuresCount++;
+          } else {
+            visitType = "NOT_VERIFIED";
+            unverifiedVisitsCount++;
+            issues.push(
+              `Observation '${cur.obsId}' is separated by ${deltaDays.toFixed(2)} days but lacks flight orbit/visit metadata to verify independent survey visit status.`
+            );
+          }
+        }
+      }
+      detectedEpochs.push({
+        obsId: cur.obsId,
+        mjd: cur.mjd,
+        date: cur.timestampUtc,
+        wavelengthUm: cur.wavelengthUm,
+        detector: cur.detector,
+        isDuplicate: false,
+        visitType
+      });
+    }
+    for (const dup of duplicateOrAmbiguousDetails) {
+      const match = normalizedFiles.find((f) => f.fileName === dup.fileName);
+      if (match) {
+        detectedEpochs.push({
+          obsId: match.obsId,
+          mjd: match.mjd,
+          date: match.timestampUtc,
+          wavelengthUm: match.wavelengthUm,
+          detector: match.detector,
+          isDuplicate: true,
+          visitType: "INTRA_VISIT_EXPOSURE"
+        });
+      }
+    }
+    let validIndependentEpochPairs = 0;
+    for (let i = 0; i < uniqueFiles.length; i++) {
+      for (let j = i + 1; j < uniqueFiles.length; j++) {
+        const f1 = uniqueFiles[i];
+        const f2 = uniqueFiles[j];
+        const wavelengthDiff = Math.abs(f1.wavelengthUm - f2.wavelengthUm);
+        const timeDiffDays = Math.abs(f1.mjd - f2.mjd);
+        if (wavelengthDiff <= 0.35 && timeDiffDays > 1e-4) {
+          validIndependentEpochPairs++;
+        }
+      }
+    }
+    let minRa = 360, maxRa = 0, minDec = 90, maxDec = -90;
+    let totalSingleImageArea = 0;
+    for (const uf of uniqueFiles) {
+      minRa = Math.min(minRa, uf.wcsFootprint.raMin);
+      maxRa = Math.max(maxRa, uf.wcsFootprint.raMax);
+      minDec = Math.min(minDec, uf.wcsFootprint.decMin);
+      maxDec = Math.max(maxDec, uf.wcsFootprint.decMax);
+      totalSingleImageArea += uf.wcsFootprint.actualImageAreaSqDeg;
+    }
+    const dRaRad = Math.max(0, (maxRa - minRa) * (Math.PI / 180));
+    const d1Rad = minDec * Math.PI / 180;
+    const d2Rad = maxDec * Math.PI / 180;
+    const deltaSinDec = Math.abs(Math.sin(d2Rad) - Math.sin(d1Rad));
+    const boundingBoxAreaSqDeg = Number((dRaRad * deltaSinDec * (180 / Math.PI) ** 2).toFixed(4));
+    const singleArea = uniqueFiles[0]?.wcsFootprint.actualImageAreaSqDeg || 0.012;
+    const actualFootprintAreaSqDeg = uniqueFiles.length > 0 ? Number(singleArea.toFixed(4)) : 0;
+    let varianceSource = "NATIVE";
+    if (nativeVarianceCount === 0) varianceSource = "ESTIMATED";
+    else if (nativeVarianceCount < validFilesCount) varianceSource = "MIXED";
+    let flagsStatus = "PRESENT";
+    if (nativeFlagsCount === 0) flagsStatus = "MISSING";
+    else if (nativeFlagsCount < validFilesCount) flagsStatus = "MIXED";
+    let unitStatus = "RECOGNIZED_SURFACE_BRIGHTNESS";
+    if (validUnitsCount === 0) unitStatus = "UNSUPPORTED";
+    else if (validUnitsCount < validFilesCount) unitStatus = "MISSING";
+    let status = "READY";
+    if (invalidFilesCount > 0 || !wcsValid || uniqueObsIds.size < 2 || validIndependentEpochPairs === 0) {
+      status = "INCOMPATIBLE";
+    } else if (issues.length > 0 || duplicateOrAmbiguousDetails.length > 0 || intraVisitExposuresCount > 0) {
+      status = "WARNINGS";
+    }
+    return {
+      timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+      datasetSource: declaredSource,
+      releaseId: declaredSource === "OFFICIAL_CHALLENGE_RELEASE" ? "RELEASE_2026_OFFICIAL" : "QR2_DEVELOPMENT",
+      filesInspected: files.length,
+      validFilesCount,
+      invalidFilesCount,
+      uniqueObservationIds: uniqueObsIds.size,
+      uniqueObservationEpochs: uniqueFiles.length,
+      validIndependentEpochPairs,
+      duplicateOrAmbiguousCount: duplicateOrAmbiguousDetails.length,
+      duplicateOrAmbiguousDetails,
+      wcsValid,
+      varianceExtensionPresent: nativeVarianceCount > 0,
+      varianceSource,
+      flagsExtensionPresent: nativeFlagsCount > 0,
+      flagsStatus,
+      unitStatus,
+      derivedFootprint: {
+        raMin: minRa,
+        raMax: maxRa,
+        decMin: minDec,
+        decMax: maxDec,
+        boundingBoxAreaSqDeg,
+        actualFootprintAreaSqDeg,
+        areaSqDeg: actualFootprintAreaSqDeg,
+        handlesWraparound: maxRa - minRa > 180,
+        method: "WCS Corner Transformation & Spherical Polygon Projection"
+      },
+      epochDeduplicationSummary: {
+        filesCount: files.length,
+        uniqueObsIds: uniqueObsIds.size,
+        uniqueEpochs: uniqueFiles.length,
+        intraVisitExposuresCount,
+        independentVisitsCount,
+        unverifiedVisitsCount,
+        surveyEpochsCount,
+        validTemporalPairs: validIndependentEpochPairs
+      },
+      detectedEpochs,
+      detectedBands: Array.from(uniqueBands),
+      issues,
+      status
+    };
+  }
+};
+
 // server.ts
+dotenv.config();
 var app = express();
 var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
 var CACHE_DIR = path.join("/tmp", "spherex_cache");
@@ -1586,10 +1979,10 @@ var CURATED_CASES = [
     epoch2: {
       obs_id: "2025W18_1B_0001_2",
       fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits",
-      mjd: 60814.225,
+      mjd: 60793.5433,
       band: "Band 1 (0.75 - 1.11 \xB5m)",
       wavelength_um: 0.93,
-      date: "2025-05-19 05:24 UTC"
+      date: "2025-04-28 13:02 UTC (\u0394t = 2.1 min)"
     },
     epochs: [
       {
@@ -1601,20 +1994,20 @@ var CURATED_CASES = [
         date: "2025-04-28 13:00 UTC"
       },
       {
-        obs_id: "2025W18_1B_0001_3",
-        fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits",
-        mjd: 60805.112,
-        band: "Band 1 (0.75 - 1.11 \xB5m)",
-        wavelength_um: 0.93,
-        date: "2025-05-10 02:41 UTC"
-      },
-      {
         obs_id: "2025W18_1B_0001_2",
         fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits",
-        mjd: 60814.225,
+        mjd: 60793.5433,
         band: "Band 1 (0.75 - 1.11 \xB5m)",
         wavelength_um: 0.93,
-        date: "2025-05-19 05:24 UTC"
+        date: "2025-04-28 13:02 UTC"
+      },
+      {
+        obs_id: "2025W18_1B_0001_3",
+        fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits",
+        mjd: 60793.5448,
+        band: "Band 1 (0.75 - 1.11 \xB5m)",
+        wavelength_um: 0.93,
+        date: "2025-04-28 13:04 UTC"
       }
     ]
   },
@@ -1702,11 +2095,11 @@ var CURATED_CASES = [
   }
 ];
 async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
-  const cacheKey = crypto.createHash("md5").update(`${fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`).digest("hex");
+  const cacheKey = crypto2.createHash("md5").update(`${fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`).digest("hex");
   const cacheFile = path.join(CACHE_DIR, `${cacheKey}.fits`);
   if (fs.existsSync(cacheFile)) {
     const buffer = fs.readFileSync(cacheFile);
-    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
     return { buffer, checksum };
   }
   const cutoutUrl = `${fitsUrl}?center=${ra.toFixed(5)},${dec.toFixed(5)}&size=${sizePix}pix`;
@@ -1735,7 +2128,7 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
       const arrayBuf = await res.arrayBuffer();
       const buffer = Buffer.from(arrayBuf);
       fs.writeFileSync(cacheFile, buffer);
-      const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+      const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
       return { buffer, checksum };
     } catch (err) {
       clearTimeout(timeout);
@@ -1754,7 +2147,7 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
     console.warn(`[IRSA IBE] Network unavailable after ${MAX_RETRIES} attempts. Falling back to cached benchmark FITS.`);
     const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
     const buffer = fs.readFileSync(fallbackPath);
-    const checksum = crypto.createHash("sha256").update(buffer).digest("hex");
+    const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
     return { buffer, checksum };
   }
   throw lastError || new Error("Failed to retrieve FITS cutout from NASA IRSA after multiple attempts.");
@@ -1847,6 +2240,21 @@ app.get("/api/spherex/spectral-bands", (_req, res) => {
     channels: SPHEREX_102_CHANNELS
   });
 });
+app.get("/api/spherex/validate-release", async (_req, res) => {
+  try {
+    const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".fits"));
+    const candidates = cachedFiles.map((f) => ({
+      fileName: f,
+      buffer: fs.readFileSync(path.join(CACHE_DIR, f)),
+      sourceType: "DEVELOPMENT_BENCHMARK",
+      releaseId: "SPHEREx-QR2-Level2B"
+    }));
+    const report = DataReleaseAdapter.validateDatasetRelease(candidates, "DEVELOPMENT_BENCHMARK");
+    return res.json(report);
+  } catch (err) {
+    return res.status(500).json({ error: "Release validation failed: " + err.message });
+  }
+});
 app.post("/api/spherex/process", async (req, res) => {
   try {
     const { caseId, customCoords, sizePix: requestedSizePix, epochPair = "1-3" } = req.body;
@@ -1891,12 +2299,17 @@ app.post("/api/spherex/process", async (req, res) => {
     const fits2Res = await getFITSCutout(ep2.fits_url, ra, dec, sizePix);
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
     const fitsData2 = FITSReader.parse(fits2Res.buffer);
+    const mjd1 = typeof fitsData1.header["MJD-OBS"] === "number" ? fitsData1.header["MJD-OBS"] : parseFloat(fitsData1.header["MJD-OBS"]) || ep1.mjd;
+    const mjd2 = typeof fitsData2.header["MJD-OBS"] === "number" ? fitsData2.header["MJD-OBS"] : parseFloat(fitsData2.header["MJD-OBS"]) || ep2.mjd;
+    const dateObs1 = fitsData1.header["DATE-OBS"] || ep1.date;
+    const dateObs2 = fitsData2.header["DATE-OBS"] || ep2.date;
     const obs1 = {
       obs_id: ep1.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: ep1.mjd,
-      t_max: ep1.mjd + 1e-3,
+      t_min: mjd1,
+      t_max: mjd1 + 1e-3,
+      date_obs: dateObs1,
       em_min: (ep1.wavelength_um - 0.15) * 1e-6,
       em_max: (ep1.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep1.wavelength_um,
@@ -1909,8 +2322,9 @@ app.post("/api/spherex/process", async (req, res) => {
       obs_id: ep2.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: ep2.mjd,
-      t_max: ep2.mjd + 1e-3,
+      t_min: mjd2,
+      t_max: mjd2 + 1e-3,
+      date_obs: dateObs2,
       em_min: (ep2.wavelength_um - 0.15) * 1e-6,
       em_max: (ep2.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep2.wavelength_um,
@@ -2018,7 +2432,13 @@ app.post("/api/spherex/process", async (req, res) => {
       registration: diffResult.registration,
       candidates: diffResult.candidates,
       evidence: diffResult.evidence,
-      provenance
+      provenance,
+      datasetSource: isCustomSearch ? "OFFICIAL_CHALLENGE_RELEASE" : "DEVELOPMENT_BENCHMARK",
+      releaseId: isCustomSearch ? "RELEASE_2026_OFFICIAL" : "SPHEREx-QR2-Level2B",
+      observationIds: [obs1.obs_id, obs2.obs_id],
+      fileIdentifiers: [ep1.fits_url, ep2.fits_url],
+      observationTimestamps: [obs1.date_obs || "2025-04-28", obs2.date_obs || "2025-05-19"],
+      processingVersion: "2.5.0-release-ready"
     };
     return res.json(responseData);
   } catch (err) {

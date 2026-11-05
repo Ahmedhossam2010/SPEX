@@ -1,4 +1,4 @@
-import { SpectralBandInfo } from './types';
+import { SpectralBandInfo, CatalogMatch } from './types';
 
 /**
  * SPHEREx 102 Near-Infrared Spectral Band Model:
@@ -147,65 +147,104 @@ export const SPHEREX_102_CHANNELS = generate102SpectralChannels();
  */
 export function generateCandidateSED(candidate: {
   deltaFlux: number;
-  catalogMatches?: Array<{ catalog: string; photometry?: string; identifier: string; separationArcsec?: number }>;
-}): Array<{ wavelengthUm: number; fluxMjy: number; source: string; label: string; isModel: boolean }> {
-  const points: Array<{ wavelengthUm: number; fluxMjy: number; source: string; label: string; isModel: boolean }> = [];
+  catalogMatches?: CatalogMatch[] | Array<{ catalog: string; photometry?: string; identifier: string; separationArcsec?: number; [key: string]: any }>;
+}): Array<{ wavelengthUm: number; fluxMjy: number; source: string; label: string; isModel: boolean; measurementType?: string }> {
+  const points: Array<{ wavelengthUm: number; fluxMjy: number; source: string; label: string; isModel: boolean; measurementType?: string }> = [];
 
-  // Base infrared flux from SPHEREx Band 1 (0.93 µm)
-  const spherexFlux = Math.max(0.05, Math.abs(candidate.deltaFlux) * 0.12);
+  // Calibrated conversion: 1 MJy/sr over SPHEREx pixel solid angle (6.152" / px) = 0.8895 mJy
+  // Net aperture delta flux converted to mJy
+  const spherexFluxMjy = Math.max(0.01, Math.abs(candidate.deltaFlux) * 0.8895);
 
-  // Gaia DR3 optical counterpart (G-band ~ 0.67 µm)
-  const gaiaMatch = candidate.catalogMatches?.find((m) => m.catalog === 'Gaia DR3');
-  let gaiaFlux = spherexFlux * 0.85;
-  if (gaiaMatch?.photometry?.includes('G=')) {
-    const magMatch = gaiaMatch.photometry.match(/G=([\d.]+)/);
-    if (magMatch) {
-      const gMag = parseFloat(magMatch[1]);
-      // Zero-point flux for Gaia G is approx 3228 Jy = 3.228e6 mJy
-      gaiaFlux = 3.228e6 * Math.pow(10, -0.4 * gMag);
-    }
-  }
-  points.push({
-    wavelengthUm: 0.67,
-    fluxMjy: Number(gaiaFlux.toFixed(3)),
-    source: 'Gaia DR3',
-    label: 'Gaia G (0.67 µm)',
-    isModel: false,
-  });
-
-  // SPHEREx Band 1 measurement (0.93 µm)
+  // 1. SPHEREx Band 1 observed measurement (0.93 µm)
   points.push({
     wavelengthUm: 0.93,
-    fluxMjy: Number(spherexFlux.toFixed(3)),
+    fluxMjy: Number(spherexFluxMjy.toFixed(3)),
     source: 'SPHEREx QR2',
-    label: 'SPHEREx B1 (0.93 µm)',
+    label: `SPHEREx B1 (${Math.abs(candidate.deltaFlux).toFixed(2)} MJy/sr)`,
     isModel: false,
+    measurementType: 'SPHEREx Differential Flux',
   });
 
-  // AllWISE infrared counterparts: W1 (3.4 µm) and W2 (4.6 µm)
-  const wiseMatch = candidate.catalogMatches?.find((m) => m.catalog === 'AllWISE');
-  let wiseW1 = spherexFlux * 0.45;
-  let wiseW2 = spherexFlux * 0.35;
-  if (wiseMatch?.photometry) {
-    const w1m = wiseMatch.photometry.match(/W1=([\d.]+)/);
-    const w2m = wiseMatch.photometry.match(/W2=([\d.]+)/);
-    if (w1m) wiseW1 = 309540 * Math.pow(10, -0.4 * parseFloat(w1m[1]));
-    if (w2m) wiseW2 = 171787 * Math.pow(10, -0.4 * parseFloat(w2m[1]));
+  // 2. Gaia DR3 optical counterpart (G-band ~ 0.67 µm)
+  const gaiaMatch = candidate.catalogMatches?.find((m) => m.catalog === 'Gaia DR3');
+  if (gaiaMatch?.photometry && /G\s*=\s*[\d.]+/.test(gaiaMatch.photometry)) {
+    const magMatch = gaiaMatch.photometry.match(/G\s*=\s*([\d.]+)/);
+    if (magMatch) {
+      const gMag = parseFloat(magMatch[1]);
+      // Zero-point flux for Gaia G band is 3228 Jy = 3.228e6 mJy
+      const gaiaFlux = 3.228e6 * Math.pow(10, -0.4 * gMag);
+      points.push({
+        wavelengthUm: 0.67,
+        fluxMjy: Number(gaiaFlux.toFixed(3)),
+        source: 'Gaia DR3',
+        label: `Gaia G (${gMag.toFixed(2)} mag)`,
+        isModel: false,
+        measurementType: 'Catalog Photometry',
+      });
+    }
+  } else {
+    // If no catalog optical counterpart exists, provide clearly labeled synthetic stellar photosphere model
+    points.push({
+      wavelengthUm: 0.67,
+      fluxMjy: Number((spherexFluxMjy * 0.85).toFixed(3)),
+      source: 'Theoretical Model',
+      label: 'Stellar Model Reference (0.67 µm)',
+      isModel: true,
+      measurementType: 'Model Passband Spec',
+    });
   }
-  points.push({
-    wavelengthUm: 3.4,
-    fluxMjy: Number(wiseW1.toFixed(3)),
-    source: 'AllWISE W1',
-    label: 'AllWISE W1 (3.4 µm)',
-    isModel: false,
-  });
-  points.push({
-    wavelengthUm: 4.6,
-    fluxMjy: Number(wiseW2.toFixed(3)),
-    source: 'AllWISE W2',
-    label: 'AllWISE W2 (4.6 µm)',
-    isModel: false,
-  });
+
+  // 3. AllWISE infrared counterparts: W1 (3.4 µm) and W2 (4.6 µm)
+  const wiseMatch = candidate.catalogMatches?.find((m) => m.catalog === 'AllWISE');
+  let hasWiseObs = false;
+  if (wiseMatch?.photometry) {
+    const w1m = wiseMatch.photometry.match(/W1=\s*([\d.]+)/);
+    const w2m = wiseMatch.photometry.match(/W2=\s*([\d.]+)/);
+    if (w1m) {
+      hasWiseObs = true;
+      const w1Flux = 309540 * Math.pow(10, -0.4 * parseFloat(w1m[1]));
+      points.push({
+        wavelengthUm: 3.4,
+        fluxMjy: Number(w1Flux.toFixed(3)),
+        source: 'AllWISE W1',
+        label: `AllWISE W1 (${parseFloat(w1m[1]).toFixed(2)} mag)`,
+        isModel: false,
+        measurementType: 'Catalog Photometry',
+      });
+    }
+    if (w2m) {
+      hasWiseObs = true;
+      const w2Flux = 171787 * Math.pow(10, -0.4 * parseFloat(w2m[1]));
+      points.push({
+        wavelengthUm: 4.6,
+        fluxMjy: Number(w2Flux.toFixed(3)),
+        source: 'AllWISE W2',
+        label: `AllWISE W2 (${parseFloat(w2m[1]).toFixed(2)} mag)`,
+        isModel: false,
+        measurementType: 'Catalog Photometry',
+      });
+    }
+  }
+
+  if (!hasWiseObs) {
+    // Clearly flag instrument passband specification models instead of fabricating unobserved fluxes
+    points.push({
+      wavelengthUm: 3.4,
+      fluxMjy: Number((spherexFluxMjy * 0.45).toFixed(3)),
+      source: 'Theoretical Model',
+      label: 'AllWISE W1 Bandpass Spec (3.4 µm)',
+      isModel: true,
+      measurementType: 'Model Passband Spec',
+    });
+    points.push({
+      wavelengthUm: 4.6,
+      fluxMjy: Number((spherexFluxMjy * 0.35).toFixed(3)),
+      source: 'Theoretical Model',
+      label: 'AllWISE W2 Bandpass Spec (4.6 µm)',
+      isModel: true,
+      measurementType: 'Model Passband Spec',
+    });
+  }
 
   return points.sort((a, b) => a.wavelengthUm - b.wavelengthUm);
 }

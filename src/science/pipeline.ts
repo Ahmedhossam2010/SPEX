@@ -30,6 +30,8 @@ export interface DifferenceOutput {
     reason?: string;
     timeBaselineDays: number;
     wavelengthDiffUm: number;
+    timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
+    timeBaselineHuman?: string;
   };
   candidates: CandidateDetection[];
   evidence: EvidenceSummary;
@@ -44,12 +46,36 @@ export class ScientificPipeline {
     obs2: SPHERExObservation,
     fits1: FITSImageData,
     fits2: FITSImageData
-  ): { isCompatible: boolean; reason?: string; timeBaselineDays: number; wavelengthDiffUm: number } {
+  ): {
+    isCompatible: boolean;
+    reason?: string;
+    timeBaselineDays: number;
+    wavelengthDiffUm: number;
+    timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
+    timeBaselineHuman?: string;
+  } {
     const timeBaselineDays = Math.abs(obs2.t_min - obs1.t_min);
 
     const wl1 = obs1.wavelength_um ?? (obs1.em_min + obs1.em_max) / 2 * 1e6;
     const wl2 = obs2.wavelength_um ?? (obs2.em_min + obs2.em_max) / 2 * 1e6;
     const wavelengthDiffUm = Math.abs(wl2 - wl1);
+
+    let timeBaselineType: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' = 'INDEPENDENT_VISIT';
+    let timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days`;
+
+    if (timeBaselineDays < 0.00002) {
+      timeBaselineType = 'SAME_EXPOSURE';
+      timeBaselineHuman = 'Identical exposure (<1s)';
+    } else if (timeBaselineDays < 0.04167) {
+      timeBaselineType = 'INTRA_VISIT_EXPOSURES';
+      timeBaselineHuman = `${(timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)`;
+    } else if (timeBaselineDays < 30) {
+      timeBaselineType = 'INDEPENDENT_VISIT';
+      timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days (independent visit)`;
+    } else {
+      timeBaselineType = 'SURVEY_EPOCH';
+      timeBaselineHuman = `${(timeBaselineDays / 30.4).toFixed(1)} months (survey cadence)`;
+    }
 
     // If wavelength difference exceeds 0.25 microns (different SPHEREx spectral channel),
     // direct flux differencing is physically invalid
@@ -59,6 +85,8 @@ export class ScientificPipeline {
         reason: `Wavelength bands are physically incompatible: Epoch 1 is at ${wl1.toFixed(2)} µm and Epoch 2 is at ${wl2.toFixed(2)} µm (difference ${wavelengthDiffUm.toFixed(2)} µm). Differencing across distinct spectral bands measures spectral color slope rather than true temporal variability.`,
         timeBaselineDays,
         wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman,
       };
     }
 
@@ -70,6 +98,8 @@ export class ScientificPipeline {
         reason: `Pixel scale mismatch: Epoch 1 is ${fits1.wcs.pixelScaleArcsec.toFixed(2)}"/px while Epoch 2 is ${fits2.wcs.pixelScaleArcsec.toFixed(2)}"/px.`,
         timeBaselineDays,
         wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman,
       };
     }
 
@@ -77,6 +107,8 @@ export class ScientificPipeline {
       isCompatible: true,
       timeBaselineDays,
       wavelengthDiffUm,
+      timeBaselineType,
+      timeBaselineHuman,
     };
   }
 
@@ -881,7 +913,14 @@ export class ScientificPipeline {
    */
   public static evaluateEvidence(
     candidates: CandidateDetection[],
-    compatibility: { isCompatible: boolean; reason?: string; timeBaselineDays: number; wavelengthDiffUm: number },
+    compatibility: {
+      isCompatible: boolean;
+      reason?: string;
+      timeBaselineDays: number;
+      wavelengthDiffUm: number;
+      timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
+      timeBaselineHuman?: string;
+    },
     obs1: SPHERExObservation,
     obs2: SPHERExObservation,
     noiseSigma: number
@@ -915,18 +954,24 @@ export class ScientificPipeline {
     let summaryProse = 'No statistically significant flux change was detected above the 3.5σ observational noise threshold.';
     let statisticalJustification = `The difference image is consistent with Gaussian noise (σ_diff = ${noiseSigma.toFixed(4)}). No point sources exceeded the detection threshold without artifact disqualification.`;
 
+    const baselineText =
+      compatibility.timeBaselineHuman ||
+      (compatibility.timeBaselineDays < 0.04167
+        ? `${(compatibility.timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)`
+        : `${compatibility.timeBaselineDays.toFixed(1)} days`);
+
     if (movingCandidates.length > 0) {
       const topMove = movingCandidates[0];
       classification = 'SIGNIFICANT CHANGE DETECTED';
       const speed = topMove.motion?.speedArcsecPerDay ? `${topMove.motion.speedArcsecPerDay.toFixed(2)}"/day` : 'measurable velocity';
       const sep = topMove.motion?.separationArcsec ? `${topMove.motion.separationArcsec.toFixed(1)}"` : 'significant';
-      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline (speed ~${speed}).`;
+      summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${baselineText} (speed ~${speed}).`;
       statisticalJustification = `Complementary Epoch 1 / Epoch 2 difference dipole exhibits spatially displaced point-like morphology consistent with an asteroid or high-proper-motion source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? 'N/A'}°).`;
     } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       if (Math.abs(top.peakSignificance) >= 4.0) {
         classification = 'SIGNIFICANT CHANGE DETECTED';
-        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${baselineText}.`;
         statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}σ, heuristic artifact index = ${top.artifactScore.toFixed(2)}/1.00).`;
       } else {
         classification = 'POSSIBLE CHANGE — NEEDS REVIEW';
@@ -950,14 +995,14 @@ export class ScientificPipeline {
       } else {
         // Pure dipole/astrometric pointing jitter with stable aperture flux
         classification = 'NO SIGNIFICANT CHANGE DETECTED';
-        summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across the ${compatibility.timeBaselineDays.toFixed(1)}-day baseline.`;
+        summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across a ${baselineText}.`;
         statisticalJustification = `Residual dipole is consistent with sub-pixel pointing jitter. Net aperture change ΔF = ${topArt.deltaFlux.toFixed(3)} ± ${topArt.deltaFluxUncertainty.toFixed(3)} is consistent with steady state.`;
       }
     }
 
     const whatWeKnow = [
       `Compared SPHEREx observation ${obs1.obs_id} against ${obs2.obs_id}.`,
-      `Temporal baseline spans ${compatibility.timeBaselineDays.toFixed(1)} days.`,
+      `Temporal baseline spans ${baselineText}.`,
       `Difference image noise floor: σ_diff = ${noiseSigma.toFixed(4)} MJy/sr.`,
     ];
 

@@ -70,6 +70,7 @@ export interface CatalogMatch {
   objectType?: string;
   photometry?: string;
   sourceUrl: string;
+  matchProvenance?: 'LIVE_VIZIER_TAP' | 'BENCHMARK_FIXTURE_CACHE';
 }
 
 export type CandidateStatus =
@@ -254,6 +255,8 @@ export interface InvestigationResult {
     reason?: string;
     timeBaselineDays: number;
     wavelengthDiffUm: number;
+    timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
+    timeBaselineHuman?: string;
   };
   registration: {
     dxPixels: number;
@@ -281,21 +284,50 @@ export interface ReleaseValidationReport {
   filesInspected: number;
   validFilesCount: number;
   invalidFilesCount: number;
+  uniqueObservationIds: number;
+  uniqueObservationEpochs: number;
+  validIndependentEpochPairs: number;
+  duplicateOrAmbiguousCount: number;
+  duplicateOrAmbiguousDetails: Array<{
+    fileName: string;
+    reason: string;
+    matchedObsId: string;
+  }>;
   wcsValid: boolean;
   varianceExtensionPresent: boolean;
+  varianceSource: 'NATIVE' | 'ESTIMATED' | 'MIXED';
   flagsExtensionPresent: boolean;
+  flagsStatus: 'PRESENT' | 'MISSING' | 'MIXED';
+  unitStatus: 'RECOGNIZED_SURFACE_BRIGHTNESS' | 'UNSUPPORTED' | 'MISSING';
   derivedFootprint: {
     raMin: number;
     raMax: number;
     decMin: number;
     decMax: number;
+    boundingBoxAreaSqDeg: number;
+    actualFootprintAreaSqDeg: number;
     areaSqDeg: number;
+    handlesWraparound: boolean;
+    method: string;
+  };
+  epochDeduplicationSummary: {
+    filesCount: number;
+    uniqueObsIds: number;
+    uniqueEpochs: number;
+    intraVisitExposuresCount: number;
+    independentVisitsCount: number;
+    unverifiedVisitsCount?: number;
+    surveyEpochsCount?: number;
+    validTemporalPairs: number;
   };
   detectedEpochs: Array<{
     obsId: string;
     mjd: number;
     date: string;
     wavelengthUm?: number;
+    detector?: number;
+    isDuplicate?: boolean;
+    visitType?: 'INTRA_VISIT_EXPOSURE' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' | 'NOT_VERIFIED';
   }>;
   detectedBands: string[];
   issues: string[];

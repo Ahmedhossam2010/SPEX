@@ -8,8 +8,9 @@ import { DatasetSourceType } from './types';
  * Ready to execute on November 13 when the official challenge dataset is released.
  *
  * Scans an input directory, inspects all FITS headers, verifies HDU structure,
- * derives the dynamic sky footprint, checks timestamps, and produces a
- * machine-readable JSON docket.
+ * performs rigorous observation deduplication, derives both bounding box and
+ * actual image footprint areas, verifies temporal separation, and produces a
+ * machine-readable validation report.
  */
 export async function runReleaseValidation(
   targetDir = '/tmp/spherex_cache',
@@ -46,24 +47,53 @@ export async function runReleaseValidation(
 
   const report = DataReleaseAdapter.validateDatasetRelease(candidates, sourceType);
 
-  console.log('--- VALIDATION SUMMARY ---');
-  console.log(`Status:                   ${report.status}`);
-  console.log(`Files Inspected:          ${report.filesInspected}`);
-  console.log(`Valid Ingestions:         ${report.validFilesCount}`);
-  console.log(`Invalid Ingestions:       ${report.invalidFilesCount}`);
-  console.log(`WCS Astrometry Valid:     ${report.wcsValid}`);
-  console.log(`Native Variance Present:  ${report.varianceExtensionPresent}`);
-  console.log(`Native Flags Present:     ${report.flagsExtensionPresent}`);
-  console.log(`Derived Sky Footprint:    RA ${report.derivedFootprint.raMin.toFixed(2)}°–${report.derivedFootprint.raMax.toFixed(2)}°, Dec ${report.derivedFootprint.decMin.toFixed(2)}°–${report.derivedFootprint.decMax.toFixed(2)}°`);
-  console.log(`Derived Bounding Area:    ${report.derivedFootprint.areaSqDeg} sq deg`);
-  console.log(`Chronological Epochs:     ${report.detectedEpochs.length} visit(s)`);
+  console.log('--- OBSERVATION DEDUPLICATION & METRICS ---');
+  console.log(`Total FITS Files:             ${report.filesInspected}`);
+  console.log(`Unique Observation IDs:       ${report.uniqueObservationIds}`);
+  console.log(`Unique Observation Epochs:    ${report.uniqueObservationEpochs}`);
+  console.log(`Valid Temporal Pairs:         ${report.validIndependentEpochPairs}`);
+  console.log(`Duplicate / Ambiguous Files:  ${report.duplicateOrAmbiguousCount}`);
+  if (report.duplicateOrAmbiguousDetails.length > 0) {
+    report.duplicateOrAmbiguousDetails.forEach((d) => {
+      console.log(`   * ${d.fileName} -> ${d.reason} (OBSID: ${d.matchedObsId})`);
+    });
+  }
+
+  console.log('\n--- TEMPORAL VISIT BREAKDOWN ---');
+  console.log(`Intra-Visit Exposures (<1h):  ${report.epochDeduplicationSummary.intraVisitExposuresCount}`);
+  console.log(`Independent Survey Visits:    ${report.epochDeduplicationSummary.independentVisitsCount}`);
+  if (report.epochDeduplicationSummary.unverifiedVisitsCount) {
+    console.log(`Unverified Visits (No Meta):  ${report.epochDeduplicationSummary.unverifiedVisitsCount}`);
+  }
+  if (report.epochDeduplicationSummary.surveyEpochsCount) {
+    console.log(`Survey Epochs (Multi-Week):   ${report.epochDeduplicationSummary.surveyEpochsCount}`);
+  }
+
   report.detectedEpochs.forEach((ep, idx) => {
-    console.log(`   [Visit ${idx + 1}] ID: ${ep.obsId} | MJD: ${ep.mjd.toFixed(4)} | Date: ${ep.date}`);
+    const dupStr = ep.isDuplicate ? ' [DUPLICATE EXCLUDED]' : '';
+    let visitStr = ' (Independent Visit)';
+    if (ep.visitType === 'INTRA_VISIT_EXPOSURE') visitStr = ' (Intra-visit exposure ~2.15 min)';
+    else if (ep.visitType === 'SURVEY_EPOCH') visitStr = ' (Survey Epoch pass)';
+    else if (ep.visitType === 'NOT_VERIFIED') visitStr = ' (NOT VERIFIED: Lacks flight metadata)';
+    console.log(`   [File ${idx + 1}] ID: ${ep.obsId} | MJD: ${ep.mjd.toFixed(4)} | Date: ${ep.date}${dupStr}${visitStr}`);
   });
-  console.log(`Detected Bands:           ${report.detectedBands.join(', ') || 'Default NIR'}`);
+
+  console.log('\n--- DATA INTEGRITY & SCIENTIFIC SAFETY ---');
+  console.log(`Status:                       ${report.status}`);
+  console.log(`WCS Astrometry Valid:         ${report.wcsValid}`);
+  console.log(`Native Variance Present:      ${report.varianceExtensionPresent} (Source: ${report.varianceSource})`);
+  console.log(`Native Flags Present:         ${report.flagsExtensionPresent} (Status: ${report.flagsStatus})`);
+  console.log(`Photometric Units Status:     ${report.unitStatus}`);
+
+  console.log('\n--- CELESTIAL FOOTPRINT & SOLID ANGLE ---');
+  console.log(`Derived Sky Footprint:        RA ${report.derivedFootprint.raMin.toFixed(4)}°–${report.derivedFootprint.raMax.toFixed(4)}°, Dec ${report.derivedFootprint.decMin.toFixed(4)}°–${report.derivedFootprint.decMax.toFixed(4)}°`);
+  console.log(`Actual Image Footprint Area:  ${report.derivedFootprint.actualFootprintAreaSqDeg} sq deg (single 64x64 cutout coverage)`);
+  console.log(`Bounding-Box Solid Angle:     ${report.derivedFootprint.boundingBoxAreaSqDeg} sq deg`);
+  console.log(`Method:                       ${report.derivedFootprint.method}`);
+  console.log(`Detected Bands:               ${report.detectedBands.join(', ') || 'Default NIR'}`);
 
   if (report.issues.length > 0) {
-    console.log('\n--- ISSUES / NOTICES ---');
+    console.log('\n--- AUDIT NOTICES & WARNINGS ---');
     report.issues.forEach((issue) => console.log(` * ${issue}`));
   }
 

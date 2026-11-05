@@ -146,6 +146,7 @@ export class CatalogMatcher {
           objectType: src.objectType,
           photometry: src.gMag ? `G = ${src.gMag.toFixed(2)} mag` : undefined,
           sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${src.identifier.replace('Gaia DR3 ', '')}`,
+          matchProvenance: 'BENCHMARK_FIXTURE_CACHE',
         });
       }
     }
@@ -201,6 +202,7 @@ export class CatalogMatcher {
                     objectType: 'Star / Compact Point Source',
                     photometry: Number.isFinite(gMag) ? `G = ${gMag.toFixed(2)} mag` : undefined,
                     sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=I/355/gaiadr3&Source=${gaiaSourceId}`,
+                    matchProvenance: 'LIVE_VIZIER_TAP',
                   });
                 }
               }
@@ -235,6 +237,7 @@ export class CatalogMatcher {
           objectType: src.objectType,
           photometry: `W1 = ${src.w1Mag.toFixed(2)} mag, W2 = ${src.w2Mag.toFixed(2)} mag`,
           sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(src.identifier.replace('AllWISE ', ''))}`,
+          matchProvenance: 'BENCHMARK_FIXTURE_CACHE',
         });
       }
     }
@@ -295,6 +298,7 @@ export class CatalogMatcher {
                     objectType: 'Mid-IR Point Source (3.4 / 4.6 µm)',
                     photometry: photParts.length > 0 ? photParts.join(', ') : undefined,
                     sourceUrl: `https://vizier.cds.unistra.fr/viz-bin/VizieR-5?-ref=VIZ65&-out.add=.&-source=II/328/allwise&AllWISE=${encodeURIComponent(wiseId.replace('AllWISE ', ''))}`,
+                    matchProvenance: 'LIVE_VIZIER_TAP',
                   });
                 }
               }

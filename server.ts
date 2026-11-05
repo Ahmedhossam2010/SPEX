@@ -1,3 +1,5 @@
+import dotenv from 'dotenv';
+dotenv.config();
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -87,10 +89,10 @@ const CURATED_CASES: CuratedCase[] = [
     epoch2: {
       obs_id: '2025W18_1B_0001_2',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60814.2250,
+      mjd: 60793.5433,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-05-19 05:24 UTC',
+      date: '2025-04-28 13:02 UTC (Δt = 2.1 min)',
     },
     epochs: [
       {
@@ -102,20 +104,20 @@ const CURATED_CASES: CuratedCase[] = [
         date: '2025-04-28 13:00 UTC',
       },
       {
-        obs_id: '2025W18_1B_0001_3',
-        fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
-        mjd: 60805.1120,
-        band: 'Band 1 (0.75 - 1.11 µm)',
-        wavelength_um: 0.93,
-        date: '2025-05-10 02:41 UTC',
-      },
-      {
         obs_id: '2025W18_1B_0001_2',
         fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-        mjd: 60814.2250,
+        mjd: 60793.5433,
         band: 'Band 1 (0.75 - 1.11 µm)',
         wavelength_um: 0.93,
-        date: '2025-05-19 05:24 UTC',
+        date: '2025-04-28 13:02 UTC',
+      },
+      {
+        obs_id: '2025W18_1B_0001_3',
+        fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
+        mjd: 60793.5448,
+        band: 'Band 1 (0.75 - 1.11 µm)',
+        wavelength_um: 0.93,
+        date: '2025-04-28 13:04 UTC',
       },
     ],
   },
@@ -476,12 +478,25 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
     const fitsData2 = FITSReader.parse(fits2Res.buffer);
 
+    // Extract authentic physical observation timestamps from FITS headers
+    const mjd1 =
+      typeof fitsData1.header['MJD-OBS'] === 'number'
+        ? fitsData1.header['MJD-OBS']
+        : parseFloat(fitsData1.header['MJD-OBS'] as string) || ep1.mjd;
+    const mjd2 =
+      typeof fitsData2.header['MJD-OBS'] === 'number'
+        ? fitsData2.header['MJD-OBS']
+        : parseFloat(fitsData2.header['MJD-OBS'] as string) || ep2.mjd;
+    const dateObs1 = (fitsData1.header['DATE-OBS'] as string) || ep1.date;
+    const dateObs2 = (fitsData2.header['DATE-OBS'] as string) || ep2.date;
+
     const obs1: SPHERExObservation = {
       obs_id: ep1.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: ep1.mjd,
-      t_max: ep1.mjd + 0.001,
+      t_min: mjd1,
+      t_max: mjd1 + 0.001,
+      date_obs: dateObs1,
       em_min: (ep1.wavelength_um - 0.15) * 1e-6,
       em_max: (ep1.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep1.wavelength_um,
@@ -495,8 +510,9 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       obs_id: ep2.obs_id,
       s_ra: ra,
       s_dec: dec,
-      t_min: ep2.mjd,
-      t_max: ep2.mjd + 0.001,
+      t_min: mjd2,
+      t_max: mjd2 + 0.001,
+      date_obs: dateObs2,
       em_min: (ep2.wavelength_um - 0.15) * 1e-6,
       em_max: (ep2.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep2.wavelength_um,
