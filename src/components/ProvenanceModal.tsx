@@ -10,6 +10,10 @@ interface ProvenanceModalProps {
     reason?: string;
     timeBaselineDays: number;
     wavelengthDiffUm: number;
+    integrationDuration1Sec?: number;
+    integrationDuration2Sec?: number;
+    startToStartCadenceSec?: number;
+    interExposureGapSec?: number;
   };
   evidence?: EvidenceSummary;
   onClose: () => void;
@@ -87,6 +91,26 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
               <div>Release: <span className="text-slate-200">{provenance.dataRelease}</span></div>
               <div>Timestamp: <span className="text-slate-200">{new Date(provenance.timestamp).toUTCString()}</span></div>
               <div>Case ID: <span className="text-slate-200">{provenance.caseId}</span></div>
+              {compatibility?.integrationDuration1Sec !== undefined && (
+                <div>
+                  Integration (DATE-END−OBS):{' '}
+                  <span className="text-slate-200">
+                    {compatibility.integrationDuration1Sec.toFixed(3)}s / {(compatibility.integrationDuration2Sec ?? compatibility.integrationDuration1Sec).toFixed(3)}s
+                  </span>
+                </div>
+              )}
+              {compatibility?.startToStartCadenceSec !== undefined && (
+                <div>
+                  Start-to-Start Cadence (ΔDATE-OBS):{' '}
+                  <span className="text-slate-200">{compatibility.startToStartCadenceSec.toFixed(3)}s</span>
+                </div>
+              )}
+              {compatibility?.interExposureGapSec !== undefined && (
+                <div>
+                  Inter-Exposure Endpoint Gap:{' '}
+                  <span className="text-slate-200">{compatibility.interExposureGapSec.toFixed(3)}s</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -100,7 +124,7 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
             {/* Obs 1 */}
             <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-slate-200">Epoch 1: {provenance.obsId1}</span>
+                <span className="font-bold text-slate-200">Exposure 1: {provenance.obsId1}</span>
                 <a
                   href={provenance.fitsUrl1}
                   target="_blank"
@@ -119,7 +143,7 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
             {/* Obs 2 */}
             <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-slate-200">Epoch 2: {provenance.obsId2}</span>
+                <span className="font-bold text-slate-200">Exposure 2: {provenance.obsId2}</span>
                 <a
                   href={provenance.fitsUrl2}
                   target="_blank"
@@ -156,7 +180,7 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
           <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-[11px] leading-relaxed">
             <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" />
             <p>
-              This investigation is 100% reproducible. The raw FITS files can be directly retrieved from the Caltech/IPAC IRSA archive using the URLs above and checked against the SHA-256 cryptographic hashes.
+              This investigation is deterministically reproducible against the Caltech/IPAC IRSA archive using the exact cutout URLs and SHA-256 cryptographic hashes above.
             </p>
           </div>
         </div>

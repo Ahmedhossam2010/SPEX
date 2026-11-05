@@ -1,114 +1,49 @@
-# SPHEREx — THE CHANGING SKY: DEEP SCIENTIFIC AUDIT REPORT
+# SPHEREx — THE CHANGING SKY: SCIENTIFIC & FORENSIC AUDIT REPORT
 
-**Date:** October 2026  
+**Date:** November 2026  
 **Target:** NASA Space Apps Challenge — SPHEREx Data Pipeline & Scientific Engine  
 **Dataset:** NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx Public Data Release QR2 (Level-2B Calibrated Science Frames)  
-**Status:** AUDITED, SCIENTIFICALLY HARDENED, AND FULLY VERIFIED ON REAL DATA
+**Engine Version:** `2.7.0-forensic-verified`
 
 ---
 
 ## 1. Executive Summary
 
-This audit independently inspects, challenges, and validates every layer of the astronomical processing pipeline in **SPHEREx — THE CHANGING SKY**. 
+This forensic audit inspects, challenges, and verifies every layer of the astronomical processing pipeline in **SPHEREx — THE CHANGING SKY** across both code and physical FITS binary artifacts:
 
-The initial codebase contained significant scientific integrity issues:
-1. **The ~207.64σ Candidate Anomaly:** An unmasked detector persistence spike was misclassified as a genuine 208σ transient/variable star and attributed to an unrelated Gaia catalog star 11.13 arcseconds away.
-2. **WCS Matrix Degeneracy:** FITS WCS reading neglected the `PC1_1..PC2_2` matrix keywords, defaulting pixel scale to 3600" instead of the true SPHEREx native ~6.15" scale.
-3. **Synthetic Injection:** Hardcoded flux offsets (`+= 4.8` and `+= 25.0`) were injected into array memory on server routes, violating the Zero-Mock mandate.
-
-All three issues have been resolved through physical grounding, rigorous bitmask inspection, and pure mathematical formulation. The engine runs on authentic NASA IRSA FITS data without mocks or synthetic fallbacks.
+1. **Resolution of the Historical ~207.64σ Candidate Anomaly:** Corrected parent-frame vs cutout-center WCS projection registration, propagated subpixel variance, and decoded SPHEREx Level-2 bitmasks (`0x200000` is catalog `SOURCE`, whereas `0x01 TRANSIENT`, `0x02 OVERFLOW`, `0x04 SUR_ERROR`, and `0x80000 OUTLIER` flag instrumental/statistical anomalies).
+2. **Separation of Temporal Quantities:** Separated integration duration (`DATE-END - DATE-OBS` ≈ `115.117–115.118 s`), start-to-start cadence (`next DATE-OBS - prev DATE-OBS` ≈ `128.930–128.931 s` / `257.861 s`), and inter-exposure endpoint gap (`next DATE-OBS - prev DATE-END` ≈ `13.812–13.814 s`) across CLI, API, and frontend views.
+3. **Rigorous Visit Grouping (`OBSID` Hierarchy):** Grouped exposures by `visitKey = <week>_<pass>_<slew>` (`2025W18_1B_0001`). Because all three QR2 benchmark exposures share a single `visitKey`, independent-visit distinction across the bundle is classified `NOT_VERIFIED` (`3` total temporal pairs, `3` intra-visit pairs, `0` independent-visit pairs, `0` survey-epoch pairs).
+4. **Exact Spherical Footprint Geometry:** Replaced planar approximations with Van Oosterom & Strackee spherical polygon solid angles and Sutherland–Hodgman great-circle clipping on $S^2$ for both pixel-center (`0..63`) and full-pixel (`-0.5..63.5`) footprints.
 
 ---
 
-## 2. The 207.64σ Anomaly: Forensic Investigation & Resolution
+## 2. FITS Historical & Physical Inventory
 
-### 2.1 The Observation & Initial Defect
-In earlier versions of the pipeline, an apparent $\sim 207.6\sigma$ candidate was reported at high significance. Forensic analysis of the FITS arrays, WCS transformations, and Level-2 bitmasks revealed three compounding defects:
+### 2.1 Currently Present Files on Disk (`/tmp/spherex_cache/`)
 
-1. **Sub-Pixel Registration Offset:** The initial registration code calculated celestial coordinate offsets using parent frame `CRVAL1/2` keywords rather than projecting the cutout center across WCS celestial coordinates. This produced a $\sim 2.2$-pixel misregistration between Epoch 1 and Epoch 2.
-2. **Astrometric Registration Dipole Residue:** When two frames containing a bright $G = 6.73$ mag star (Gaia DR3 2256659625017767168, flux $> 1600\text{ MJy/sr}$) were subtracted with a 2-pixel shift, the bright star was subtracted against empty sky, generating an artificial dipole of immense amplitude ($\Delta F > 1200\text{ MJy/sr}$).
-3. **FITS Bitmask Misinterpretation & Saturation:** The bright star's core exceeded detector full well capacity, setting Level-2 bit `0x02` (`OVERFLOW` / saturation) and `0x01` (`TRANSIENT`). Furthermore, bit 21 (`0x200000`) was previously mislabeled as "persistence", whereas the official SPHEREx Explanatory Supplement (Section 3.2.4) defines bit `0x200000` as `SOURCE` (pixels containing flux from cataloged astronomical sources, produced by module `SSDC-MS-019`).
+| File Name | Size (Bytes) | FITS Blocks (`2,880` B) | `OBSID` | `EXPIDN` | `DETECTOR` | `DATE-OBS` | `DATE-END` | Integration (`s`) | SHA-256 | MD5 |
+|---|---:|---:|---|---:|---:|---|---|---:|---|---|
+| `b6a1e605728059ea6b7def1e9683adb2.fits` | `5,117,760` | `1,777` | `2025W18_1B_0001_1` | `202518102000111` | `1` | `2025-04-28T13:00:15.755` | `2025-04-28T13:02:10.872` | `115.117` | `b66f276a2b3fe6e9318229b574f058be9dba1cda45fd46678014b7837b5187e9` | `43941ed0d26c80687229d836c9ec95c8` |
+| `569dafa911ec60ff30abb1807d719fef.fits` | `5,117,760` | `1,777` | `2025W18_1B_0001_2` | `202518102000121` | `1` | `2025-04-28T13:02:24.686` | `2025-04-28T13:04:19.804` | `115.118` | `f39c8687dae94b80ec39e0cf537425f4dcf6e24ed26268b57c59b379b406a182` | `1bbb6266f8f64e45a6aa112104608855` |
+| `75b2c2369c175060576bec8d2e5333c0.fits` | `5,117,760` | `1,777` | `2025W18_1B_0001_3` | `202518102000131` | `1` | `2025-04-28T13:04:33.616` | `2025-04-28T13:06:28.734` | `115.118` | `8e1d894ae95abca0dc3936a9fc45eb9ccfc2636b79496fefc64a57557dfd1a8d` | `348153055c9ccd8fb604d446b3cbd41e` |
 
-### 2.2 Mathematical Resolution & Hardening
-1. **Accurate WCS Projection Registration:** Registration now projects the center coordinate $(w/2, h/2)$ of Epoch 2 into Epoch 1's celestial WCS frame:
-   $$x_1 = \text{WCS.skyToPix}(\alpha_{\text{center}}, \delta_{\text{center}}, \text{fits1.wcs}).x$$
-   $$dx = x_1 - \frac{w}{2}, \quad dy = y_1 - \frac{h}{2}$$
-   This is refined with sub-pixel normalized cross-correlation, achieving an alignment quality of $r > 0.94$.
-2. **True Bitmask Quality Filtering:**
-   - `0x01` (`TRANSIENT`): Cosmic ray hits or sudden slope jumps $\implies$ penalized.
-   - `0x02` (`OVERFLOW`): Full-well saturation $\implies$ strictly disqualified (`Possible artifact`).
-   - `0x04` (`SUR_ERROR`): Non-linear slope fitting errors $\implies$ flagged.
-   - `0x80000` (`OUTLIER`): Statistical clipping outliers $\implies$ flagged.
-   - `0x200000` (`SOURCE`): Confirms astronomical source position $\implies$ recognized as genuine source.
-3. **Dipole Morphology Rejection:** When adjacent positive and negative lobes around a bright star indicate astrometric pointing jitter, the candidate is flagged as `REGISTRATION_OR_PSF_DIPOLE` and disqualified from false transient status.
-4. **Finite NaN Protection in Resampling & Photometry:** Bilinear resampling and aperture photometry explicitly guard against `NaN` propagation from masked saturated pixels. Net aperture flux $\Delta F_{\text{net}}$ and propagated variance $\sigma_{\Delta F_{\text{net}}}^2$ are always finite, mathematically sound physical values.
+### 2.2 Historical Existence vs Unverified Prior File Reports
+
+- **Files confirmed to have existed historically:** Authentic 7-HDU NASA/IPAC IRSA SPHEREx QR2 Level-2B `64×64` cutouts retrieved via IBE API for `2025W18_1B_0001_1`, `2025W18_1B_0001_2`, and `2025W18_1B_0001_3`, currently present at `5,117,760` bytes (`1,777 × 2,880` FITS blocks).
+- **Files reported previously whose physical existence cannot now be verified:** Three `5,256,000`-byte (`1,825 × 2,880` FITS blocks; `+138,240` bytes / `+48` blocks) files cited in an earlier ephemeral container session prior to `/tmp` storage reset. Because neither file bytes nor cryptographic SHA-256 digests from that earlier container were persisted, their physical existence is marked `NOT_VERIFIED` without claiming fabrication.
 
 ---
 
-## 3. World Coordinate System (WCS) & Astrometry Audit
+## 3. Temporal & Visit Classification Summary
 
-### 3.1 PC Matrix Resolution
-SPHEREx QR2 Level-2B products adhere to the Greisen & Calabretta (2002) FITS WCS standard using `PCi_j` keywords rather than legacy `CDi_j`:
-- `CDELT1 = 1.0`, `CDELT2 = 1.0`
-- `PC1_1 = -0.00113597038948`, `PC1_2 = -0.00123299607749`
-- `PC2_1 = -0.00127892892038`, `PC2_2 = 0.00118274690581`
-- `CRPIX1 = 32.5`, `CRPIX2 = 32.5`
-- `CRVAL1 = 275.923851155`, `CRVAL2 = 64.9607176422`
-
-The transformation matrix is:
-$$CD_{i,j} = \text{CDELT}_i \times PC_{i,j}$$
-$$\text{Pixel Scale} = 3600 \times \sqrt{|CD_{1,1}CD_{2,2} - CD_{1,2}CD_{2,1}|} = 6.1522^{\prime\prime}/\text{pixel}$$
-
-The parser in `fitsReader.ts` was updated to calculate $CD_{i,j}$ directly from `PCi_j`, yielding exact $\sim 6.152^{\prime\prime}/\text{pixel}$ celestial coordinates for all sky-to-pixel and pixel-to-sky projections.
-
----
-
-## 4. Mathematical & Statistical Formulas
-
-### 4.1 Image Differencing & Error Propagation
-For two calibrated SPHEREx science arrays $I_1(x, y)$ and $I_2(x, y)$ with independent pixel variance maps $\sigma_1^2(x, y)$ and $\sigma_2^2(x, y)$:
-$$D(x, y) = I_2(x, y) - I_{1,\text{aligned}}(x, y)$$
-$$\sigma_D^2(x, y) = \sigma_1^2(x, y) + \sigma_2^2(x, y)$$
-$$S(x, y) = \frac{D(x, y)}{\sigma_D(x, y)}$$
-
-### 4.2 Robust Background Noise (MAD)
-To prevent contamination from astronomical sources or remaining residuals:
-$$\text{MAD} = \text{median}\left(\left|D(x, y) - \text{median}(D)\right|\right)$$
-$$\sigma_{\text{robust}} = 1.4826 \times \text{MAD}$$
-
-### 4.3 Circular Aperture Photometry with Local Background Annulus
-Using circular aperture radius $r_{\text{ap}} = 2.5\text{ pix}$, inner annulus $r_{\text{in}} = 4.0\text{ pix}$, outer annulus $r_{\text{out}} = 6.0\text{ pix}$:
-$$F_{\text{ap}} = \sum_{r_i \le r_{\text{ap}}} D_i$$
-$$\bar{B}_{\text{annulus}} = \frac{1}{N_{\text{annulus}}} \sum_{r_{\text{in}} \le r_j \le r_{\text{out}}} D_j$$
-$$F_{\text{net}} = F_{\text{ap}} - \left(\bar{B}_{\text{annulus}} \times N_{\text{ap}}\right)$$
-$$\sigma_{F_{\text{net}}}^2 = \sum_{r_i \le r_{\text{ap}}} \sigma_D^2(i) + \frac{N_{\text{ap}}^2}{N_{\text{annulus}}} \bar{\sigma}_{\text{annulus}}^2$$
-
-### 4.4 Astrometric Angular Separation (Haversine Formula)
-$$\Delta\sigma = 2 \arcsin \sqrt{\sin^2\left(\frac{\Delta\delta}{2}\right) + \cos\delta_1 \cos\delta_2 \sin^2\left(\frac{\Delta\alpha}{2}\right)}$$
-$$\theta_{\text{arcsec}} = \Delta\sigma \times \frac{180 \times 3600}{\pi}$$
-
----
-
-## 5. Elimination of Synthetic Data & Injections
-
-1. **Zero-Mock Audit:** All synthetic flux modifications (`fitsData2.data[28*64+32] += 4.8`, `+= 25.0`) in `server.ts` were removed.
-2. **Authentic Data Streams:**
-   - Observations queried live from NASA/IPAC IRSA TAP: `spherex.obscore`.
-   - FITS cutouts downloaded directly from IRSA IBE API (`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/...`).
-   - Cross-matching executed live against CDS VizieR Gaia DR3 (`I/355/gaiadr3`).
-   - All 4 Curated Cases process genuine public SPHEREx QR2 cutouts with verifiable SHA-256 checksums.
-
----
-
-## 6. Verification Status
-
-| Component | Status | Verification Method |
-|---|---|---|
-| FITS-MEF Parser | Verified | Parsed real IEEE-754 32-bit big-endian SPHEREx QR2 files (HDUs 1, 2, 3) |
-| WCS Astrometry | Verified | Exact $6.1522^{\prime\prime}$/pixel from $PC_{i,j}$ matrix |
-| Differencing Engine | Verified | $D = I_2 - I_1$ with independent variance propagation |
-| Quality Bitmask Rejection | Verified | Flags (0x01 TRANSIENT, 0x02 OVERFLOW, 0x04 SUR_ERROR, 0x80000 OUTLIER) penalized; 0x200000 recognized as catalog SOURCE |
-| Gaia DR3 Crossmatch | Verified | CDS VizieR query with 3.5" search radius |
-| SPEX Bilingual Engine | Verified | English & Egyptian Arabic with grounded scientific prompts |
-| Unit Test Suite | 14/14 PASS | `npx tsx --test src/science/science.test.ts` (14 analytical unit tests) |
-| FITS Data Verification | Executed | Real FITS files in `/tmp/spherex_cache` validated for HDUs 1..6 |
+- **Integration Duration (`DATE-END - DATE-OBS`):** `115.117 s` (`_1`), `115.118 s` (`_2`), `115.118 s` (`_3`). Headers also include effective ramp duration `XPOSURE = 113.5826 s` and frame elapsed `TELAPSE = 118.1873 s`.
+- **Start-to-Start Cadence (`next DATE-OBS - prev DATE-OBS`):**
+  - `_1 -> _2`: `128.931 s` (`2.14885 min`, `0.001492257 d`)
+  - `_2 -> _3`: `128.930 s` (`2.14883 min`, `0.001492246 d`)
+  - `_1 -> _3`: `257.861 s` (`4.29768 min`, `0.002984503 d`)
+- **Inter-Exposure Endpoint Gap (`next DATE-OBS - prev DATE-END`):**
+  - `_1 -> _2`: `13.814 s`
+  - `_2 -> _3`: `13.812 s`
+  - `_1 -> _3` endpoint span (`DATE-OBS_3 - DATE-END_1`): `142.744 s` (includes readout/slew gap `13.814 s` + Exposure 2 integration `115.118 s` + readout/slew gap `13.812 s`; sum of consecutive gaps = `27.626 s`).
+- **Visit Grouping:** All three files parse to `Week = 2025W18`, `Pass = 1B`, `Slew = 0001` (`visitKey = 2025W18_1B_0001`). Total possible temporal pairs = `3`; intra-visit pairs = `3`; independent-visit pairs = `0`; independently verified survey-epoch pairs = `0`; independent-visit distinction = `NOT_VERIFIED`.

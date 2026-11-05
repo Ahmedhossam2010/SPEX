@@ -1,4 +1,5 @@
-import { FITSImageData, WCSParams } from './types';
+import { FITSImageData, SIPParams, SIPTerm, WCSParams } from './types';
+import { MAX_SIP_ORDER, WCS } from './wcs';
 
 export class FITSReader {
   /**
@@ -53,23 +54,38 @@ export class FITSReader {
             }
 
             const remainder = cardStr.slice(eqIdx + 1);
-            const slashIdx = remainder.indexOf('/');
-            let valStr = (slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder).trim();
+            const trimmedRem = remainder.trim();
 
-            if (valStr.startsWith("'")) {
-              const lastQuote = valStr.lastIndexOf("'");
-              const strVal = lastQuote > 0 ? valStr.slice(1, lastQuote).trim() : valStr.slice(1).trim();
+            if (trimmedRem.startsWith("'")) {
+              let endQuote = 1;
+              while (endQuote < trimmedRem.length) {
+                if (trimmedRem[endQuote] === "'") {
+                  if (trimmedRem[endQuote + 1] === "'") {
+                    endQuote += 2;
+                  } else {
+                    break;
+                  }
+                } else {
+                  endQuote++;
+                }
+              }
+              const strVal = trimmedRem.slice(1, endQuote).replace(/''/g, "'").trim();
               headerCards[key] = strVal;
-            } else if (valStr === 'T') {
-              headerCards[key] = true;
-            } else if (valStr === 'F') {
-              headerCards[key] = false;
-            } else if (valStr !== '') {
-              const numVal = Number(valStr);
-              if (!Number.isNaN(numVal)) {
-                headerCards[key] = numVal;
-              } else {
-                headerCards[key] = valStr;
+            } else {
+              const slashIdx = remainder.indexOf('/');
+              const valStr = (slashIdx >= 0 ? remainder.slice(0, slashIdx) : remainder).trim();
+
+              if (valStr === 'T') {
+                headerCards[key] = true;
+              } else if (valStr === 'F') {
+                headerCards[key] = false;
+              } else if (valStr !== '') {
+                const numVal = Number(valStr);
+                if (!Number.isNaN(numVal)) {
+                  headerCards[key] = numVal;
+                } else {
+                  headerCards[key] = valStr;
+                }
               }
             }
           }
@@ -203,29 +219,112 @@ export class FITSReader {
     return result;
   }
 
+  private static extractSipOrder(
+    header: Record<string, string | number | boolean>,
+    key: string,
+    required: boolean
+  ): number | undefined {
+    const raw = header[key];
+    if (raw === undefined) {
+      if (required) {
+        throw new Error(`Invalid TAN-SIP WCS astrometry: missing required ${key} polynomial order keyword.`);
+      }
+      return undefined;
+    }
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > MAX_SIP_ORDER) {
+      throw new Error(
+        `Invalid TAN-SIP WCS astrometry: ${key}=${String(raw)} must be an integer in [0, ${MAX_SIP_ORDER}].`
+      );
+    }
+    return raw;
+  }
+
+  private static extractSipTerms(
+    header: Record<string, string | number | boolean>,
+    prefix: 'A' | 'B' | 'AP' | 'BP',
+    order: number
+  ): SIPTerm[] {
+    const terms: SIPTerm[] = [];
+    for (let p = 0; p <= order; p++) {
+      for (let q = 0; q <= order - p; q++) {
+        const key = `${prefix}_${p}_${q}`;
+        const raw = header[key];
+        if (raw !== undefined) {
+          if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+            throw new Error(
+              `Invalid TAN-SIP WCS astrometry: non-finite or non-numeric coefficient for ${key}=${String(raw)}.`
+            );
+          }
+          if (raw !== 0) {
+            terms.push({ p, q, coeff: raw });
+          }
+        }
+      }
+    }
+    return terms;
+  }
+
   public static parseWCS(header: Record<string, string | number | boolean>, width: number, height: number): WCSParams {
-    const crval1 = Number(header['CRVAL1'] ?? 0);
-    const crval2 = Number(header['CRVAL2'] ?? 0);
-    const crpix1 = Number(header['CRPIX1'] ?? width / 2);
-    const crpix2 = Number(header['CRPIX2'] ?? height / 2);
-    const cdelt1 = Number(header['CDELT1'] ?? 1.0);
-    const cdelt2 = Number(header['CDELT2'] ?? 1.0);
+    const requireFiniteHeaderNum = (key: string): number => {
+      const raw = header[key];
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        throw new Error(`Invalid WCS astrometry: missing or non-finite ${key} (${String(raw)}).`);
+      }
+      return raw;
+    };
+
+    const optionalFiniteHeaderNum = (key: string, defaultVal: number): number => {
+      const raw = header[key];
+      if (raw === undefined) return defaultVal;
+      if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+        throw new Error(`Invalid WCS astrometry: non-finite ${key} (${String(raw)}).`);
+      }
+      return raw;
+    };
+
+    const crval1 = requireFiniteHeaderNum('CRVAL1');
+    const crval2 = requireFiniteHeaderNum('CRVAL2');
+    if (crval2 < -90 || crval2 > 90) {
+      throw new Error(`Invalid WCS astrometry: CRVAL2=${crval2} outside [-90, +90] degrees.`);
+    }
+
+    const crpix1 = optionalFiniteHeaderNum('CRPIX1', width / 2);
+    const crpix2 = optionalFiniteHeaderNum('CRPIX2', height / 2);
+
+    const hasCd =
+      header['CD1_1'] !== undefined ||
+      header['CD1_2'] !== undefined ||
+      header['CD2_1'] !== undefined ||
+      header['CD2_2'] !== undefined;
+    const hasPc =
+      header['PC1_1'] !== undefined ||
+      header['PC1_2'] !== undefined ||
+      header['PC2_1'] !== undefined ||
+      header['PC2_2'] !== undefined;
+    const hasCdelt = header['CDELT1'] !== undefined || header['CDELT2'] !== undefined;
+
+    if (!hasCd && !hasPc && !hasCdelt) {
+      throw new Error('Invalid WCS astrometry: missing CD, PC, or CDELT coordinate transformation keywords.');
+    }
+
+    const cdelt1 = optionalFiniteHeaderNum('CDELT1', 1.0);
+    const cdelt2 = optionalFiniteHeaderNum('CDELT2', 1.0);
 
     let cd1_1 = 0;
     let cd1_2 = 0;
     let cd2_1 = 0;
     let cd2_2 = 0;
 
-    if (header['CD1_1'] !== undefined || header['CD2_2'] !== undefined) {
-      cd1_1 = Number(header['CD1_1'] ?? 0);
-      cd1_2 = Number(header['CD1_2'] ?? 0);
-      cd2_1 = Number(header['CD2_1'] ?? 0);
-      cd2_2 = Number(header['CD2_2'] ?? 0);
-    } else if (header['PC1_1'] !== undefined || header['PC2_2'] !== undefined) {
-      cd1_1 = cdelt1 * Number(header['PC1_1'] ?? 1);
-      cd1_2 = cdelt1 * Number(header['PC1_2'] ?? 0);
-      cd2_1 = cdelt2 * Number(header['PC2_1'] ?? 0);
-      cd2_2 = cdelt2 * Number(header['PC2_2'] ?? 1);
+    if (hasCd) {
+      cd1_1 = optionalFiniteHeaderNum('CD1_1', 0);
+      cd1_2 = optionalFiniteHeaderNum('CD1_2', 0);
+      cd2_1 = optionalFiniteHeaderNum('CD2_1', 0);
+      cd2_2 = optionalFiniteHeaderNum('CD2_2', 0);
+    } else if (hasPc) {
+      cd1_1 = cdelt1 * optionalFiniteHeaderNum('PC1_1', 1);
+      cd1_2 = cdelt1 * optionalFiniteHeaderNum('PC1_2', 0);
+      cd2_1 = cdelt2 * optionalFiniteHeaderNum('PC2_1', 0);
+      cd2_2 = cdelt2 * optionalFiniteHeaderNum('PC2_2', 1);
     } else {
       cd1_1 = cdelt1;
       cd1_2 = 0;
@@ -233,16 +332,91 @@ export class FITSReader {
       cd2_2 = cdelt2;
     }
 
-    const ctype1 = String(header['CTYPE1'] ?? 'RA---TAN');
-    const ctype2 = String(header['CTYPE2'] ?? 'DEC--TAN');
-    const equinox = Number(header['EQUINOX'] ?? 2000.0);
-    const radesys = String(header['RADESYS'] ?? 'ICRS');
+    if (header['CTYPE1'] !== undefined && typeof header['CTYPE1'] !== 'string') {
+      throw new Error(`Invalid WCS astrometry: CTYPE1 must be a string, got ${typeof header['CTYPE1']}.`);
+    }
+    if (header['CTYPE2'] !== undefined && typeof header['CTYPE2'] !== 'string') {
+      throw new Error(`Invalid WCS astrometry: CTYPE2 must be a string, got ${typeof header['CTYPE2']}.`);
+    }
+    if ((header['CTYPE1'] === undefined) !== (header['CTYPE2'] === undefined)) {
+      throw new Error('Invalid WCS astrometry: CTYPE1 and CTYPE2 must both be specified or omitted together.');
+    }
+
+    const ctype1 = header['CTYPE1'] !== undefined ? String(header['CTYPE1']).trim() : 'RA---TAN';
+    const ctype2 = header['CTYPE2'] !== undefined ? String(header['CTYPE2']).trim() : 'DEC--TAN';
+    const isSipDeclared = ctype1.toUpperCase().endsWith('-SIP') || ctype2.toUpperCase().endsWith('-SIP');
+
+    // Validate any present SIP keywords in the FITS header against malformed or non-numeric entries
+    let sip: SIPParams | undefined;
+    if (isSipDeclared) {
+      const aOrder = this.extractSipOrder(header, 'A_ORDER', true)!;
+      const bOrder = this.extractSipOrder(header, 'B_ORDER', true)!;
+      const aTerms = this.extractSipTerms(header, 'A', aOrder);
+      const bTerms = this.extractSipTerms(header, 'B', bOrder);
+
+      const apOrder = this.extractSipOrder(header, 'AP_ORDER', false);
+      const bpOrder = this.extractSipOrder(header, 'BP_ORDER', false);
+      if ((apOrder !== undefined) !== (bpOrder !== undefined)) {
+        throw new Error('Invalid TAN-SIP WCS astrometry: AP_ORDER and BP_ORDER must both be present if reverse polynomial is provided.');
+      }
+
+      const apTerms = apOrder !== undefined ? this.extractSipTerms(header, 'AP', apOrder) : undefined;
+      const bpTerms = bpOrder !== undefined ? this.extractSipTerms(header, 'BP', bpOrder) : undefined;
+
+      // Reject any out-of-order or malformed SIP term keywords in header
+      for (const [key, val] of Object.entries(header)) {
+        const m = key.match(/^(A|B|AP|BP)_(\d+)_(\d+)$/);
+        if (m) {
+          if (typeof val !== 'number' || !Number.isFinite(val)) {
+            throw new Error(`Invalid TAN-SIP WCS astrometry: non-finite ${key}=${String(val)}.`);
+          }
+          const prefix = m[1] as 'A' | 'B' | 'AP' | 'BP';
+          const pIdx = Number(m[2]);
+          const qIdx = Number(m[3]);
+          const declaredOrd =
+            prefix === 'A'
+              ? aOrder
+              : prefix === 'B'
+              ? bOrder
+              : prefix === 'AP'
+              ? apOrder
+              : bpOrder;
+          if (declaredOrd !== undefined && pIdx + qIdx > declaredOrd && val !== 0) {
+            throw new Error(
+              `Invalid TAN-SIP WCS astrometry: non-zero coefficient ${key}=${val} exceeds ${prefix}_ORDER=${declaredOrd}.`
+            );
+          }
+        }
+      }
+
+      sip = {
+        aOrder,
+        bOrder,
+        ...(apOrder !== undefined ? { apOrder } : {}),
+        ...(bpOrder !== undefined ? { bpOrder } : {}),
+        aTerms,
+        bTerms,
+        ...(apTerms !== undefined ? { apTerms } : {}),
+        ...(bpTerms !== undefined ? { bpTerms } : {}),
+      };
+    } else if (
+      header['A_ORDER'] !== undefined ||
+      header['B_ORDER'] !== undefined ||
+      Object.keys(header).some((k) => /^(A|B|AP|BP)_\d+_\d+$/.test(k))
+    ) {
+      throw new Error(
+        `Invalid WCS astrometry: SIP polynomial keywords found in header with non-SIP projection CTYPE1='${ctype1}', CTYPE2='${ctype2}'.`
+      );
+    }
+
+    const equinox = optionalFiniteHeaderNum('EQUINOX', 2000.0);
+    const radesys = header['RADESYS'] !== undefined ? String(header['RADESYS']).trim() : 'ICRS';
 
     const det = Math.abs(cd1_1 * cd2_2 - cd1_2 * cd2_1);
-    const pixelScaleDeg = Math.sqrt(det > 0 ? det : Math.abs(cdelt1 * cdelt2));
+    const pixelScaleDeg = Math.sqrt(det);
     const pixelScaleArcsec = pixelScaleDeg * 3600;
 
-    return {
+    const wcs: WCSParams = {
       crval1,
       crval2,
       crpix1,
@@ -258,7 +432,11 @@ export class FITSReader {
       equinox,
       radesys,
       pixelScaleArcsec,
+      ...(sip ? { sip } : {}),
     };
+
+    WCS.validateWCS(wcs);
+    return wcs;
   }
 
   public static computeStatistics(data: Float32Array, flags: Int32Array | null): FITSImageData['stats'] {

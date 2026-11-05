@@ -567,7 +567,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       : 'bg-slate-100 dark:bg-white/[0.05] text-slate-700 dark:text-slate-300 hover:bg-slate-200'
                   }`}
                 >
-                  Visit {idx + 1} ({ep.date.split(' ')[0]})
+                  Exposure {idx + 1} ({ep.date.split(/[T ]/)[0]})
                 </button>
               ))}
             </div>
@@ -605,23 +605,40 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             {/* Difference Pair Selector */}
             <div className="flex items-center gap-1 text-[11px] border-l border-slate-200 dark:border-white/10 pl-2">
               <span className="text-slate-500">{t.labelEpochPair}</span>
-              {['1-3', '1-2', '2-3'].map((pair) => (
-                <button
-                  key={pair}
-                  type="button"
-                  onClick={() => {
-                    setSelectedEpochPair(pair);
-                    onSelectCase(currentResult.caseId, { sizePix: selectedFovSize, epochPair: pair });
-                  }}
-                  className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
-                    selectedEpochPair === pair
-                      ? 'bg-amber-500 text-slate-950 font-bold'
-                      : 'bg-white/5 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {pair === '1-3' ? '1 vs 3 (20.7d)' : pair === '1-2' ? '1 vs 2 (11.6d)' : '2 vs 3 (9.1d)'}
-                </button>
-              ))}
+              {['1-3', '1-2', '2-3'].map((pair) => {
+                const [i1, i2] = pair.split('-').map((n) => parseInt(n, 10) - 1);
+                const eA = currentResult.epochs?.[i1];
+                const eB = currentResult.epochs?.[i2];
+                let deltaLabel = '';
+                if (eA && eB && Number.isFinite(eA.mjd) && Number.isFinite(eB.mjd)) {
+                  const dtSec = Math.abs(eB.mjd - eA.mjd) * 86400;
+                  if (dtSec < 3600) {
+                    deltaLabel = ` (${dtSec.toFixed(1)}s)`;
+                  } else if (dtSec < 86400) {
+                    deltaLabel = ` (${(dtSec / 60).toFixed(1)}m)`;
+                  } else {
+                    deltaLabel = ` (${(dtSec / 86400).toFixed(1)}d)`;
+                  }
+                }
+                return (
+                  <button
+                    key={pair}
+                    type="button"
+                    onClick={() => {
+                      setSelectedEpochPair(pair);
+                      onSelectCase(currentResult.caseId, { sizePix: selectedFovSize, epochPair: pair });
+                    }}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer ${
+                      selectedEpochPair === pair
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'bg-white/5 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {pair.replace('-', ' vs ')}
+                    {deltaLabel}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -842,9 +859,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               {/* Observation Status Watermark Badge */}
               <div className="absolute top-3 left-3 z-30 pointer-events-none">
                 <span className="px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-amber-400 font-semibold">
-                  {viewMode === 'epoch1' && `${t.statusVisit1}: ${currentResult?.epoch1.metadata.date_obs || '2025-04-28'}`}
-                  {viewMode === 'epoch2' && `${t.statusVisit2}: ${currentResult?.epoch2.metadata.date_obs || '2025-05-19'}`}
-                  {viewMode === 'sequence' && `Visit ${activeEpochIdx + 1}/${currentResult?.epochs?.length || 3}: ${currentResult?.epochs?.[activeEpochIdx]?.date || '2025-04-28'}`}
+                  {viewMode === 'epoch1' && `${t.statusVisit1}: ${currentResult?.epoch1.metadata.date_obs || '2025-04-28T13:00:15.755'}`}
+                  {viewMode === 'epoch2' && `${t.statusVisit2}: ${currentResult?.epoch2.metadata.date_obs || '2025-04-28T13:02:24.686'}`}
+                  {viewMode === 'sequence' && `Exposure ${activeEpochIdx + 1}/${currentResult?.epochs?.length || 3}: ${currentResult?.epochs?.[activeEpochIdx]?.date || '2025-04-28'}`}
                   {viewMode === 'difference' && t.statusDifference}
                   {viewMode === 'significance' && t.statusSignificance}
                   {viewMode === 'split' && t.statusSplit}

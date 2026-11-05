@@ -4,8 +4,21 @@ import {
   FITSImageData,
   InvestigationClassification,
   SPHERExObservation,
+  WCSParams,
 } from './types';
-import { WCS } from './wcs';
+import { ReprojectionCoordinateGrid, WCS } from './wcs';
+
+export const MIN_POSITIVE_VARIANCE = 1e-12;
+export const SPATIAL_WARP_REPROJECTION_THRESHOLD_PX = 1e-4;
+export const CONSERVATIVE_DQ_WEIGHT_THRESHOLD = 1e-7;
+
+export interface PixelReprojectionResult {
+  alignedData: Float32Array;
+  alignedVariance: Float32Array;
+  alignedFlags: Int32Array | null;
+  grid: ReprojectionCoordinateGrid;
+  runtimeMs: number;
+}
 
 export interface DifferenceOutput {
   width: number;
@@ -24,6 +37,10 @@ export interface DifferenceOutput {
     dyPixels: number;
     method: string;
     quality: string;
+    runtimeMs?: number;
+    maxSpatialWarpPixels?: number;
+    reprojectionMode?: 'PIXEL_BY_PIXEL_WCS' | 'RIGID_TRANSLATION';
+    dqPropagationPolicy?: string;
   };
   compatibility: {
     isCompatible: boolean;
@@ -32,14 +49,33 @@ export interface DifferenceOutput {
     wavelengthDiffUm: number;
     timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
     timeBaselineHuman?: string;
+    integrationDuration1Sec?: number;
+    integrationDuration2Sec?: number;
+    startToStartCadenceSec?: number;
+    interExposureGapSec?: number;
   };
   candidates: CandidateDetection[];
   evidence: EvidenceSummary;
 }
 
 export class ScientificPipeline {
+  private static parseUtcTimestampMs(raw: unknown): number | null {
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.replace(/['"]/g, '').trim();
+    if (!trimmed || /^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+UTC$/i.test(trimmed) === false && !trimmed.includes('T')) {
+      return null;
+    }
+    const iso = trimmed.includes('T')
+      ? /(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)
+        ? trimmed
+        : `${trimmed}Z`
+      : trimmed.replace(/\s*\(.*?\)\s*/g, '').replace(' ', 'T').replace(/\s+UTC$/i, 'Z');
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : null;
+  }
+
   /**
-   * Evaluate astronomical compatibility between two SPHEREx observations
+   * Evaluate astronomical compatibility and separated temporal quantities between two SPHEREx exposures
    */
   public static checkCompatibility(
     obs1: SPHERExObservation,
@@ -53,8 +89,80 @@ export class ScientificPipeline {
     wavelengthDiffUm: number;
     timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
     timeBaselineHuman?: string;
+    integrationDuration1Sec?: number;
+    integrationDuration2Sec?: number;
+    startToStartCadenceSec?: number;
+    interExposureGapSec?: number;
   } {
-    const timeBaselineDays = Math.abs(obs2.t_min - obs1.t_min);
+    const explicitStart1Ms = this.parseUtcTimestampMs(obs1.date_obs);
+    const explicitEnd1Ms = this.parseUtcTimestampMs(obs1.date_end);
+    const explicitStart2Ms = this.parseUtcTimestampMs(obs2.date_obs);
+    const explicitEnd2Ms = this.parseUtcTimestampMs(obs2.date_end);
+
+    const headerStart1Ms = this.parseUtcTimestampMs(fits1.header?.['DATE-OBS']);
+    const headerEnd1Ms = this.parseUtcTimestampMs(fits1.header?.['DATE-END']);
+    const headerStart2Ms = this.parseUtcTimestampMs(fits2.header?.['DATE-OBS']);
+    const headerEnd2Ms = this.parseUtcTimestampMs(fits2.header?.['DATE-END']);
+
+    const obsHasDistinctMjdWithoutIso =
+      (explicitStart1Ms === null || explicitStart2Ms === null) &&
+      Math.abs((obs2.t_min ?? 0) - (obs1.t_min ?? 0)) > 1e-7;
+
+    const start1Ms = explicitStart1Ms ?? (obsHasDistinctMjdWithoutIso ? null : headerStart1Ms);
+    const end1Ms = explicitEnd1Ms ?? (obsHasDistinctMjdWithoutIso ? null : headerEnd1Ms);
+    const start2Ms = explicitStart2Ms ?? (obsHasDistinctMjdWithoutIso ? null : headerStart2Ms);
+    const end2Ms = explicitEnd2Ms ?? (obsHasDistinctMjdWithoutIso ? null : headerEnd2Ms);
+
+    const integrationDuration1Sec =
+      obs1.integration_duration_sec !== undefined
+        ? obs1.integration_duration_sec
+        : start1Ms !== null && end1Ms !== null && end1Ms >= start1Ms
+        ? Number(((end1Ms - start1Ms) / 1000).toFixed(3))
+        : obs1.t_max > obs1.t_min
+        ? Number(((obs1.t_max - obs1.t_min) * 86400).toFixed(3))
+        : undefined;
+
+    const integrationDuration2Sec =
+      obs2.integration_duration_sec !== undefined
+        ? obs2.integration_duration_sec
+        : start2Ms !== null && end2Ms !== null && end2Ms >= start2Ms
+        ? Number(((end2Ms - start2Ms) / 1000).toFixed(3))
+        : obs2.t_max > obs2.t_min
+        ? Number(((obs2.t_max - obs2.t_min) * 86400).toFixed(3))
+        : undefined;
+
+    const timeBaselineDays =
+      start1Ms !== null && start2Ms !== null
+        ? Math.abs(start2Ms - start1Ms) / 86400000
+        : Math.abs(obs2.t_min - obs1.t_min);
+
+    const startToStartCadenceSec = Number(
+      (
+        start1Ms !== null && start2Ms !== null
+          ? Math.abs(start2Ms - start1Ms) / 1000
+          : timeBaselineDays * 86400
+      ).toFixed(3)
+    );
+
+    const chronologicalFirstEndMs =
+      start1Ms !== null && start2Ms !== null
+        ? start1Ms <= start2Ms
+          ? end1Ms
+          : end2Ms
+        : null;
+    const chronologicalSecondStartMs =
+      start1Ms !== null && start2Ms !== null
+        ? start1Ms <= start2Ms
+          ? start2Ms
+          : start1Ms
+        : null;
+
+    let interExposureGapSec: number | undefined;
+    if (chronologicalFirstEndMs !== null && chronologicalSecondStartMs !== null) {
+      interExposureGapSec = Number(((chronologicalSecondStartMs - chronologicalFirstEndMs) / 1000).toFixed(3));
+    } else if (obs2.t_min > obs1.t_max) {
+      interExposureGapSec = Number(((obs2.t_min - obs1.t_max) * 86400).toFixed(3));
+    }
 
     const wl1 = obs1.wavelength_um ?? (obs1.em_min + obs1.em_max) / 2 * 1e6;
     const wl2 = obs2.wavelength_um ?? (obs2.em_min + obs2.em_max) / 2 * 1e6;
@@ -65,28 +173,34 @@ export class ScientificPipeline {
 
     if (timeBaselineDays < 0.00002) {
       timeBaselineType = 'SAME_EXPOSURE';
-      timeBaselineHuman = 'Identical exposure (<1s)';
+      timeBaselineHuman = 'Identical exposure (<1s start-to-start cadence)';
     } else if (timeBaselineDays < 0.04167) {
       timeBaselineType = 'INTRA_VISIT_EXPOSURES';
-      timeBaselineHuman = `${(timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)`;
+      const intText = integrationDuration1Sec !== undefined ? `; integration ${integrationDuration1Sec.toFixed(3)}s` : '';
+      const gapText = interExposureGapSec !== undefined ? `, gap ${interExposureGapSec.toFixed(3)}s` : '';
+      timeBaselineHuman = `${(startToStartCadenceSec / 60).toFixed(2)} minutes (${startToStartCadenceSec.toFixed(3)}s start-to-start cadence${intText}${gapText}; intra-orbit scan)`;
     } else if (timeBaselineDays < 30) {
       timeBaselineType = 'INDEPENDENT_VISIT';
-      timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days (independent visit)`;
+      timeBaselineHuman = `${timeBaselineDays.toFixed(1)} days (independent visit start-to-start cadence)`;
     } else {
       timeBaselineType = 'SURVEY_EPOCH';
-      timeBaselineHuman = `${(timeBaselineDays / 30.4).toFixed(1)} months (survey cadence)`;
+      timeBaselineHuman = `${(timeBaselineDays / 30.4).toFixed(1)} months (multi-epoch survey cadence)`;
     }
 
-    // If wavelength difference exceeds 0.25 microns (different SPHEREx spectral channel),
+    // If wavelength difference exceeds 0.35 microns (different SPHEREx spectral channel),
     // direct flux differencing is physically invalid
     if (wavelengthDiffUm > 0.35) {
       return {
         isCompatible: false,
-        reason: `Wavelength bands are physically incompatible: Epoch 1 is at ${wl1.toFixed(2)} µm and Epoch 2 is at ${wl2.toFixed(2)} µm (difference ${wavelengthDiffUm.toFixed(2)} µm). Differencing across distinct spectral bands measures spectral color slope rather than true temporal variability.`,
+        reason: `Wavelength bands are physically incompatible: Exposure 1 is at ${wl1.toFixed(2)} µm and Exposure 2 is at ${wl2.toFixed(2)} µm (difference ${wavelengthDiffUm.toFixed(2)} µm). Differencing across distinct spectral bands measures spectral color slope rather than true temporal variability.`,
         timeBaselineDays,
         wavelengthDiffUm,
         timeBaselineType,
         timeBaselineHuman,
+        integrationDuration1Sec,
+        integrationDuration2Sec,
+        startToStartCadenceSec,
+        interExposureGapSec,
       };
     }
 
@@ -95,11 +209,15 @@ export class ScientificPipeline {
     if (Math.abs(scaleRatio - 1.0) > 0.2) {
       return {
         isCompatible: false,
-        reason: `Pixel scale mismatch: Epoch 1 is ${fits1.wcs.pixelScaleArcsec.toFixed(2)}"/px while Epoch 2 is ${fits2.wcs.pixelScaleArcsec.toFixed(2)}"/px.`,
+        reason: `Pixel scale mismatch: Exposure 1 is ${fits1.wcs.pixelScaleArcsec.toFixed(2)}"/px while Exposure 2 is ${fits2.wcs.pixelScaleArcsec.toFixed(2)}"/px.`,
         timeBaselineDays,
         wavelengthDiffUm,
         timeBaselineType,
         timeBaselineHuman,
+        integrationDuration1Sec,
+        integrationDuration2Sec,
+        startToStartCadenceSec,
+        interExposureGapSec,
       };
     }
 
@@ -109,32 +227,137 @@ export class ScientificPipeline {
       wavelengthDiffUm,
       timeBaselineType,
       timeBaselineHuman,
+      integrationDuration1Sec,
+      integrationDuration2Sec,
+      startToStartCadenceSec,
+      interExposureGapSec,
     };
   }
 
   /**
-   * Align Epoch 1 onto Epoch 2 using rigid translation (WCS center projection offset + normalized cross-correlation refinement)
+   * Compute strictly positive fallback variance floor so missing or corrupt variance
+   * is never silently treated as zero uncertainty.
+   */
+  public static resolveFallbackVariance(fits: Pick<FITSImageData, 'stats'>): number {
+    const noise =
+      fits.stats && Number.isFinite(fits.stats.robustNoise) && fits.stats.robustNoise > 0
+        ? fits.stats.robustNoise
+        : fits.stats && Number.isFinite(fits.stats.std) && fits.stats.std > 0
+        ? fits.stats.std
+        : 1e-3;
+    return Math.max(MIN_POSITIVE_VARIANCE, noise * noise);
+  }
+
+  private static computeGridCorrelation(
+    fits1: FITSImageData,
+    fits2: FITSImageData,
+    grid: ReprojectionCoordinateGrid
+  ): number {
+    const w = grid.width;
+    const h = grid.height;
+    const srcW = fits1.width;
+    const srcH = fits1.height;
+    const pad = Math.min(4, Math.floor(Math.min(w, h) / 6));
+
+    let dotProduct = 0;
+    let norm1 = 0;
+    let norm2 = 0;
+    let count = 0;
+
+    for (let y = pad; y < h - pad; y++) {
+      const rowOffset = y * w;
+      for (let x = pad; x < w - pad; x++) {
+        const idx = rowOffset + x;
+        const v2 = fits2.data[idx];
+        if (!Number.isFinite(v2)) continue;
+        const sx = grid.srcX[idx];
+        const sy = grid.srcY[idx];
+        if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx < 0 || sx > srcW - 1 || sy < 0 || sy > srcH - 1) {
+          continue;
+        }
+        const x0 = Math.floor(sx);
+        const y0 = Math.floor(sy);
+        const x1 = Math.min(x0 + 1, srcW - 1);
+        const y1 = Math.min(y0 + 1, srcH - 1);
+        const fx = sx - x0;
+        const fy = sy - y0;
+        const v1 =
+          (1 - fx) * (1 - fy) * fits1.data[y0 * srcW + x0] +
+          fx * (1 - fy) * fits1.data[y0 * srcW + x1] +
+          (1 - fx) * fy * fits1.data[y1 * srcW + x0] +
+          fx * fy * fits1.data[y1 * srcW + x1];
+        if (Number.isFinite(v1)) {
+          const dev1 = v1 - fits1.stats.median;
+          const dev2 = v2 - fits2.stats.median;
+          dotProduct += dev1 * dev2;
+          norm1 += dev1 * dev1;
+          norm2 += dev2 * dev2;
+          count++;
+        }
+      }
+    }
+
+    const denom = Math.sqrt(norm1 * norm2);
+    return denom > 0 && count > 25 ? dotProduct / denom : 0;
+  }
+
+  /**
+   * Analyze spatial WCS mapping between Epoch 1 and Epoch 2 and select the scientifically
+   * appropriate registration mode:
+   * - Pixel-by-pixel WCS reprojection when TAN-SIP distortion is present or when spatial
+   *   mapping varies across the detector (rotation, shear, scale change, or gnomonic curvature).
+   * - Rigid translation when both exposures share an undistorted constant-offset WCS grid.
    */
   public static computeRegistration(
     fits1: FITSImageData,
     fits2: FITSImageData
-  ): { dx: number; dy: number; method: string; quality: string } {
+  ): {
+    dx: number;
+    dy: number;
+    method: string;
+    quality: string;
+    runtimeMs: number;
+    maxSpatialWarpPixels: number;
+    reprojectionMode: 'PIXEL_BY_PIXEL_WCS' | 'RIGID_TRANSLATION';
+    dqPropagationPolicy: string;
+  } {
+    const t0 = performance.now();
     const w = Math.min(fits1.width, fits2.width);
     const h = Math.min(fits1.height, fits2.height);
 
-    // Compute coordinate offset by projecting the center of fits2 into fits1
-    const cx2 = w / 2;
-    const cy2 = h / 2;
-    const centerSky = WCS.pixToSky(cx2, cy2, fits2.wcs);
-    const centerIn1 = WCS.skyToPix(centerSky.ra, centerSky.dec, fits1.wcs);
+    const grid = WCS.getReprojectionGrid(fits2.wcs, fits1.wcs, w, h);
+    const requiresPixelReprojection =
+      grid.hasSipDistortion || grid.maxSpatialWarpPixels > SPATIAL_WARP_REPROJECTION_THRESHOLD_PX;
 
-    let initialDx = centerIn1.x - cx2;
-    let initialDy = centerIn1.y - cy2;
+    if (requiresPixelReprojection) {
+      const rScore = this.computeGridCorrelation(fits1, fits2, grid);
+      const elapsedMs = Number((performance.now() - t0).toFixed(4));
+      return {
+        dx: grid.centerDx,
+        dy: grid.centerDy,
+        method: grid.hasSipDistortion
+          ? 'Pixel-by-Pixel WCS Reprojection (TAN-SIP)'
+          : 'Pixel-by-Pixel WCS Reprojection (TAN)',
+        quality:
+          rScore > 0.8
+            ? `Excellent (r=${rScore.toFixed(3)}, warp=${grid.maxSpatialWarpPixels.toFixed(4)}px)`
+            : rScore > 0.4
+            ? `Good (r=${rScore.toFixed(3)}, warp=${grid.maxSpatialWarpPixels.toFixed(4)}px)`
+            : `Astrometric WCS Solution (warp=${grid.maxSpatialWarpPixels.toFixed(4)}px)`,
+        runtimeMs: elapsedMs,
+        maxSpatialWarpPixels: grid.maxSpatialWarpPixels,
+        reprojectionMode: 'PIXEL_BY_PIXEL_WCS',
+        dqPropagationPolicy: 'Conservative Bitwise OR over contributing bilinear stencil pixels (w > 1e-7); out-of-bounds = 0',
+      };
+    }
+
+    let initialDx = grid.centerDx;
+    let initialDy = grid.centerDy;
 
     if (!Number.isFinite(initialDx) || Math.abs(initialDx) > w / 2) initialDx = 0;
     if (!Number.isFinite(initialDy) || Math.abs(initialDy) > h / 2) initialDy = 0;
 
-    // Cross-correlation refinement search around WCS shift (-2 to +2 pixels)
+    // Cross-correlation refinement search around constant WCS shift (-2 to +2 pixels)
     let bestScore = -Infinity;
     let bestDx = 0;
     let bestDy = 0;
@@ -179,15 +402,151 @@ export class ScientificPipeline {
       }
     }
 
-    // Only apply cross-correlation shift if it improves correlation noticeably
     const totalDx = initialDx + (bestScore > 0.6 ? bestDx : 0);
     const totalDy = initialDy + (bestScore > 0.6 ? bestDy : 0);
+    const elapsedMs = Number((performance.now() - t0).toFixed(4));
 
     return {
       dx: totalDx,
       dy: totalDy,
       method: 'Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)',
       quality: bestScore > 0.8 ? 'Excellent (r > 0.8)' : bestScore > 0.4 ? 'Good (r > 0.4)' : 'Nominal WCS',
+      runtimeMs: elapsedMs,
+      maxSpatialWarpPixels: grid.maxSpatialWarpPixels,
+      reprojectionMode: 'RIGID_TRANSLATION',
+      dqPropagationPolicy: 'Conservative Bitwise OR over contributing bilinear stencil pixels (w > 1e-7); out-of-bounds = 0',
+    };
+  }
+
+  /**
+   * Reproject source image onto target WCS grid pixel-by-pixel using bilinear interpolation,
+   * squared-weight variance propagation (never zero uncertainty), explicit out-of-bounds NaN masking,
+   * NaN stencil weight renormalization, and conservative bitwise-OR DQ flag propagation.
+   *
+   * Policies:
+   * - Coordinate mapping: (x, y)_target -> (RA, Dec) via targetWcs -> (sx, sy)_source via sourceFits.wcs.
+   * - Boundaries: Pixels with non-finite (sx, sy) or outside [0, srcWidth - 1] x [0, srcHeight - 1]
+   *   are never extrapolated; flux = NaN, variance = NaN, flags = 0.
+   * - Flux interpolation: I_out = sum_{ab: finite} (w_ab * I_ab) / W_valid; NaN if W_valid == 0.
+   * - Variance propagation: Var_out = max(1e-12, sum_{ab: finite} (w_ab^2 * V_ab) / W_valid^2),
+   *   where missing variance extension or non-finite pixel variance uses max(1e-12, robustNoise^2).
+   * - Conservative DQ propagation: Bitwise OR across all 2x2 stencil pixels with weight w_ab > 1e-7.
+   */
+  public static reprojectPixelByPixel(
+    sourceFits: FITSImageData,
+    targetWcs: WCSParams,
+    outWidth: number,
+    outHeight: number
+  ): PixelReprojectionResult {
+    const t0 = performance.now();
+    const grid = WCS.getReprojectionGrid(targetWcs, sourceFits.wcs, outWidth, outHeight);
+
+    const srcW = sourceFits.width;
+    const srcH = sourceFits.height;
+    const srcData = sourceFits.data;
+    const srcVar = sourceFits.variance;
+    const srcFlags = sourceFits.flags;
+    const fallbackVar = this.resolveFallbackVariance(sourceFits);
+
+    const total = outWidth * outHeight;
+    const alignedData = new Float32Array(total);
+    const alignedVariance = new Float32Array(total);
+    const alignedFlags = srcFlags ? new Int32Array(total) : null;
+
+    for (let idx = 0; idx < total; idx++) {
+      const sx = grid.srcX[idx];
+      const sy = grid.srcY[idx];
+
+      if (
+        !Number.isFinite(sx) ||
+        !Number.isFinite(sy) ||
+        sx < 0 ||
+        sx > srcW - 1 ||
+        sy < 0 ||
+        sy > srcH - 1
+      ) {
+        alignedData[idx] = NaN;
+        alignedVariance[idx] = NaN;
+        continue;
+      }
+
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(x0 + 1, srcW - 1);
+      const y1 = Math.min(y0 + 1, srcH - 1);
+
+      const fx = sx - x0;
+      const fy = sy - y0;
+
+      const w00 = (1 - fx) * (1 - fy);
+      const w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy;
+      const w11 = fx * fy;
+
+      const i00 = y0 * srcW + x0;
+      const i10 = y0 * srcW + x1;
+      const i01 = y1 * srcW + x0;
+      const i11 = y1 * srcW + x1;
+
+      if (alignedFlags && srcFlags) {
+        let dq = 0;
+        if (w00 > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= srcFlags[i00];
+        if (w10 > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= srcFlags[i10];
+        if (w01 > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= srcFlags[i01];
+        if (w11 > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= srcFlags[i11];
+        alignedFlags[idx] = dq;
+      }
+
+      const d00 = srcData[i00];
+      const d10 = srcData[i10];
+      const d01 = srcData[i01];
+      const d11 = srcData[i11];
+
+      let fluxSum = 0;
+      let validWeight = 0;
+      let varSum = 0;
+
+      if (Number.isFinite(d00)) {
+        fluxSum += d00 * w00;
+        validWeight += w00;
+        const v00 = srcVar && Number.isFinite(srcVar[i00]) && srcVar[i00] >= 0 ? srcVar[i00] : fallbackVar;
+        varSum += w00 * w00 * v00;
+      }
+      if (Number.isFinite(d10)) {
+        fluxSum += d10 * w10;
+        validWeight += w10;
+        const v10 = srcVar && Number.isFinite(srcVar[i10]) && srcVar[i10] >= 0 ? srcVar[i10] : fallbackVar;
+        varSum += w10 * w10 * v10;
+      }
+      if (Number.isFinite(d01)) {
+        fluxSum += d01 * w01;
+        validWeight += w01;
+        const v01 = srcVar && Number.isFinite(srcVar[i01]) && srcVar[i01] >= 0 ? srcVar[i01] : fallbackVar;
+        varSum += w01 * w01 * v01;
+      }
+      if (Number.isFinite(d11)) {
+        fluxSum += d11 * w11;
+        validWeight += w11;
+        const v11 = srcVar && Number.isFinite(srcVar[i11]) && srcVar[i11] >= 0 ? srcVar[i11] : fallbackVar;
+        varSum += w11 * w11 * v11;
+      }
+
+      if (validWeight > 0) {
+        alignedData[idx] = fluxSum / validWeight;
+        alignedVariance[idx] = Math.max(MIN_POSITIVE_VARIANCE, varSum / (validWeight * validWeight));
+      } else {
+        alignedData[idx] = NaN;
+        alignedVariance[idx] = NaN;
+      }
+    }
+
+    const runtimeMs = Number((performance.now() - t0).toFixed(4));
+    return {
+      alignedData,
+      alignedVariance,
+      alignedFlags,
+      grid,
+      runtimeMs,
     };
   }
 
@@ -211,37 +570,38 @@ export class ScientificPipeline {
         const srcX = x + dx;
         const srcY = y + dy;
 
+        if (!Number.isFinite(srcX) || !Number.isFinite(srcY) || srcX < 0 || srcX > width - 1 || srcY < 0 || srcY > height - 1) {
+          output[y * width + x] = NaN;
+          continue;
+        }
+
         const x0 = Math.floor(srcX);
         const y0 = Math.floor(srcY);
-        const x1 = x0 + 1;
-        const y1 = y0 + 1;
+        const x1 = Math.min(x0 + 1, width - 1);
+        const y1 = Math.min(y0 + 1, height - 1);
 
-        if (x0 >= 0 && x1 < width && y0 >= 0 && y1 < height) {
-          const fx = srcX - x0;
-          const fy = srcY - y0;
+        const fx = srcX - x0;
+        const fy = srcY - y0;
 
-          const w00 = (1 - fx) * (1 - fy);
-          const w10 = fx * (1 - fy);
-          const w01 = (1 - fx) * fy;
-          const w11 = fx * fy;
+        const w00 = (1 - fx) * (1 - fy);
+        const w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy;
+        const w11 = fx * fy;
 
-          const v00 = data[y0 * width + x0];
-          const v10 = data[y0 * width + x1];
-          const v01 = data[y1 * width + x0];
-          const v11 = data[y1 * width + x1];
+        const v00 = data[y0 * width + x0];
+        const v10 = data[y0 * width + x1];
+        const v01 = data[y1 * width + x0];
+        const v11 = data[y1 * width + x1];
 
-          let weightedSum = 0;
-          let weightTotal = 0;
+        let weightedSum = 0;
+        let weightTotal = 0;
 
-          if (Number.isFinite(v00)) { weightedSum += v00 * w00; weightTotal += w00; }
-          if (Number.isFinite(v10)) { weightedSum += v10 * w10; weightTotal += w10; }
-          if (Number.isFinite(v01)) { weightedSum += v01 * w01; weightTotal += w01; }
-          if (Number.isFinite(v11)) { weightedSum += v11 * w11; weightTotal += w11; }
+        if (Number.isFinite(v00)) { weightedSum += v00 * w00; weightTotal += w00; }
+        if (Number.isFinite(v10)) { weightedSum += v10 * w10; weightTotal += w10; }
+        if (Number.isFinite(v01)) { weightedSum += v01 * w01; weightTotal += w01; }
+        if (Number.isFinite(v11)) { weightedSum += v11 * w11; weightTotal += w11; }
 
-          output[y * width + x] = weightTotal > 0 ? weightedSum / weightTotal : NaN;
-        } else {
-          output[y * width + x] = NaN;
-        }
+        output[y * width + x] = weightTotal > 0 ? weightedSum / weightTotal : NaN;
       }
     }
     return output;
@@ -270,58 +630,105 @@ export class ScientificPipeline {
         const srcX = x + dx;
         const srcY = y + dy;
 
+        if (!Number.isFinite(srcX) || !Number.isFinite(srcY) || srcX < 0 || srcX > width - 1 || srcY < 0 || srcY > height - 1) {
+          output[y * width + x] = NaN;
+          continue;
+        }
+
         const x0 = Math.floor(srcX);
         const y0 = Math.floor(srcY);
-        const x1 = x0 + 1;
-        const y1 = y0 + 1;
+        const x1 = Math.min(x0 + 1, width - 1);
+        const y1 = Math.min(y0 + 1, height - 1);
 
-        if (x0 >= 0 && x1 < width && y0 >= 0 && y1 < height) {
-          const fx = srcX - x0;
-          const fy = srcY - y0;
+        const fx = srcX - x0;
+        const fy = srcY - y0;
 
-          const w00 = (1 - fx) * (1 - fy);
-          const w10 = fx * (1 - fy);
-          const w01 = (1 - fx) * fy;
-          const w11 = fx * fy;
+        const w00 = (1 - fx) * (1 - fy);
+        const w10 = fx * (1 - fy);
+        const w01 = (1 - fx) * fy;
+        const w11 = fx * fy;
 
-          const v00 = varData[y0 * width + x0];
-          const v10 = varData[y0 * width + x1];
-          const v01 = varData[y1 * width + x0];
-          const v11 = varData[y1 * width + x1];
+        const v00 = varData[y0 * width + x0];
+        const v10 = varData[y0 * width + x1];
+        const v01 = varData[y1 * width + x0];
+        const v11 = varData[y1 * width + x1];
 
-          let weightedVarSum = 0;
-          let weightTotal = 0;
+        let weightedVarSum = 0;
+        let weightTotal = 0;
 
-          if (Number.isFinite(v00) && v00 >= 0) {
-            weightedVarSum += (w00 * w00) * v00;
-            weightTotal += w00;
-          }
-          if (Number.isFinite(v10) && v10 >= 0) {
-            weightedVarSum += (w10 * w10) * v10;
-            weightTotal += w10;
-          }
-          if (Number.isFinite(v01) && v01 >= 0) {
-            weightedVarSum += (w01 * w01) * v01;
-            weightTotal += w01;
-          }
-          if (Number.isFinite(v11) && v11 >= 0) {
-            weightedVarSum += (w11 * w11) * v11;
-            weightTotal += w11;
-          }
-
-          output[y * width + x] = weightTotal > 0
-            ? Math.max(1e-12, weightedVarSum / (weightTotal * weightTotal))
-            : NaN;
-        } else {
-          output[y * width + x] = NaN;
+        if (Number.isFinite(v00) && v00 >= 0) {
+          weightedVarSum += (w00 * w00) * v00;
+          weightTotal += w00;
         }
+        if (Number.isFinite(v10) && v10 >= 0) {
+          weightedVarSum += (w10 * w10) * v10;
+          weightTotal += w10;
+        }
+        if (Number.isFinite(v01) && v01 >= 0) {
+          weightedVarSum += (w01 * w01) * v01;
+          weightTotal += w01;
+        }
+        if (Number.isFinite(v11) && v11 >= 0) {
+          weightedVarSum += (w11 * w11) * v11;
+          weightTotal += w11;
+        }
+
+        output[y * width + x] = weightTotal > 0
+          ? Math.max(MIN_POSITIVE_VARIANCE, weightedVarSum / (weightTotal * weightTotal))
+          : NaN;
       }
     }
     return output;
   }
 
   /**
-   * Execute full difference image generation: D = I2 - I1, variance propagation, candidate detection
+   * Resample DQ flag mask under rigid sub-pixel translation using conservative bitwise OR
+   * across all 2x2 stencil pixels with weight w > 1e-7.
+   */
+  public static resampleFlagsConservative(
+    flagsData: Int32Array | null,
+    width: number,
+    height: number,
+    dx: number,
+    dy: number
+  ): Int32Array | null {
+    if (!flagsData) return null;
+    if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) {
+      return new Int32Array(flagsData);
+    }
+
+    const output = new Int32Array(width * height);
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const srcX = x + dx;
+        const srcY = y + dy;
+
+        if (!Number.isFinite(srcX) || !Number.isFinite(srcY) || srcX < 0 || srcX > width - 1 || srcY < 0 || srcY > height - 1) {
+          output[y * width + x] = 0;
+          continue;
+        }
+
+        const x0 = Math.floor(srcX);
+        const y0 = Math.floor(srcY);
+        const x1 = Math.min(x0 + 1, width - 1);
+        const y1 = Math.min(y0 + 1, height - 1);
+        const fx = srcX - x0;
+        const fy = srcY - y0;
+
+        let dq = 0;
+        if ((1 - fx) * (1 - fy) > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= flagsData[y0 * width + x0];
+        if (fx * (1 - fy) > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= flagsData[y0 * width + x1];
+        if ((1 - fx) * fy > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= flagsData[y1 * width + x0];
+        if (fx * fy > CONSERVATIVE_DQ_WEIGHT_THRESHOLD) dq |= flagsData[y1 * width + x1];
+        output[y * width + x] = dq;
+      }
+    }
+    return output;
+  }
+
+  /**
+   * Execute full difference image generation: D = I2 - I1_reprojected, variance propagation,
+   * conservative DQ propagation, candidate detection, and evidence synthesis.
    */
   public static processDifference(
     obs1: SPHERExObservation,
@@ -329,6 +736,7 @@ export class ScientificPipeline {
     fits1: FITSImageData,
     fits2: FITSImageData
   ): DifferenceOutput {
+    const t0 = performance.now();
     const width = fits2.width;
     const height = fits2.height;
     const size = width * height;
@@ -336,15 +744,24 @@ export class ScientificPipeline {
     const compatibility = this.checkCompatibility(obs1, obs2, fits1, fits2);
     const reg = this.computeRegistration(fits1, fits2);
 
-    // Resample Epoch 1 onto Epoch 2 grid
-    const alignedEpoch1 = this.resampleBilinear(fits1.data, width, height, reg.dx, reg.dy);
+    const fallbackVar1 = this.resolveFallbackVariance(fits1);
+    const fallbackVar2 = this.resolveFallbackVariance(fits2);
 
-    // Variance maps with rigorous squared-weight propagation under translation
-    const var1 = fits1.variance ?? new Float32Array(size).fill(fits1.stats.robustNoise ** 2);
-    const var2 = fits2.variance ?? new Float32Array(size).fill(fits2.stats.robustNoise ** 2);
-    const alignedVar1 = fits1.variance
-      ? this.resampleVarianceBilinear(fits1.variance, width, height, reg.dx, reg.dy)
-      : var1;
+    let alignedEpoch1: Float32Array;
+    let alignedVar1: Float32Array;
+    let alignedFlags1: Int32Array | null;
+
+    if (reg.reprojectionMode === 'PIXEL_BY_PIXEL_WCS') {
+      const reproj = this.reprojectPixelByPixel(fits1, fits2.wcs, width, height);
+      alignedEpoch1 = reproj.alignedData;
+      alignedVar1 = reproj.alignedVariance;
+      alignedFlags1 = reproj.alignedFlags;
+    } else {
+      alignedEpoch1 = this.resampleBilinear(fits1.data, width, height, reg.dx, reg.dy);
+      const var1 = fits1.variance ?? new Float32Array(size).fill(fallbackVar1);
+      alignedVar1 = this.resampleVarianceBilinear(var1, width, height, reg.dx, reg.dy);
+      alignedFlags1 = this.resampleFlagsConservative(fits1.flags, width, height, reg.dx, reg.dy);
+    }
 
     const diff = new Float32Array(size);
     const variance = new Float32Array(size);
@@ -359,19 +776,20 @@ export class ScientificPipeline {
       const v2 = fits2.data[i];
       const v1 = alignedEpoch1[i];
 
+      const rawV2 = fits2.variance ? fits2.variance[i] : fallbackVar2;
+      const v2_unc = Number.isFinite(rawV2) && rawV2 > 0 ? rawV2 : fallbackVar2;
+
       if (Number.isFinite(v2) && Number.isFinite(v1)) {
         const d = v2 - v1;
         diff[i] = d;
 
-        // Independent uncertainty propagation: sigma_D^2 = sigma_1^2 + sigma_2^2
-        const v1_unc = Number.isFinite(alignedVar1[i]) ? alignedVar1[i] : fits1.stats.robustNoise ** 2;
-        const v2_unc = Number.isFinite(var2[i]) ? var2[i] : fits2.stats.robustNoise ** 2;
-        const varD = Math.max(1e-12, v1_unc + v2_unc);
+        // Independent uncertainty propagation: sigma_D^2 = sigma_1,prop^2 + sigma_2^2
+        const v1_unc = Number.isFinite(alignedVar1[i]) && alignedVar1[i] > 0 ? alignedVar1[i] : fallbackVar1;
+        const varD = Math.max(MIN_POSITIVE_VARIANCE, v1_unc + v2_unc);
         variance[i] = varD;
 
         const sigmaD = Math.sqrt(varD);
-        const s = sigmaD > 0 ? d / sigmaD : 0;
-        significance[i] = s;
+        significance[i] = d / sigmaD;
 
         if (d < minD) minD = d;
         if (d > maxD) maxD = d;
@@ -379,7 +797,7 @@ export class ScientificPipeline {
         validDiffCount++;
       } else {
         diff[i] = NaN;
-        variance[i] = Math.max(1e-12, (fits1.stats.robustNoise ** 2) + (fits2.stats.robustNoise ** 2));
+        variance[i] = Math.max(MIN_POSITIVE_VARIANCE, fallbackVar1 + v2_unc);
         significance[i] = 0;
       }
     }
@@ -408,9 +826,9 @@ export class ScientificPipeline {
       diff,
       variance,
       significance,
-      fits1.data,
+      alignedEpoch1,
       fits2.data,
-      fits1.flags,
+      alignedFlags1 ?? fits1.flags,
       fits2.flags,
       width,
       height,
@@ -420,6 +838,7 @@ export class ScientificPipeline {
     );
 
     const evidence = this.evaluateEvidence(candidates, compatibility, obs1, obs2, noiseSigma);
+    const totalRegRuntimeMs = Number((performance.now() - t0).toFixed(4));
 
     return {
       width,
@@ -428,8 +847,8 @@ export class ScientificPipeline {
       variance,
       significance,
       stats: {
-        min: minD,
-        max: maxD,
+        min: Number.isFinite(minD) ? minD : 0,
+        max: Number.isFinite(maxD) ? maxD : 0,
         std: stdD,
         noiseSigma: noiseSigma > 0 ? noiseSigma : stdD,
       },
@@ -438,6 +857,10 @@ export class ScientificPipeline {
         dyPixels: reg.dy,
         method: reg.method,
         quality: reg.quality,
+        runtimeMs: totalRegRuntimeMs,
+        maxSpatialWarpPixels: reg.maxSpatialWarpPixels,
+        reprojectionMode: reg.reprojectionMode,
+        dqPropagationPolicy: reg.dqPropagationPolicy,
       },
       compatibility,
       candidates,
@@ -709,7 +1132,7 @@ export class ScientificPipeline {
           if (dist <= rAp) {
             if (Number.isFinite(dVal)) {
               sumDiff += dVal;
-              sumVar += Number.isFinite(vVal) ? vVal : 0;
+              sumVar += Number.isFinite(vVal) && vVal > 0 ? vVal : MIN_POSITIVE_VARIANCE;
               if (Number.isFinite(d1)) sum1 += d1;
               if (Number.isFinite(d2)) sum2 += d2;
               apPixels++;
@@ -719,7 +1142,7 @@ export class ScientificPipeline {
               bkgDiffValues.push(dVal);
               if (Number.isFinite(d1)) bkg1Values.push(d1);
               if (Number.isFinite(d2)) bkg2Values.push(d2);
-              if (Number.isFinite(vVal)) bkgVarSum += vVal;
+              bkgVarSum += Number.isFinite(vVal) && vVal > 0 ? vVal : MIN_POSITIVE_VARIANCE;
               bkgPixels++;
             }
           }
@@ -920,6 +1343,10 @@ export class ScientificPipeline {
       wavelengthDiffUm: number;
       timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
       timeBaselineHuman?: string;
+      integrationDuration1Sec?: number;
+      integrationDuration2Sec?: number;
+      startToStartCadenceSec?: number;
+      interExposureGapSec?: number;
     },
     obs1: SPHERExObservation,
     obs2: SPHERExObservation,
@@ -931,11 +1358,15 @@ export class ScientificPipeline {
         maxSignificance: 0,
         candidateCount: 0,
         timeBaselineDays: compatibility.timeBaselineDays,
+        integrationDuration1Sec: compatibility.integrationDuration1Sec,
+        integrationDuration2Sec: compatibility.integrationDuration2Sec,
+        startToStartCadenceSec: compatibility.startToStartCadenceSec,
+        interExposureGapSec: compatibility.interExposureGapSec,
         summaryProse: 'Quantitative comparison between these observations cannot be scientifically justified.',
         statisticalJustification: compatibility.reason ?? 'Incompatible observation parameters.',
         whatWeKnow: [
-          `Epoch 1 observed at MJD ${obs1.t_min.toFixed(4)}.`,
-          `Epoch 2 observed at MJD ${obs2.t_min.toFixed(4)}.`,
+          `Exposure 1 observed at MJD ${obs1.t_min.toFixed(6)}${obs1.date_obs ? ` (${obs1.date_obs})` : ''}.`,
+          `Exposure 2 observed at MJD ${obs2.t_min.toFixed(6)}${obs2.date_obs ? ` (${obs2.date_obs})` : ''}.`,
           `Wavelength difference is ${compatibility.wavelengthDiffUm.toFixed(2)} µm.`,
         ],
         whatWeDontKnow: [
@@ -957,8 +1388,8 @@ export class ScientificPipeline {
     const baselineText =
       compatibility.timeBaselineHuman ||
       (compatibility.timeBaselineDays < 0.04167
-        ? `${(compatibility.timeBaselineDays * 1440).toFixed(1)} minutes (intra-orbit scan)`
-        : `${compatibility.timeBaselineDays.toFixed(1)} days`);
+        ? `${(compatibility.timeBaselineDays * 1440).toFixed(2)} minutes start-to-start cadence (intra-orbit scan)`
+        : `${compatibility.timeBaselineDays.toFixed(1)} days start-to-start cadence`);
 
     if (movingCandidates.length > 0) {
       const topMove = movingCandidates[0];
@@ -966,13 +1397,13 @@ export class ScientificPipeline {
       const speed = topMove.motion?.speedArcsecPerDay ? `${topMove.motion.speedArcsecPerDay.toFixed(2)}"/day` : 'measurable velocity';
       const sep = topMove.motion?.separationArcsec ? `${topMove.motion.separationArcsec.toFixed(1)}"` : 'significant';
       summaryProse = `Moving object candidate detected with angular displacement of ${sep} across a ${baselineText} (speed ~${speed}).`;
-      statisticalJustification = `Complementary Epoch 1 / Epoch 2 difference dipole exhibits spatially displaced point-like morphology consistent with an asteroid or high-proper-motion source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? 'N/A'}°).`;
+      statisticalJustification = `Complementary Exposure 1 / Exposure 2 difference dipole exhibits spatially displaced point-like morphology consistent with a candidate moving source (PA: ${topMove.motion?.positionAngleDeg?.toFixed(1) ?? 'N/A'}°).`;
     } else if (cleanCandidates.length > 0) {
       const top = cleanCandidates[0];
       if (Math.abs(top.peakSignificance) >= 4.0) {
         classification = 'SIGNIFICANT CHANGE DETECTED';
-        summaryProse = `Statistically significant flux change detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${baselineText}.`;
-        statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} (S/N = ${top.peakSignificance.toFixed(1)}σ, heuristic artifact index = ${top.artifactScore.toFixed(2)}/1.00).`;
+        summaryProse = `Statistically significant flux residual detected with peak S/N of ${Math.abs(top.peakSignificance).toFixed(1)}σ across a ${baselineText}.`;
+        statisticalJustification = `Top candidate ${top.id} shows residual amplitude ΔF = ${top.deltaFlux.toFixed(3)} ± ${top.deltaFluxUncertainty.toFixed(3)} MJy/sr (S/N = ${top.peakSignificance.toFixed(1)}σ, heuristic artifact index = ${top.artifactScore.toFixed(2)}/1.00).`;
       } else {
         classification = 'POSSIBLE CHANGE — NEEDS REVIEW';
         summaryProse = `Marginal flux residual detected at S/N = ${top.peakSignificance.toFixed(1)}σ. Additional epochs are required to verify authenticity.`;
@@ -996,15 +1427,35 @@ export class ScientificPipeline {
         // Pure dipole/astrometric pointing jitter with stable aperture flux
         classification = 'NO SIGNIFICANT CHANGE DETECTED';
         summaryProse = `Sub-pixel pointing jitter residuals detected, but net aperture flux is photometrically stable within noise across a ${baselineText}.`;
-        statisticalJustification = `Residual dipole is consistent with sub-pixel pointing jitter. Net aperture change ΔF = ${topArt.deltaFlux.toFixed(3)} ± ${topArt.deltaFluxUncertainty.toFixed(3)} is consistent with steady state.`;
+        statisticalJustification = `Residual dipole is consistent with sub-pixel pointing jitter. Net aperture change ΔF = ${topArt.deltaFlux.toFixed(3)} ± ${topArt.deltaFluxUncertainty.toFixed(3)} MJy/sr is consistent with steady state.`;
       }
     }
 
     const whatWeKnow = [
-      `Compared SPHEREx observation ${obs1.obs_id} against ${obs2.obs_id}.`,
-      `Temporal baseline spans ${baselineText}.`,
-      `Difference image noise floor: σ_diff = ${noiseSigma.toFixed(4)} MJy/sr.`,
+      `Compared SPHEREx exposure ${obs1.obs_id} against ${obs2.obs_id}.`,
+      `Start-to-start cadence (ΔDATE-OBS): ${
+        compatibility.startToStartCadenceSec !== undefined
+          ? `${compatibility.startToStartCadenceSec.toFixed(3)} s (${(compatibility.startToStartCadenceSec / 60).toFixed(5)} min)`
+          : baselineText
+      }.`,
     ];
+
+    if (
+      compatibility.integrationDuration1Sec !== undefined &&
+      compatibility.integrationDuration2Sec !== undefined
+    ) {
+      whatWeKnow.push(
+        `Integration durations (DATE-END - DATE-OBS): Exp 1 = ${compatibility.integrationDuration1Sec.toFixed(3)} s, Exp 2 = ${compatibility.integrationDuration2Sec.toFixed(3)} s.`
+      );
+    }
+
+    if (compatibility.interExposureGapSec !== undefined) {
+      whatWeKnow.push(
+        `Inter-exposure endpoint gap (next DATE-OBS - prev DATE-END): ${compatibility.interExposureGapSec.toFixed(3)} s.`
+      );
+    }
+
+    whatWeKnow.push(`Difference image noise floor: σ_diff = ${noiseSigma.toFixed(4)} MJy/sr.`);
 
     if (movingCandidates.length > 0) {
       const topMove = movingCandidates[0];
@@ -1018,14 +1469,24 @@ export class ScientificPipeline {
 
     const whatWeDontKnow = [
       'Single-difference pair cannot distinguish between a one-off transient event and a periodic variable without additional cadence epochs.',
-      'Astrometric precision is limited by the ~6.2 arcsecond SPHEREx native pixel scale.',
+      'Astrometric precision is limited by the ~6.15 arcsecond SPHEREx native pixel scale.',
     ];
+
+    if (compatibility.timeBaselineType === 'INTRA_VISIT_EXPOSURES') {
+      whatWeDontKnow.unshift(
+        'Both exposures belong to the same continuous flight slew/visit (~2.15 min per step); this intra-visit comparison does not constitute a multi-month survey baseline.'
+      );
+    }
 
     return {
       classification,
       maxSignificance: candidates.length > 0 ? candidates[0].peakSignificance : 0,
       candidateCount: cleanCandidates.length,
       timeBaselineDays: compatibility.timeBaselineDays,
+      integrationDuration1Sec: compatibility.integrationDuration1Sec,
+      integrationDuration2Sec: compatibility.integrationDuration2Sec,
+      startToStartCadenceSec: compatibility.startToStartCadenceSec,
+      interExposureGapSec: compatibility.interExposureGapSec,
       summaryProse,
       statisticalJustification,
       whatWeKnow,

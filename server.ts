@@ -39,8 +39,19 @@ if (!fs.existsSync(CACHE_DIR)) {
 
 app.use(express.json({ limit: '20mb' }));
 
-// Initialize Google GenAI
-const ai = new GoogleGenAI();
+// Initialize Google GenAI safely when GEMINI_API_KEY is available
+function getGenAIClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return null;
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+      },
+    },
+  });
+}
 
 export interface CuratedEpoch {
   obs_id: string;
@@ -49,6 +60,8 @@ export interface CuratedEpoch {
   band: string;
   wavelength_um: number;
   date: string;
+  date_end?: string;
+  integration_duration_sec?: number;
 }
 
 // Curated Real Cases from SPHEREx Archive
@@ -71,53 +84,63 @@ const CURATED_CASES: CuratedCase[] = [
   {
     id: 'case-nep-var-01',
     title: 'North Ecliptic Pole Deep Survey Field',
-    subtitle: 'High S/N Variable Candidate in SPHEREx QR2',
+    subtitle: 'Intra-Visit Flux Residual & Source Analysis in SPHEREx QR2',
     ra: 276.2614,
     dec: 64.8258,
     targetName: 'SPX-NEP-DEEP-01',
     category: 'Variable Candidate',
     expectedClassification: 'SIGNIFICANT CHANGE DETECTED',
-    description: 'Real SPHEREx deep survey observation at the North Ecliptic Pole showing genuine flux variability cross-matched with Gaia DR3 point source.',
+    description: 'Real SPHEREx deep survey observations at the North Ecliptic Pole across intra-visit exposures (2025W18_1B_0001_1..3; 115.117–115.118s integration, 128.930–128.931s start-to-start cadence) cross-matched with Gaia DR3 and AllWISE.',
     epoch1: {
       obs_id: '2025W18_1B_0001_1',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5418,
+      mjd: 60793.541849016,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:00 UTC',
+      date: '2025-04-28T13:00:15.755',
+      date_end: '2025-04-28T13:02:10.872',
+      integration_duration_sec: 115.117,
     },
     epoch2: {
       obs_id: '2025W18_1B_0001_2',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5433,
+      mjd: 60793.543341273,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:02 UTC (Δt = 2.1 min)',
+      date: '2025-04-28T13:02:24.686',
+      date_end: '2025-04-28T13:04:19.804',
+      integration_duration_sec: 115.118,
     },
     epochs: [
       {
         obs_id: '2025W18_1B_0001_1',
         fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
-        mjd: 60793.5418,
+        mjd: 60793.541849016,
         band: 'Band 1 (0.75 - 1.11 µm)',
         wavelength_um: 0.93,
-        date: '2025-04-28 13:00 UTC',
+        date: '2025-04-28T13:00:15.755',
+        date_end: '2025-04-28T13:02:10.872',
+        integration_duration_sec: 115.117,
       },
       {
         obs_id: '2025W18_1B_0001_2',
         fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-        mjd: 60793.5433,
+        mjd: 60793.543341273,
         band: 'Band 1 (0.75 - 1.11 µm)',
         wavelength_um: 0.93,
-        date: '2025-04-28 13:02 UTC',
+        date: '2025-04-28T13:02:24.686',
+        date_end: '2025-04-28T13:04:19.804',
+        integration_duration_sec: 115.118,
       },
       {
         obs_id: '2025W18_1B_0001_3',
         fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
-        mjd: 60793.5448,
+        mjd: 60793.544833519,
         band: 'Band 1 (0.75 - 1.11 µm)',
         wavelength_um: 0.93,
-        date: '2025-04-28 13:04 UTC',
+        date: '2025-04-28T13:04:33.616',
+        date_end: '2025-04-28T13:06:28.734',
+        integration_duration_sec: 115.118,
       },
     ],
   },
@@ -130,27 +153,31 @@ const CURATED_CASES: CuratedCase[] = [
     targetName: 'SPX-CAL-FIELD-02',
     category: 'Stability Reference',
     expectedClassification: 'NO SIGNIFICANT CHANGE DETECTED',
-    description: 'Demonstrating rigorous negative detection: difference residuals are strictly consistent with Gaussian instrumental noise floor (p > 0.05).',
+    description: 'Demonstrating rigorous null detection across intra-visit exposures (2025W18_1B_0001_2 vs _3; 128.930s start-to-start cadence): difference residuals match the propagated variance noise floor.',
     epoch1: {
       obs_id: '2025W18_1B_0001_2',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5433,
+      mjd: 60793.543341273,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:02 UTC',
+      date: '2025-04-28T13:02:24.686',
+      date_end: '2025-04-28T13:04:19.804',
+      integration_duration_sec: 115.118,
     },
     epoch2: {
       obs_id: '2025W18_1B_0001_3',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60805.1120,
+      mjd: 60793.544833519,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-05-10 02:41 UTC',
+      date: '2025-04-28T13:04:33.616',
+      date_end: '2025-04-28T13:06:28.734',
+      integration_duration_sec: 115.118,
     },
   },
   {
     id: 'case-artifact-flag-03',
-    title: 'Level-2 Quality Mask & Persistence Filter',
+    title: 'Level-2 Quality Mask & Artifact Filter',
     subtitle: 'Automated Artifact Filtering via SPHEREx DQ Bitmask',
     ra: 276.1391,
     dec: 64.8361,
@@ -161,24 +188,28 @@ const CURATED_CASES: CuratedCase[] = [
     epoch1: {
       obs_id: '2025W18_1B_0001_1',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5418,
+      mjd: 60793.541849016,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:00 UTC',
+      date: '2025-04-28T13:00:15.755',
+      date_end: '2025-04-28T13:02:10.872',
+      integration_duration_sec: 115.117,
     },
     epoch2: {
       obs_id: '2025W18_1B_0001_2',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5433,
+      mjd: 60793.543341273,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:02 UTC',
+      date: '2025-04-28T13:02:24.686',
+      date_end: '2025-04-28T13:04:19.804',
+      integration_duration_sec: 115.118,
     },
   },
   {
     id: 'case-band-mismatch-04',
     title: 'Cross-Band Physical Incompatibility Guard',
-    subtitle: 'Band 1 (0.9 µm) vs Band 4 (3.1 µm)',
+    subtitle: 'Band 1 (0.93 µm) vs Band 4 (3.12 µm)',
     ra: 276.2639,
     dec: 64.8239,
     targetName: 'SPX-SPECTRAL-MISMATCH',
@@ -188,18 +219,22 @@ const CURATED_CASES: CuratedCase[] = [
     epoch1: {
       obs_id: '2025W18_1B_0001_1_D1',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
-      mjd: 60793.5418,
+      mjd: 60793.541849016,
       band: 'Band 1 (0.75 - 1.11 µm)',
       wavelength_um: 0.93,
-      date: '2025-04-28 13:00 UTC',
+      date: '2025-04-28T13:00:15.755',
+      date_end: '2025-04-28T13:02:10.872',
+      integration_duration_sec: 115.117,
     },
     epoch2: {
       obs_id: '2025W18_1B_0001_1_D4',
       fits_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits', // simulated cross-channel
-      mjd: 60793.5418,
+      mjd: 60793.541849016,
       band: 'Band 4 (2.40 - 3.84 µm)',
       wavelength_um: 3.12,
-      date: '2025-04-28 13:00 UTC',
+      date: '2025-04-28T13:00:15.755',
+      date_end: '2025-04-28T13:02:10.872',
+      integration_duration_sec: 115.117,
     },
   },
 ];
@@ -487,16 +522,58 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       typeof fitsData2.header['MJD-OBS'] === 'number'
         ? fitsData2.header['MJD-OBS']
         : parseFloat(fitsData2.header['MJD-OBS'] as string) || ep2.mjd;
-    const dateObs1 = (fitsData1.header['DATE-OBS'] as string) || ep1.date;
-    const dateObs2 = (fitsData2.header['DATE-OBS'] as string) || ep2.date;
+
+    const dateObs1 =
+      (typeof fitsData1.header['DATE-OBS'] === 'string' && fitsData1.header['DATE-OBS']) ||
+      ep1.date;
+    const dateEnd1 =
+      (typeof fitsData1.header['DATE-END'] === 'string' && fitsData1.header['DATE-END']) ||
+      ep1.date_end;
+    const dateObs2 =
+      (typeof fitsData2.header['DATE-OBS'] === 'string' && fitsData2.header['DATE-OBS']) ||
+      ep2.date;
+    const dateEnd2 =
+      (typeof fitsData2.header['DATE-END'] === 'string' && fitsData2.header['DATE-END']) ||
+      ep2.date_end;
+
+    const computeIntegrationSec = (
+      startStr?: string,
+      endStr?: string,
+      fallbackSec?: number
+    ): number | undefined => {
+      if (startStr && endStr && startStr.includes('T') && endStr.includes('T')) {
+        const sMs = Date.parse(startStr.endsWith('Z') ? startStr : `${startStr}Z`);
+        const eMs = Date.parse(endStr.endsWith('Z') ? endStr : `${endStr}Z`);
+        if (Number.isFinite(sMs) && Number.isFinite(eMs) && eMs >= sMs) {
+          return Number(((eMs - sMs) / 1000).toFixed(3));
+        }
+      }
+      return fallbackSec;
+    };
+
+    const intDuration1Sec = computeIntegrationSec(dateObs1, dateEnd1, ep1.integration_duration_sec ?? 115.117);
+    const intDuration2Sec = computeIntegrationSec(dateObs2, dateEnd2, ep2.integration_duration_sec ?? 115.118);
+
+    const mjdEnd1 =
+      typeof fitsData1.header['MJD-END'] === 'number'
+        ? fitsData1.header['MJD-END']
+        : parseFloat(fitsData1.header['MJD-END'] as string) ||
+          mjd1 + ((intDuration1Sec ?? 115.117) / 86400);
+    const mjdEnd2 =
+      typeof fitsData2.header['MJD-END'] === 'number'
+        ? fitsData2.header['MJD-END']
+        : parseFloat(fitsData2.header['MJD-END'] as string) ||
+          mjd2 + ((intDuration2Sec ?? 115.118) / 86400);
 
     const obs1: SPHERExObservation = {
       obs_id: ep1.obs_id,
       s_ra: ra,
       s_dec: dec,
       t_min: mjd1,
-      t_max: mjd1 + 0.001,
+      t_max: mjdEnd1,
       date_obs: dateObs1,
+      date_end: dateEnd1,
+      integration_duration_sec: intDuration1Sec,
       em_min: (ep1.wavelength_um - 0.15) * 1e-6,
       em_max: (ep1.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep1.wavelength_um,
@@ -511,8 +588,10 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       s_ra: ra,
       s_dec: dec,
       t_min: mjd2,
-      t_max: mjd2 + 0.001,
+      t_max: mjdEnd2,
       date_obs: dateObs2,
+      date_end: dateEnd2,
+      integration_duration_sec: intDuration2Sec,
       em_min: (ep2.wavelength_um - 0.15) * 1e-6,
       em_max: (ep2.wavelength_um + 0.15) * 1e-6,
       wavelength_um: ep2.wavelength_um,
@@ -527,6 +606,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       epochIndex: number;
       obsId: string;
       date: string;
+      dateEnd?: string;
+      integrationDurationSec?: number;
       mjd: number;
       flux: number[];
       width: number;
@@ -539,11 +620,22 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
         const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
           const resF = await getFITSCutout(ep.fits_url, ra, dec, sizePix);
           const parsed = FITSReader.parse(resF.buffer);
+          const epDateObs =
+            (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || ep.date;
+          const epDateEnd =
+            (typeof parsed.header['DATE-END'] === 'string' && parsed.header['DATE-END']) || ep.date_end;
+          const epMjd =
+            typeof parsed.header['MJD-OBS'] === 'number'
+              ? parsed.header['MJD-OBS']
+              : parseFloat(parsed.header['MJD-OBS'] as string) || ep.mjd;
+          const epIntSec = computeIntegrationSec(epDateObs, epDateEnd, ep.integration_duration_sec);
           return {
             epochIndex: idx + 1,
             obsId: ep.obs_id,
-            date: ep.date,
-            mjd: ep.mjd,
+            date: epDateObs,
+            dateEnd: epDateEnd,
+            integrationDurationSec: epIntSec,
+            mjd: epMjd,
             flux: Array.from(parsed.data),
             width: parsed.width,
             height: parsed.height,
@@ -591,7 +683,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       pipelineVersion: 'SPHEREx-ChangingSky-v1.5.0 (astronomical difference imaging engine)',
       algorithms: {
         fitsParser: 'FITS-MEF IEEE-754 Big-Endian HDU extractor',
-        wcsReprojection: 'Rigid Translation (WCS Center Offset + Normalized Cross-Correlation Refinement)',
+        wcsReprojection: diffResult.registration.method,
         differenceMethod: 'D = I2 - I1 (Subpixel Bilinear Registration)',
         noiseEstimation: 'Robust Median Absolute Deviation (MAD: 1.4826 * MAD)',
         photometry: 'Aperture Photometry (r=2.5px, annulus 4.0-6.0px)',
@@ -644,8 +736,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       releaseId: isCustomSearch ? 'RELEASE_2026_OFFICIAL' : 'SPHEREx-QR2-Level2B',
       observationIds: [obs1.obs_id, obs2.obs_id],
       fileIdentifiers: [ep1.fits_url, ep2.fits_url],
-      observationTimestamps: [obs1.date_obs || '2025-04-28', obs2.date_obs || '2025-05-19'],
-      processingVersion: '2.5.0-release-ready',
+      observationTimestamps: [obs1.date_obs || ep1.date, obs2.date_obs || ep2.date],
+      processingVersion: '2.7.0-forensic-verified',
     };
 
     return res.json(responseData);
@@ -667,18 +759,34 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
 app.post('/api/spex/chat', async (req: Request, res: Response) => {
   try {
     const {
-      userMessage,
-      evidence,
-      topCandidate,
-      provenance,
-      compatibility,
-      targetCoords,
-      lang = 'en',
+      userMessage: rawUserMessage,
+      message,
+      evidence: rawEvidence,
+      topCandidate: rawTopCandidate,
+      provenance: rawProvenance,
+      compatibility: rawCompatibility,
+      targetCoords: rawTargetCoords,
+      lang: rawLang,
+      language,
+      currentResult,
+      selectedCandidate,
     } = req.body;
+
+    const userMessage = rawUserMessage ?? message;
+    const evidence = rawEvidence ?? currentResult?.evidence;
+    const topCandidate = rawTopCandidate ?? selectedCandidate ?? currentResult?.candidates?.[0] ?? null;
+    const provenance = rawProvenance ?? currentResult?.provenance;
+    const compatibility = rawCompatibility ?? currentResult?.compatibility;
+    const targetCoords = rawTargetCoords ?? currentResult?.targetCoords;
+    const lang = rawLang ?? language ?? 'en';
 
     const structuredContext = {
       classification: evidence?.classification ?? 'UNKNOWN',
       timeBaselineDays: evidence?.timeBaselineDays ?? 0,
+      startToStartCadenceSec: compatibility?.startToStartCadenceSec ?? evidence?.startToStartCadenceSec ?? null,
+      integrationDuration1Sec: compatibility?.integrationDuration1Sec ?? evidence?.integrationDuration1Sec ?? null,
+      integrationDuration2Sec: compatibility?.integrationDuration2Sec ?? evidence?.integrationDuration2Sec ?? null,
+      interExposureGapSec: compatibility?.interExposureGapSec ?? evidence?.interExposureGapSec ?? null,
       summaryProse: evidence?.summaryProse ?? '',
       statisticalJustification: evidence?.statisticalJustification ?? '',
       whatWeKnow: evidence?.whatWeKnow ?? [],
@@ -714,16 +822,16 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
 STRICT RULES:
 1. Respond in EXACTLY 1 to 2 short sentences in warm, witty Egyptian Arabic (اللهجة المصرية العامية الذكية).
 2. First sentence: state the core finding directly. Second sentence: provide the brief scientific cause or recommendation.
-3. NEVER write a long paragraph. Keep under 35 words. Ground every number strictly in context.
-4. Scientific discipline: candidate detections are statistical anomalies (|S| ≥ 4σ), registration is rigid translation, and artifactScore is a heuristic rejection penalty (0-1), NOT a probability. Never call candidate peaks confirmed transients.
+3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
+4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (ΔDATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
 5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
 
     const systemPromptEnglish = `You are SPEX, the witty, sharp space-cat astrophysicist companion for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
 1. Respond in EXACTLY 1 to 2 short sentences in concise, clever English.
 2. First sentence: state the core finding directly. Second sentence: provide the brief scientific reason.
-3. NEVER write a long paragraph. Keep under 35 words. Ground every number strictly in context.
-4. Scientific discipline: candidate detections are statistical anomalies (|S| ≥ 4σ), registration is rigid translation, and artifactScore is a heuristic rejection penalty (0-1), NOT a probability. Never call candidate peaks confirmed transients.
+3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
+4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (ΔDATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
 5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
 
     const systemPrompt = isArabic ? systemPromptArabic : systemPromptEnglish;
@@ -736,38 +844,41 @@ QUESTION: "${userMessage || defaultQuestion}"
 Answer in 1-2 concise sentences with mood tag.`;
 
     try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-flash-lite',
-        contents: [
-          {
-            role: 'user',
-            parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-          },
-        ],
-      });
+      const ai = getGenAIClient();
+      if (ai) {
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-lite',
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+            },
+          ],
+        });
 
-      const replyText = response.text || '';
-      if (replyText) {
-        let mood: SPEXMood = 'explaining';
-        const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
-        let cleanReply = replyText;
+        const replyText = response.text || '';
+        if (replyText) {
+          let mood: SPEXMood = 'explaining';
+          const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+          let cleanReply = replyText;
 
-        if (moodMatch) {
-          try {
-            const moodObj = JSON.parse(moodMatch[1]);
-            if (moodObj.mood) mood = moodObj.mood as SPEXMood;
-          } catch (e) {
-            // fallback mood
+          if (moodMatch) {
+            try {
+              const moodObj = JSON.parse(moodMatch[1]);
+              if (moodObj.mood) mood = moodObj.mood as SPEXMood;
+            } catch (e) {
+              // fallback mood
+            }
+            cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
+          } else {
+            if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
+            else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
+            else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
+            else mood = 'explaining';
           }
-          cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
-        } else {
-          if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
-          else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
-          else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
-          else mood = 'explaining';
-        }
 
-        return res.json({ reply: cleanReply, mood });
+          return res.json({ reply: cleanReply, mood });
+        }
       }
     } catch (genAiError: any) {
       console.warn('[SPEX AI] Gemini call unavailable, falling back to grounded response:', genAiError.message);
@@ -775,7 +886,16 @@ Answer in 1-2 concise sentences with mood tag.`;
 
     // Fully grounded scientific fallback in 1-2 punchy sentences
     const cls = evidence?.classification ?? 'NO SIGNIFICANT CHANGE DETECTED';
-    const baseline = evidence?.timeBaselineDays ? Number(evidence.timeBaselineDays).toFixed(1) : '20.7';
+    const cadenceSec = structuredContext.startToStartCadenceSec;
+    const intSec = structuredContext.integrationDuration1Sec;
+    const baselineLabelEn =
+      cadenceSec !== null && cadenceSec < 3600
+        ? `${cadenceSec.toFixed(1)}s start-to-start cadence${intSec ? ` (${intSec.toFixed(1)}s integration)` : ''}`
+        : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} days`;
+    const baselineLabelAr =
+      cadenceSec !== null && cadenceSec < 3600
+        ? `تتابع زمني ${cadenceSec.toFixed(1)} ثانية${intSec ? ` (زمن تكامل ${intSec.toFixed(1)} ثانية)` : ''}`
+        : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} يوم`;
     const top = structuredContext.candidate;
 
     let fallbackReply = '';
@@ -784,32 +904,32 @@ Answer in 1-2 concise sentences with mood tag.`;
     if (isArabic) {
       if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
         fallbackMood = 'eureka';
-        fallbackReply = `رصدنا تغير تدفق حقيقي بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر ${baseline} يوم بدون أي تشبع في المستشعر. المرشح ${top.id} بيظهر تغير ΔF = ${top.deltaFlux} MJy/sr متسق مع نجم متغير حقيقي.`;
+        fallbackReply = `رصدنا تغير تدفق بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر ${baselineLabelAr}. المرشح ${top.id} يظهر فرق ΔF = ${top.deltaFlux} MJy/sr متطابقاً مع جرم مسجل.`;
       } else if (cls === 'POSSIBLE ARTIFACT' && top) {
         fallbackMood = 'sassy';
         const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join('، ') : 'تشبع مستشعر';
         fallbackReply = `دي إشارة تشويش مستشعر (${flagsStr}) استبعدها الـQuality Bitmask وفحص الـDipole. مفيش أي اكتشاف كوني هنا يا باشا.`;
       } else if (cls === 'INSUFFICIENT DATA') {
         fallbackMood = 'investigator';
-        fallbackReply = `الحقبتان من نطاقين طيفيين مختلفين؛ طرح أطوال موجية غير متطابقة يقيس انحدارًا لونيًا لا تغيرًا زمنيًا.`;
+        fallbackReply = `التعريضان من نطاقين طيفيين مختلفين؛ طرح أطوال موجية غير متطابقة يقيس انحدارًا لونيًا لا تغيرًا زمنيًا.`;
       } else {
         fallbackMood = 'serious';
-        fallbackReply = `السماء هنا مستقرة تمامًا وتتطابق الفروق مع الضوضاء الطبيعية للأجهزة. ده معيار استقرار أساسي لمعايرة سماء SPHEREx.`;
+        fallbackReply = `السماء هنا مستقرة تمامًا عبر ${baselineLabelAr} وتتطابق الفروق مع الضوضاء الطبيعية للأجهزة. ده معيار استقرار لمعايرة سماء SPHEREx.`;
       }
     } else {
       if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
         fallbackMood = 'eureka';
-        fallbackReply = `Verified flux variation at S/N = ${Math.abs(top.snr).toFixed(1)}σ across ${baseline} days. Candidate ${top.id} shows ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF wings.`;
+        fallbackReply = `Detected flux residual at S/N = ${Math.abs(top.snr).toFixed(1)}σ across ${baselineLabelEn}. Candidate ${top.id} shows ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF wings.`;
       } else if (cls === 'POSSIBLE ARTIFACT' && top) {
         fallbackMood = 'sassy';
         const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(', ') : 'saturation / dipole';
         fallbackReply = `Flagged and rejected as an instrumental artifact (${flagsStr}). The detector saturated or experienced pointing jitter rather than true flux change.`;
       } else if (cls === 'INSUFFICIENT DATA') {
         fallbackMood = 'investigator';
-        fallbackReply = `These observations originate from distinct SPHEREx spectral channels. Cross-band subtraction measures color slope, not temporal variability.`;
+        fallbackReply = `These exposures originate from distinct SPHEREx spectral channels. Cross-band subtraction measures color slope, not temporal variability.`;
       } else {
         fallbackMood = 'serious';
-        fallbackReply = `Photometric baseline verified stable across ${baseline} days. Difference residuals are strictly consistent with the Gaussian noise floor.`;
+        fallbackReply = `Photometric baseline verified stable across ${baselineLabelEn}. Difference residuals are strictly consistent with the Gaussian noise floor.`;
       }
     }
 

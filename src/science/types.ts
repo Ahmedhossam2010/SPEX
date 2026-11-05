@@ -4,7 +4,9 @@ export interface SPHERExObservation {
   s_dec: number;
   t_min: number; // MJD start
   t_max: number; // MJD end
-  date_obs?: string; // ISO UTC
+  date_obs?: string; // ISO UTC start (DATE-OBS)
+  date_end?: string; // ISO UTC end (DATE-END)
+  integration_duration_sec?: number; // DATE-END minus DATE-OBS
   em_min: number; // meters
   em_max: number; // meters
   wavelength_um?: number; // central wavelength in microns
@@ -24,6 +26,23 @@ export interface FITSHeaderCard {
   comment: string;
 }
 
+export interface SIPTerm {
+  p: number;
+  q: number;
+  coeff: number;
+}
+
+export interface SIPParams {
+  aOrder: number;
+  bOrder: number;
+  apOrder?: number;
+  bpOrder?: number;
+  aTerms: SIPTerm[];
+  bTerms: SIPTerm[];
+  apTerms?: SIPTerm[];
+  bpTerms?: SIPTerm[];
+}
+
 export interface WCSParams {
   crval1: number;
   crval2: number;
@@ -40,6 +59,7 @@ export interface WCSParams {
   equinox: number;
   radesys: string;
   pixelScaleArcsec: number;
+  sip?: SIPParams;
 }
 
 export interface FITSImageData {
@@ -132,6 +152,10 @@ export interface EvidenceSummary {
   maxSignificance: number;
   candidateCount: number;
   timeBaselineDays: number;
+  integrationDuration1Sec?: number;
+  integrationDuration2Sec?: number;
+  startToStartCadenceSec?: number;
+  interExposureGapSec?: number;
   summaryProse: string;
   statisticalJustification: string;
   whatWeKnow: string[];
@@ -231,6 +255,8 @@ export interface InvestigationResult {
     epochIndex: number;
     obsId: string;
     date: string;
+    dateEnd?: string;
+    integrationDurationSec?: number;
     mjd: number;
     flux: number[];
     width: number;
@@ -257,12 +283,20 @@ export interface InvestigationResult {
     wavelengthDiffUm: number;
     timeBaselineType?: 'SAME_EXPOSURE' | 'INTRA_VISIT_EXPOSURES' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH';
     timeBaselineHuman?: string;
+    integrationDuration1Sec?: number;
+    integrationDuration2Sec?: number;
+    startToStartCadenceSec?: number;
+    interExposureGapSec?: number;
   };
   registration: {
     dxPixels: number;
     dyPixels: number;
     method: string;
     quality: string;
+    runtimeMs?: number;
+    maxSpatialWarpPixels?: number;
+    reprojectionMode?: 'PIXEL_BY_PIXEL_WCS' | 'RIGID_TRANSLATION';
+    dqPropagationPolicy?: string;
   };
   candidates: CandidateDetection[];
   evidence: EvidenceSummary;
@@ -287,6 +321,11 @@ export interface ReleaseValidationReport {
   uniqueObservationIds: number;
   uniqueObservationEpochs: number;
   validIndependentEpochPairs: number;
+  totalTemporalPairs?: number;
+  intraVisitPairs?: number;
+  independentVisitPairs?: number;
+  surveyEpochPairs?: number;
+  independentVisitDistinctionStatus?: 'NOT_VERIFIED' | 'VERIFIED_MULTI_VISIT';
   duplicateOrAmbiguousCount: number;
   duplicateOrAmbiguousDetails: Array<{
     fileName: string;
@@ -307,27 +346,75 @@ export interface ReleaseValidationReport {
     boundingBoxAreaSqDeg: number;
     actualFootprintAreaSqDeg: number;
     areaSqDeg: number;
+    unionAreaSqDeg?: number;
+    pixelCenterUnionAreaSqDeg?: number;
     handlesWraparound: boolean;
     method: string;
+    individualFootprints?: Array<{
+      fileName: string;
+      obsId: string;
+      orientationAngleDeg: number;
+      skyOrientationAngleDeg: number;
+      pixelCenterAreaSqDeg: number;
+      fullPixelAreaSqDeg: number;
+      cornersPixelCenter: Array<{ ra: number; dec: number }>;
+      cornersFullPixel: Array<{ ra: number; dec: number }>;
+    }>;
+    pairwiseOverlapAreasSqDeg?: Array<{
+      obsId1: string;
+      obsId2: string;
+      pixelCenterOverlapSqDeg: number;
+      fullPixelOverlapSqDeg: number;
+    }>;
   };
   epochDeduplicationSummary: {
     filesCount: number;
     uniqueObsIds: number;
     uniqueEpochs: number;
+    groupedVisitsCount?: number;
     intraVisitExposuresCount: number;
     independentVisitsCount: number;
     unverifiedVisitsCount?: number;
     surveyEpochsCount?: number;
     validTemporalPairs: number;
+    totalTemporalPairs?: number;
+    intraVisitPairs?: number;
+    independentVisitPairs?: number;
+    surveyEpochPairs?: number;
+    pairwiseCadenceDetails?: Array<{
+      obsId1: string;
+      obsId2: string;
+      integrationDuration1Sec: number | null;
+      integrationDuration2Sec: number | null;
+      startToStartCadenceSec: number | null;
+      interExposureGapSec: number | null;
+      pairType: 'INTRA_VISIT_EXPOSURE' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' | 'NOT_VERIFIED';
+    }>;
   };
   detectedEpochs: Array<{
+    fileName?: string;
+    sha256?: string;
     obsId: string;
+    expIdn?: number | string | null;
     mjd: number;
+    mjdEnd?: number;
     date: string;
+    dateEnd?: string;
+    integrationDurationSec?: number;
+    telapseSec?: number;
+    xposureSec?: number;
     wavelengthUm?: number;
     detector?: number;
+    parsedObsId?: {
+      week: string;
+      pass: string;
+      slew: string;
+      exposure: string;
+      visitKey: string;
+    } | null;
     isDuplicate?: boolean;
     visitType?: 'INTRA_VISIT_EXPOSURE' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' | 'NOT_VERIFIED';
+    visitClassificationReason?: string;
   }>;
   detectedBands: string[];
   issues: string[];

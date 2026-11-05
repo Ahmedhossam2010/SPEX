@@ -140,8 +140,8 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
               <tr>
                 <td className="py-2 px-3 text-slate-800 dark:text-slate-200">SPHEREx Level-2 Quality Bitmask</td>
                 <td className="py-2 px-3 text-emerald-600 dark:text-emerald-400">Yes</td>
-                <td className="py-2 px-3 text-emerald-600 dark:text-emerald-400">Passed (bit 0x200000 caught)</td>
-                <td className="py-2 px-3 text-slate-500 dark:text-slate-300">Persistence filtered</td>
+                <td className="py-2 px-3 text-emerald-600 dark:text-emerald-400">Passed (0x01/0x02/0x04/0x80000)</td>
+                <td className="py-2 px-3 text-slate-500 dark:text-slate-300">0x200000 preserved as SOURCE</td>
               </tr>
               <tr>
                 <td className="py-2 px-3 text-slate-800 dark:text-slate-200">CDS VizieR Gaia DR3 Crossmatch</td>

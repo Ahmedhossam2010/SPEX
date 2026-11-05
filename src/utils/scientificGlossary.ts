@@ -109,8 +109,8 @@ export const SCIENTIFIC_GLOSSARY: Record<string, GlossaryTerm> = {
     simpleExplanationAr: 'المعادلة الرياضية التي تحول كل بكسل على شاشة الحساس إلى إحداثيات سماوية دقيقة (المطلع المستقيم والمیل).',
     technicalDetailsEn: 'Uses standard FITS astrometric headers (CRVAL, CRPIX, CD matrix, TAN projection) to project spherical coordinates to a tangent plane.',
     technicalDetailsAr: 'تعتمد على معايير FITS الفلكية ومصفوفة التحويل لإسقاط القبة السماوية الكروية على مستوى الحساس المسطح.',
-    whyItMattersEn: 'Ensures observations taken months apart can be aligned and registered to within a tiny fraction of an arcsecond.',
-    whyItMattersAr: 'يضمن محاذاة الصور الملتقطة على مدار شهور بدقة متناهية لأجزاء من الثانية القوسية قبل المقارنة.',
+    whyItMattersEn: 'Ensures exposures across intra-visit slews or multi-week survey visits can be aligned to within a tiny fraction of an arcsecond.',
+    whyItMattersAr: 'يضمن محاذاة التعريضات المتتابعة والزيارات المسحية بدقة متناهية لأجزاء من الثانية القوسية قبل المقارنة.',
   },
   aperture_photometry: {
     id: 'aperture_photometry',
@@ -179,8 +179,8 @@ export const SCIENTIFIC_GLOSSARY: Record<string, GlossaryTerm> = {
     simpleExplanationAr: 'علامات تحذيرية مسجلة من الحساس إذا ضُرب البكسل بجسيم كوني عالي الطاقة أو تشبع بالضوء الزائد.',
     technicalDetailsEn: 'Bitmask values checked: 0x01 (transient/cosmic ray hit), 0x02 (saturation), 0x04 (non-linear response), 0x80000 (statistical outlier).',
     technicalDetailsAr: 'أقنعة البت المفحوصة: 0x01 (أشعة كونية)، 0x02 (تشبع ضوئي)، 0x04 (استجابة غير خطية)، 0x80000 (شذوذ إحصائي).',
-    whyItMattersEn: 'Eliminates 99% of instrumental false positives, guaranteeing you are investigating real cosmos, not hardware artifacts.',
-    whyItMattersAr: 'يستبعد 99% من العيوب التقنية للحساسات، ليضمن أن ما تفحصه هو جرم سماوي حقيقي وليس خللاً في الكاميرا.',
+    whyItMattersEn: 'Flags cosmic rays (0x01), saturation (0x02), and outliers (0x80000) while preserving catalog source detections (0x200000 SOURCE).',
+    whyItMattersAr: 'يرصد الأشعة الكونية وتشبع الحساس والشذوذ الإحصائي مع الحفاظ على أعلام المصادر المسجلة (0x200000 SOURCE).',
   },
   irsa: {
     id: 'irsa',

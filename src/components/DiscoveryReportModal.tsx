@@ -82,16 +82,24 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
       targetCoords: investigation.targetCoords,
       epoch1: {
         obsId: investigation.epoch1.metadata.obs_id,
+        dateObs: investigation.epoch1.metadata.date_obs ?? null,
+        dateEnd: investigation.epoch1.metadata.date_end ?? null,
+        integrationDurationSec: investigation.compatibility.integrationDuration1Sec ?? investigation.epoch1.metadata.integration_duration_sec ?? null,
         mjd: investigation.epoch1.metadata.t_min,
         band: investigation.epoch1.metadata.band,
         wavelengthUm: investigation.epoch1.metadata.wavelength_um,
       },
       epoch2: {
         obsId: investigation.epoch2.metadata.obs_id,
+        dateObs: investigation.epoch2.metadata.date_obs ?? null,
+        dateEnd: investigation.epoch2.metadata.date_end ?? null,
+        integrationDurationSec: investigation.compatibility.integrationDuration2Sec ?? investigation.epoch2.metadata.integration_duration_sec ?? null,
         mjd: investigation.epoch2.metadata.t_min,
         band: investigation.epoch2.metadata.band,
         wavelengthUm: investigation.epoch2.metadata.wavelength_um,
       },
+      startToStartCadenceSec: investigation.compatibility.startToStartCadenceSec ?? null,
+      interExposureGapSec: investigation.compatibility.interExposureGapSec ?? null,
       timeBaselineDays: investigation.compatibility.timeBaselineDays,
       registrationResiduals: investigation.registration,
     },
@@ -228,11 +236,18 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
           </div>
 
           <div className="p-3.5 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.02]">
-            <span className="text-[10px] font-mono text-slate-500 uppercase block">Observation Baseline</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase block">Start-to-Start Cadence</span>
             <span className="text-xl font-bold font-mono text-sky-500">
-              {investigation.compatibility.timeBaselineDays.toFixed(1)} d
+              {investigation.compatibility.startToStartCadenceSec !== undefined &&
+              investigation.compatibility.startToStartCadenceSec < 3600
+                ? `${investigation.compatibility.startToStartCadenceSec.toFixed(1)} s`
+                : `${investigation.compatibility.timeBaselineDays.toFixed(1)} d`}
             </span>
-            <span className="text-[10px] text-slate-500 block mt-0.5">Temporal Separation</span>
+            <span className="text-[10px] text-slate-500 block mt-0.5">
+              {investigation.compatibility.integrationDuration1Sec !== undefined
+                ? `${investigation.compatibility.integrationDuration1Sec.toFixed(1)}s integration (DATE-END−OBS)`
+                : 'ΔDATE-OBS separation'}
+            </span>
           </div>
         </div>
 
@@ -276,6 +291,22 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
                 <span>Registration Method:</span>
                 <span className="text-slate-900 dark:text-slate-100 font-bold">{investigation.registration.method}</span>
               </div>
+              {investigation.compatibility.integrationDuration1Sec !== undefined && (
+                <div className="flex justify-between">
+                  <span>Integration (DATE-END−OBS):</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">
+                    {investigation.compatibility.integrationDuration1Sec.toFixed(3)}s / {(investigation.compatibility.integrationDuration2Sec ?? investigation.compatibility.integrationDuration1Sec).toFixed(3)}s
+                  </span>
+                </div>
+              )}
+              {investigation.compatibility.interExposureGapSec !== undefined && (
+                <div className="flex justify-between">
+                  <span>Inter-Exposure Gap (next OBS−prev END):</span>
+                  <span className="text-slate-900 dark:text-slate-100 font-bold">
+                    {investigation.compatibility.interExposureGapSec.toFixed(3)} s
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

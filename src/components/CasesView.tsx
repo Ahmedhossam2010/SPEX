@@ -43,7 +43,7 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
         </div>
         <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
           {language === 'ar'
-            ? 'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية. من اكتشاف النجوم المتغيرة، إلى إثبات الثبات الضوئي، وتصفية تشويش المستشعر والـ208σ persistence.'
+            ? 'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل قياس الفروق الضوئية ومعايير الثبات وتصفية أعلام الجودة (0x01/0x02/0x80000).'
             : 'Four genuine multi-epoch SPHEREx investigations. Demonstrating verified variable stars, photometric null stability, and automated bitmask artifact rejection.'}
         </p>
       </div>

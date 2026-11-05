@@ -203,12 +203,16 @@ test('FITSReader: parseWCS correctly parses PC1_1..PC2_2 matrices into arcsecond
     PC2_2: 0.00118274,
     CTYPE1: 'RA---TAN-SIP',
     CTYPE2: 'DEC--TAN-SIP',
+    A_ORDER: 0,
+    B_ORDER: 0,
   };
 
   const wcs = FITSReader.parseWCS(header, 64, 64);
   assert.ok(Math.abs(wcs.pixelScaleArcsec - 6.15) < 0.05);
   assert.ok(wcs.cd1_1 < 0);
   assert.ok(wcs.cd2_2 > 0);
+  assert.equal(wcs.sip?.aOrder, 0);
+  assert.equal(wcs.sip?.bOrder, 0);
 });
 
 test('Synthetic test: dipole filter rejects simulated pointing jitter residual', () => {
@@ -1163,7 +1167,7 @@ test('Significance Calculation & Pixel Verification: verifies mathematical formu
       assert.ok(Math.abs(cand.peakSignificance - expectedSig) < 0.05, `Candidate ${cand.id} significance must equal diff/sqrt(var)`);
     }
 
-    // Exact pixel-level verification for Candidate 1 (CAND-13) at (x=19, y=31)
+    // Exact pixel-level verification for primary saturated-core candidate (x=19, y=31, historically CAND-13, scanline CAND-10 under TAN-SIP)
     const c1 = res.candidates[0];
     assert.equal(c1.x, 19);
     assert.equal(c1.y, 31);
@@ -1173,14 +1177,15 @@ test('Significance Calculation & Pixel Verification: verifies mathematical formu
     const pUnc = Math.sqrt(pVar);
     const pSig = res.significance[pIdx];
 
-    assert.ok(Math.abs(pDiff - (-455.4924)) < 0.01, `Difference at (19, 31) must be -455.49 MJy/sr, got ${pDiff}`);
-    assert.ok(Math.abs(pVar - 10.3173) < 0.01, `Variance at (19, 31) must be 10.32 (MJy/sr)^2, got ${pVar}`);
-    assert.ok(Math.abs(pUnc - 3.2121) < 0.01, `Uncertainty at (19, 31) must be 3.21 MJy/sr, got ${pUnc}`);
-    assert.ok(Math.abs(pSig - (-141.81)) < 0.05, `Significance at (19, 31) must be -141.81 sigma, got ${pSig}`);
+    assert.equal(res.registration.method, 'Pixel-by-Pixel WCS Reprojection (TAN-SIP)');
+    assert.ok(Math.abs(pDiff - (-691.17724609375)) < 1e-4, `Difference at (19, 31) must be -691.1772 MJy/sr, got ${pDiff}`);
+    assert.ok(Math.abs(pVar - 24.65491485595703) < 1e-4, `Variance at (19, 31) must be 24.6549 (MJy/sr)^2, got ${pVar}`);
+    assert.ok(Math.abs(pUnc - 4.965371572798659) < 1e-4, `Uncertainty at (19, 31) must be 4.9654 MJy/sr, got ${pUnc}`);
+    assert.ok(Math.abs(pSig - (-139.19949340820312)) < 1e-4, `Significance at (19, 31) must be -139.1995 sigma, got ${pSig}`);
     // Strict invariant check: S/N === D / sqrt(Var)
     assert.ok(Math.abs(pSig - (pDiff / pUnc)) < 1e-5, 'Invariant S/N = D / sqrt(Var) must hold to float precision');
 
-    // Extrema verification
+    // Extrema verification under full TAN-SIP pixel-by-pixel reprojection
     let maxD = -Infinity, maxDCoord = { x: 0, y: 0 };
     let minD = Infinity, minDCoord = { x: 0, y: 0 };
     let maxS = -Infinity, maxSCoord = { x: 0, y: 0 };
@@ -1196,19 +1201,19 @@ test('Significance Calculation & Pixel Verification: verifies mathematical formu
     }
     assert.equal(maxDCoord.x, 21);
     assert.equal(maxDCoord.y, 30);
-    assert.ok(Math.abs(maxD - 476.88) < 0.1);
+    assert.ok(Math.abs(maxD - 596.4126586914062) < 1e-3);
 
-    assert.equal(minDCoord.x, 20);
-    assert.equal(minDCoord.y, 30);
-    assert.ok(Math.abs(minD - (-456.30)) < 0.1);
+    assert.equal(minDCoord.x, 19);
+    assert.equal(minDCoord.y, 31);
+    assert.ok(Math.abs(minD - (-691.17724609375)) < 1e-3);
 
-    assert.equal(maxSCoord.x, 47);
-    assert.equal(maxSCoord.y, 2);
-    assert.ok(Math.abs(maxS - 93.67) < 0.1);
+    assert.equal(maxSCoord.x, 21);
+    assert.equal(maxSCoord.y, 30);
+    assert.ok(Math.abs(maxS - 81.72502899169922) < 1e-3);
 
-    assert.equal(minSCoord.x, 48);
-    assert.equal(minSCoord.y, 1);
-    assert.ok(Math.abs(minS - (-159.85)) < 0.1);
+    assert.equal(minSCoord.x, 19);
+    assert.equal(minSCoord.y, 31);
+    assert.ok(Math.abs(minS - (-139.19949340820312)) < 1e-3);
   }
 });
 
@@ -1344,6 +1349,981 @@ test('Catalog & SED: preserves observed vs model distinction and match provenanc
   assert.ok(matches.length > 0);
   assert.ok(matches.some((m) => m.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' || m.matchProvenance === 'LIVE_VIZIER_TAP'));
 });
+
+test('Real FITS Regression Traceability: SHA-256 inventory, separated UTC temporal metrics, NOT_VERIFIED visit grouping, CAND-13 math, and WCS spherical areas', async () => {
+  const { DataReleaseAdapter } = await import('./dataReleaseAdapter');
+  const { FITSReader } = await import('./fitsReader');
+  const { ScientificPipeline } = await import('./pipeline');
+  const { WCS } = await import('./wcs');
+  const fs = await import('fs');
+  const path = await import('path');
+  const crypto = await import('crypto');
+
+  const cacheDir = '/tmp/spherex_cache';
+  const expectedInventory = [
+    {
+      fileName: 'b6a1e605728059ea6b7def1e9683adb2.fits',
+      obsId: '2025W18_1B_0001_1',
+      sha256: 'b66f276a2b3fe6e9318229b574f058be9dba1cda45fd46678014b7837b5187e9',
+      integrationSec: 115.117,
+    },
+    {
+      fileName: '569dafa911ec60ff30abb1807d719fef.fits',
+      obsId: '2025W18_1B_0001_2',
+      sha256: 'f39c8687dae94b80ec39e0cf537425f4dcf6e24ed26268b57c59b379b406a182',
+      integrationSec: 115.118,
+    },
+    {
+      fileName: '75b2c2369c175060576bec8d2e5333c0.fits',
+      obsId: '2025W18_1B_0001_3',
+      sha256: '8e1d894ae95abca0dc3936a9fc45eb9ccfc2636b79496fefc64a57557dfd1a8d',
+      integrationSec: 115.118,
+    },
+  ];
+
+  for (const item of expectedInventory) {
+    const fullPath = path.join(cacheDir, item.fileName);
+    assert.equal(fs.existsSync(fullPath), true, `Expected real cached FITS cutout ${item.fileName}`);
+    const buf = fs.readFileSync(fullPath);
+    assert.equal(buf.length, 5117760, `File ${item.fileName} must be 5,117,760 bytes (1,777 x 2,880 FITS blocks)`);
+    const actualSha = crypto.createHash('sha256').update(buf).digest('hex');
+    assert.equal(actualSha, item.sha256);
+  }
+
+  const batch = expectedInventory.map((item) => ({
+    fileName: item.fileName,
+    buffer: fs.readFileSync(path.join(cacheDir, item.fileName)),
+    sourceType: 'DEVELOPMENT_BENCHMARK' as const,
+  }));
+
+  const report = DataReleaseAdapter.validateDatasetRelease(batch, 'DEVELOPMENT_BENCHMARK');
+  assert.equal(report.status, 'WARNINGS');
+  assert.equal(report.uniqueObservationIds, 3);
+  assert.equal(report.uniqueObservationEpochs, 3);
+  assert.equal(report.epochDeduplicationSummary.groupedVisitsCount, 1);
+  assert.equal(report.independentVisitDistinctionStatus, 'NOT_VERIFIED');
+  assert.equal(report.totalTemporalPairs, 3);
+  assert.equal(report.intraVisitPairs, 3);
+  assert.equal(report.independentVisitPairs, 0);
+  assert.equal(report.surveyEpochPairs, 0);
+
+  // Verify separated integration durations vs start-to-start cadences vs inter-exposure gaps
+  assert.equal(report.detectedEpochs[0].parsedObsId?.visitKey, '2025W18_1B_0001');
+  assert.equal(report.detectedEpochs[0].integrationDurationSec, 115.117);
+  assert.equal(report.detectedEpochs[1].integrationDurationSec, 115.118);
+  assert.equal(report.detectedEpochs[2].integrationDurationSec, 115.118);
+
+  const pairs = report.epochDeduplicationSummary.pairwiseCadenceDetails!;
+  assert.equal(pairs.length, 3);
+  assert.equal(pairs[0].startToStartCadenceSec, 128.931); // _1 -> _2
+  assert.equal(pairs[0].interExposureGapSec, 13.814);
+  assert.equal(pairs[1].startToStartCadenceSec, 257.861); // _1 -> _3
+  assert.equal(pairs[1].interExposureGapSec, 142.744);
+  assert.equal(pairs[2].startToStartCadenceSec, 128.93);  // _2 -> _3
+  assert.equal(pairs[2].interExposureGapSec, 13.812);
+
+  // Verify exact spherical union area and bounding box area under TAN-SIP WCS projection
+  assert.ok(Math.abs((report.derivedFootprint.unionAreaSqDeg ?? 0) - 0.012091894266849632) < 1e-12);
+  assert.equal(report.derivedFootprint.boundingBoxAreaSqDeg, 0.023364);
+
+  // Verify primary candidate at (19, 31) on real physical pixels of _1 -> _2 under TAN-SIP pixel reprojection
+  const fits1 = FITSReader.parse(batch[0].buffer);
+  const fits2 = FITSReader.parse(batch[1].buffer);
+  const obs1 = {
+    obs_id: '2025W18_1B_0001_1',
+    s_ra: 276.2614,
+    s_dec: 64.8258,
+    t_min: Number(fits1.header['MJD-OBS']),
+    t_max: Number(fits1.header['MJD-END']),
+    date_obs: String(fits1.header['DATE-OBS']),
+    date_end: String(fits1.header['DATE-END']),
+    em_min: 0.75e-6,
+    em_max: 1.11e-6,
+    wavelength_um: 0.93,
+    dataproduct_type: 'image',
+    access_url: '',
+    fits_url: '',
+    access_format: 'application/fits',
+  };
+  const obs2 = {
+    obs_id: '2025W18_1B_0001_2',
+    s_ra: 276.2614,
+    s_dec: 64.8258,
+    t_min: Number(fits2.header['MJD-OBS']),
+    t_max: Number(fits2.header['MJD-END']),
+    date_obs: String(fits2.header['DATE-OBS']),
+    date_end: String(fits2.header['DATE-END']),
+    em_min: 0.75e-6,
+    em_max: 1.11e-6,
+    wavelength_um: 0.93,
+    dataproduct_type: 'image',
+    access_url: '',
+    fits_url: '',
+    access_format: 'application/fits',
+  };
+
+  const diffOut = ScientificPipeline.processDifference(obs1, obs2, fits1, fits2);
+  assert.equal(diffOut.compatibility.integrationDuration1Sec, 115.117);
+  assert.equal(diffOut.compatibility.integrationDuration2Sec, 115.118);
+  assert.equal(diffOut.compatibility.startToStartCadenceSec, 128.931);
+  assert.equal(diffOut.compatibility.interExposureGapSec, 13.814);
+
+  const idx = 31 * 64 + 19;
+  assert.equal(fits1.data[idx], 1600.3631591796875);
+  assert.equal(fits2.data[idx], 44.053619384765625);
+  assert.equal(fits1.variance![idx], 122.88430786132812);
+  assert.equal(fits2.variance![idx], 1.2295539379119873);
+  assert.ok(Math.abs(diffOut.diff[idx] - (-691.17724609375)) < 1e-5);
+  assert.ok(Math.abs(diffOut.variance[idx] - 24.65491485595703) < 1e-5);
+  assert.ok(Math.abs(diffOut.significance[idx] - (-139.19949340820312)) < 1e-5);
+  assert.equal(diffOut.candidates[0].x, 19);
+  assert.equal(diffOut.candidates[0].y, 31);
+});
+
+// ============================================================================
+// ASTROMETRIC REMEDIATION TEST SUITE (A-I: SYNTHETIC UNIT TESTS, J: REAL FITS)
+// ============================================================================
+
+test('Synthetic Test A: TAN-SIP forward transformation against independent closed-form analytical calculations', () => {
+  const crval1 = 185.25;
+  const crval2 = -42.75;
+  const crpix1 = 100.5;
+  const crpix2 = 200.25;
+  const angleRad = (37.0 * Math.PI) / 180;
+  const scaleDeg = 5.5 / 3600;
+  const cd1_1 = -scaleDeg * Math.cos(angleRad);
+  const cd1_2 = scaleDeg * Math.sin(angleRad);
+  const cd2_1 = scaleDeg * Math.sin(angleRad);
+  const cd2_2 = scaleDeg * Math.cos(angleRad);
+
+  const wcs: WCSParams = {
+    crval1,
+    crval2,
+    crpix1,
+    crpix2,
+    cdelt1: 1.0,
+    cdelt2: 1.0,
+    cd1_1,
+    cd1_2,
+    cd2_1,
+    cd2_2,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 5.5,
+    sip: {
+      aOrder: 4,
+      bOrder: 4,
+      aTerms: [
+        { p: 0, q: 0, coeff: 0.75 },
+        { p: 2, q: 0, coeff: -1.8e-5 },
+        { p: 1, q: 1, coeff: 9.2e-6 },
+        { p: 0, q: 2, coeff: 1.1e-5 },
+        { p: 3, q: 1, coeff: -2.4e-9 },
+      ],
+      bTerms: [
+        { p: 0, q: 0, coeff: -1.125 },
+        { p: 1, q: 0, coeff: 4.5e-4 },
+        { p: 2, q: 0, coeff: 2.3e-5 },
+        { p: 0, q: 3, coeff: -6.1e-8 },
+        { p: 2, q: 2, coeff: 1.5e-9 },
+      ],
+    },
+  };
+
+  // Evaluate at off-axis test point (x = 12.25, y = 264.75) using independent closed-form analytical equations
+  const x = 12.25;
+  const y = 264.75;
+  const u = (x + 1) - crpix1; // -87.25
+  const v = (y + 1) - crpix2; // +65.5
+
+  const U =
+    u +
+    0.75 +
+    -1.8e-5 * u * u +
+    9.2e-6 * u * v +
+    1.1e-5 * v * v +
+    -2.4e-9 * Math.pow(u, 3) * v;
+  const V =
+    v +
+    -1.125 +
+    4.5e-4 * u +
+    2.3e-5 * u * u +
+    -6.1e-8 * Math.pow(v, 3) +
+    1.5e-9 * u * u * v * v;
+
+  const deg2rad = Math.PI / 180;
+  const xi = (cd1_1 * U + cd1_2 * V) * deg2rad;
+  const eta = (cd2_1 * U + cd2_2 * V) * deg2rad;
+  const ra0 = crval1 * deg2rad;
+  const dec0 = crval2 * deg2rad;
+
+  const dRa = Math.atan2(xi, Math.cos(dec0) - eta * Math.sin(dec0));
+  const refRa = (((ra0 + dRa) * 180) / Math.PI + 360) % 360;
+  const refDec = (Math.asin((Math.sin(dec0) + eta * Math.cos(dec0)) / Math.sqrt(1 + xi * xi + eta * eta)) * 180) / Math.PI;
+
+  const got = WCS.pixToSky(x, y, wcs);
+  const sepArcsec = WCS.angularSeparationArcsec(refRa, refDec, got.ra, got.dec);
+  // At Dec ~ -42.5 deg (exponent 2^5), 1 binary64 ULP in degrees equals 2^-47 * 3600 = 2.5579538487363607e-11 arcsec
+  assert.ok(sepArcsec < 1e-10, `Forward TAN-SIP sky residual ${sepArcsec} arcsec exceeded 1e-10 arcsec`);
+
+  // Also verify exact tangent point identity when A_0_0 = B_0_0 = 0
+  const centeredWcs: WCSParams = {
+    ...wcs,
+    sip: {
+      ...wcs.sip!,
+      aTerms: wcs.sip!.aTerms.filter((t) => !(t.p === 0 && t.q === 0)),
+      bTerms: wcs.sip!.bTerms.filter((t) => !(t.p === 0 && t.q === 0)),
+    },
+  };
+  const tangentSky = WCS.pixToSky(crpix1 - 1, crpix2 - 1, centeredWcs);
+  assert.ok(WCS.angularSeparationArcsec(crval1, crval2, tangentSky.ra, tangentSky.dec) < 1e-10);
+});
+
+test('Synthetic Test B: TAN-SIP inverse round-trip over detector center, edges, corners, and off-axis positions', () => {
+  // 1. Exact closed-form analytical inverse check on pure quadratic SIP distortion (no AP/BP supplied)
+  const crval1 = 83.6331;
+  const crval2 = 22.0145;
+  const crpix1 = 50.5;
+  const crpix2 = 50.5;
+  const scale = 4.0 / 3600;
+  const a20 = -1.25e-4;
+  const b02 = 1.75e-4;
+
+  const quadWcs: WCSParams = {
+    crval1,
+    crval2,
+    crpix1,
+    crpix2,
+    cdelt1: -scale,
+    cdelt2: scale,
+    cd1_1: -scale,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: scale,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 4.0,
+    sip: {
+      aOrder: 2,
+      bOrder: 2,
+      aTerms: [{ p: 2, q: 0, coeff: a20 }],
+      bTerms: [{ p: 0, q: 2, coeff: b02 }],
+    },
+  };
+
+  // Choose exact undistorted world-plane target (U_exact, V_exact) and compute analytical sky coordinates
+  const Uexact = -35.0;
+  const Vexact = 42.0;
+  const xi = -scale * Uexact * (Math.PI / 180);
+  const eta = scale * Vexact * (Math.PI / 180);
+  const dec0 = (crval2 * Math.PI) / 180;
+  const targetRa = crval1 + (Math.atan2(xi, Math.cos(dec0) - eta * Math.sin(dec0)) * 180) / Math.PI;
+  const targetDec = (Math.asin((Math.sin(dec0) + eta * Math.cos(dec0)) / Math.sqrt(1 + xi * xi + eta * eta)) * 180) / Math.PI;
+
+  // Closed-form quadratic root for u + a20 * u^2 = Uexact and v + b02 * v^2 = Vexact:
+  const uExact = (-1 + Math.sqrt(1 + 4 * a20 * Uexact)) / (2 * a20);
+  const vExact = (-1 + Math.sqrt(1 + 4 * b02 * Vexact)) / (2 * b02);
+  const xExact = uExact + crpix1 - 1;
+  const yExact = vExact + crpix2 - 1;
+
+  const solved = WCS.skyToPix(targetRa, targetDec, quadWcs);
+  assert.ok(
+    Math.hypot(solved.x - xExact, solved.y - yExact) < 1e-10,
+    `Closed-form quadratic inverse residual ${Math.hypot(solved.x - xExact, solved.y - yExact)} exceeded 1e-10 px`
+  );
+
+  // 2. Round-trip over center, edges, corners, fractional pixels, and far off-axis (CRPIX off-cutout)
+  const complexWcs: WCSParams = {
+    crval1: 275.58152397,
+    crval2: 65.0934469687,
+    crpix1: 36.5,
+    crpix2: 261.5, // off-cutout reference pixel
+    cdelt1: 1.0,
+    cdelt2: 1.0,
+    cd1_1: -0.00112936147968,
+    cd1_2: -0.00123879520159,
+    cd2_1: -0.00128482841705,
+    cd2_2: 0.00117627478847,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.15,
+    sip: {
+      aOrder: 3,
+      bOrder: 3,
+      aTerms: [
+        { p: 0, q: 0, coeff: 0.253411983969 },
+        { p: 1, q: 0, coeff: -3.37276787342e-5 },
+        { p: 0, q: 1, coeff: 1.13698272662e-4 },
+        { p: 2, q: 0, coeff: -1.59573412506e-6 },
+        { p: 1, q: 1, coeff: 4.16572337495e-6 },
+        { p: 0, q: 2, coeff: -1.39509026615e-6 },
+        { p: 3, q: 0, coeff: 5.28496364954e-10 },
+      ],
+      bTerms: [
+        { p: 0, q: 0, coeff: -1.20333674297 },
+        { p: 1, q: 0, coeff: -6.04891628415e-5 },
+        { p: 0, q: 1, coeff: 3.11968426731e-4 },
+        { p: 2, q: 0, coeff: 6.65931677632e-6 },
+        { p: 1, q: 1, coeff: -6.77811679519e-7 },
+        { p: 0, q: 2, coeff: 1.97584571356e-6 },
+        { p: 2, q: 1, coeff: 6.59724665305e-10 },
+      ],
+    },
+  };
+
+  const testPositions = [
+    [31.5, 31.5],     // center
+    [0.0, 0.0],       // bottom-left corner
+    [63.0, 0.0],      // bottom-right corner
+    [0.0, 63.0],      // top-left corner
+    [63.0, 63.0],     // top-right corner
+    [0.0, 31.5],      // left edge
+    [63.0, 31.5],     // right edge
+    [31.5, 0.0],      // bottom edge
+    [31.5, 63.0],     // top edge
+    [-25.4, -40.8],   // negative off-cutout
+    [150.25, 290.75], // far off-axis
+  ];
+
+  for (const [x, y] of testPositions) {
+    const sky = WCS.pixToSky(x, y, complexWcs);
+    const back = WCS.skyToPix(sky.ra, sky.dec, complexWcs);
+    const err = Math.hypot(back.x - x, back.y - y);
+    assert.ok(err < 1e-10, `Round-trip inverse error ${err} px at (${x}, ${y}) exceeded 1e-10 px`);
+  }
+});
+
+test('Synthetic Test C: Non-zero SIP coefficients produce verified nonlinear distortion relative to distortion-free TAN', () => {
+  const baseTan: WCSParams = {
+    crval1: 120.0,
+    crval2: 45.0,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: -6.0 / 3600,
+    cdelt2: 6.0 / 3600,
+    cd1_1: -6.0 / 3600,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: 6.0 / 3600,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.0,
+  };
+
+  // Distortion at corner (63, 63) -> u = 31.5, v = 31.5: f = 2.5e-3 * u^2 = 2.480625 px, g = -1.8e-3 * v^2 = -1.78605 px
+  const a20 = 2.5e-3;
+  const b02 = -1.8e-3;
+  const sipWcs: WCSParams = {
+    ...baseTan,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    sip: {
+      aOrder: 2,
+      bOrder: 2,
+      aTerms: [{ p: 2, q: 0, coeff: a20 }],
+      bTerms: [{ p: 0, q: 2, coeff: b02 }],
+    },
+  };
+
+  const skyTan = WCS.pixToSky(63, 63, baseTan);
+  const skySip = WCS.pixToSky(63, 63, sipWcs);
+  const sepArcsec = WCS.angularSeparationArcsec(skyTan.ra, skyTan.dec, skySip.ra, skySip.dec);
+
+  // Analytical tangent-plane displacement: sqrt((f * 6")^2 + (g * 6")^2) = 6 * sqrt(2.480625^2 + 1.78605^2) = 18.3446"
+  const expectedSepArcsec = 6.0 * Math.hypot(a20 * 31.5 * 31.5, b02 * 31.5 * 31.5);
+  assert.ok(sepArcsec > 18.0);
+  assert.ok(Math.abs(sepArcsec - expectedSepArcsec) < 0.02);
+
+  // Inverse mapping of linear-TAN corner sky coordinates through SIP WCS must recover exact nonlinear inverse pixel
+  const invPix = WCS.skyToPix(skyTan.ra, skyTan.dec, sipWcs);
+  const uExpected = (-1 + Math.sqrt(1 + 4 * a20 * 31.5)) / (2 * a20);
+  const vExpected = (-1 + Math.sqrt(1 + 4 * b02 * 31.5)) / (2 * b02);
+  assert.ok(Math.abs((invPix.x + 1 - 32.5) - uExpected) < 1e-12);
+  assert.ok(Math.abs((invPix.y + 1 - 32.5) - vExpected) < 1e-12);
+});
+
+test('Synthetic Test D: Zero SIP coefficients match ordinary distortion-free TAN behavior to machine precision', () => {
+  const tanWcs: WCSParams = {
+    crval1: 215.4321,
+    crval2: 52.9876,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: 1.0,
+    cdelt2: 1.0,
+    cd1_1: -0.0012,
+    cd1_2: -0.0011,
+    cd2_1: -0.0011,
+    cd2_2: 0.0012,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 5.86,
+  };
+
+  const zeroSipWcs: WCSParams = {
+    ...tanWcs,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    sip: {
+      aOrder: 3,
+      bOrder: 3,
+      apOrder: 3,
+      bpOrder: 3,
+      aTerms: [{ p: 1, q: 1, coeff: 0 }, { p: 2, q: 0, coeff: 0 }],
+      bTerms: [{ p: 0, q: 2, coeff: 0 }, { p: 3, q: 0, coeff: 0 }],
+      apTerms: [{ p: 1, q: 0, coeff: 0 }],
+      bpTerms: [{ p: 0, q: 1, coeff: 0 }],
+    },
+  };
+
+  for (const [x, y] of [[0, 0], [19.4, 31.7], [31.5, 31.5], [63, 63]]) {
+    const sTan = WCS.pixToSky(x, y, tanWcs);
+    const sSip = WCS.pixToSky(x, y, zeroSipWcs);
+    assert.ok(WCS.angularSeparationArcsec(sTan.ra, sTan.dec, sSip.ra, sSip.dec) < 1e-12);
+
+    const pTan = WCS.skyToPix(sTan.ra, sTan.dec, tanWcs);
+    const pSip = WCS.skyToPix(sTan.ra, sTan.dec, zeroSipWcs);
+    assert.ok(Math.hypot(pTan.x - pSip.x, pTan.y - pSip.y) < 1e-13);
+  }
+});
+
+test('Synthetic Test E: Different SIP distortions and rotated CD matrices between two exposures', () => {
+  const scale = 6.0 / 3600;
+  const wcs1: WCSParams = {
+    crval1: 250.0,
+    crval2: 50.0,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: -scale,
+    cdelt2: scale,
+    cd1_1: -scale,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: scale,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.0,
+    sip: {
+      aOrder: 2,
+      bOrder: 2,
+      aTerms: [{ p: 2, q: 0, coeff: 2.0e-4 }, { p: 1, q: 1, coeff: -1.5e-4 }],
+      bTerms: [{ p: 0, q: 2, coeff: -2.2e-4 }],
+    },
+  };
+
+  const theta = (22.0 * Math.PI) / 180;
+  const wcs2: WCSParams = {
+    crval1: 250.008,
+    crval2: 49.994,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: 1.0,
+    cdelt2: 1.0,
+    cd1_1: -scale * Math.cos(theta),
+    cd1_2: scale * Math.sin(theta),
+    cd2_1: scale * Math.sin(theta),
+    cd2_2: scale * Math.cos(theta),
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.0,
+    sip: {
+      aOrder: 3,
+      bOrder: 3,
+      aTerms: [{ p: 0, q: 2, coeff: -1.8e-4 }, { p: 3, q: 0, coeff: 1.2e-6 }],
+      bTerms: [{ p: 2, q: 0, coeff: 1.6e-4 }, { p: 1, q: 2, coeff: -1.1e-6 }],
+    },
+  };
+
+  const grid = WCS.getReprojectionGrid(wcs2, wcs1, 64, 64);
+  assert.equal(grid.hasSipDistortion, true);
+  assert.ok(grid.maxSpatialWarpPixels > 10.0, `Expected strong non-rigid warp > 10 px, got ${grid.maxSpatialWarpPixels}`);
+
+  // Verify sky coordinate agreement at every sampled point mapped from Exposure 2 -> Exposure 1
+  for (const [x, y] of [[10, 12], [32, 32], [52, 48], [20, 44]]) {
+    const sx = grid.srcX[y * 64 + x];
+    const sy = grid.srcY[y * 64 + x];
+    const sky2 = WCS.pixToSky(x, y, wcs2);
+    const sky1 = WCS.pixToSky(sx, sy, wcs1);
+    const sep = WCS.angularSeparationArcsec(sky2.ra, sky2.dec, sky1.ra, sky1.dec);
+    assert.ok(sep < 1e-10, `Cross-exposure sky registration error ${sep}" exceeded 1e-10" at (${x}, ${y})`);
+  }
+});
+
+test('Synthetic Test F: Pixel-by-pixel reprojection accuracy eliminates rigid-translation dipole on warped exposures', () => {
+  const width = 64;
+  const height = 64;
+  const size = width * height;
+  const scale = 6.0 / 3600;
+
+  // Exposure 1: unrotated with strong cubic+quadratic SIP distortion
+  const wcs1: WCSParams = {
+    crval1: 180.0,
+    crval2: 35.0,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: -scale,
+    cdelt2: scale,
+    cd1_1: -scale,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: scale,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.0,
+    sip: {
+      aOrder: 3,
+      bOrder: 3,
+      aTerms: [{ p: 0, q: 0, coeff: 0.45 }, { p: 2, q: 0, coeff: -2.2e-4 }, { p: 0, q: 2, coeff: 1.8e-4 }],
+      bTerms: [{ p: 0, q: 0, coeff: -0.35 }, { p: 1, q: 1, coeff: 2.0e-4 }, { p: 3, q: 0, coeff: -1.5e-6 }],
+    },
+  };
+
+  // Exposure 2: rotated by 14 deg + different tangent point + distinct SIP distortion
+  const theta = (14.0 * Math.PI) / 180;
+  const wcs2: WCSParams = {
+    crval1: 180.002,
+    crval2: 35.001,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: 1.0,
+    cdelt2: 1.0,
+    cd1_1: -scale * Math.cos(theta),
+    cd1_2: scale * Math.sin(theta),
+    cd2_1: scale * Math.sin(theta),
+    cd2_2: scale * Math.cos(theta),
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.0,
+    sip: {
+      aOrder: 2,
+      bOrder: 2,
+      aTerms: [{ p: 0, q: 0, coeff: -0.25 }, { p: 1, q: 1, coeff: -1.7e-4 }],
+      bTerms: [{ p: 0, q: 0, coeff: 0.30 }, { p: 2, q: 0, coeff: 2.1e-4 }],
+    },
+  };
+
+  // Project a static sky Gaussian star (located off-center at sky coords corresponding to (16, 48) in wcs2)
+  const starSky = WCS.pixToSky(16, 48, wcs2);
+  const starIn1 = WCS.skyToPix(starSky.ra, starSky.dec, wcs1);
+  const starIn2 = WCS.skyToPix(starSky.ra, starSky.dec, wcs2);
+
+  const bkg = 12.0;
+  const amplitude = 200.0;
+  const sigmaSkyArcsec = 10.0;
+
+  const data1 = new Float32Array(size);
+  const data2 = new Float32Array(size);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const sep1 = WCS.angularSeparationArcsec(starSky.ra, starSky.dec, WCS.pixToSky(x, y, wcs1).ra, WCS.pixToSky(x, y, wcs1).dec);
+      const sep2 = WCS.angularSeparationArcsec(starSky.ra, starSky.dec, WCS.pixToSky(x, y, wcs2).ra, WCS.pixToSky(x, y, wcs2).dec);
+      data1[idx] = bkg + amplitude * Math.exp(-(sep1 * sep1) / (2 * sigmaSkyArcsec * sigmaSkyArcsec));
+      data2[idx] = bkg + amplitude * Math.exp(-(sep2 * sep2) / (2 * sigmaSkyArcsec * sigmaSkyArcsec));
+    }
+  }
+
+  const fits1: any = {
+    width, height, data: data1, variance: new Float32Array(size).fill(0.04), flags: null,
+    bunit: 'MJy/sr', header: {}, wcs: wcs1,
+    stats: FITSReader.computeStatistics(data1, null),
+  };
+  const fits2: any = {
+    width, height, data: data2, variance: new Float32Array(size).fill(0.04), flags: null,
+    bunit: 'MJy/sr', header: {}, wcs: wcs2,
+    stats: FITSReader.computeStatistics(data2, null),
+  };
+
+  // Compare naive rigid translation vs pixel-by-pixel TAN-SIP reprojection around off-axis star (16, 48)
+  const rigidCenterDx = starIn1.x - starIn2.x; // even with exact center shift, rotation+SIP varies across field:
+  const centerDx = WCS.skyToPix(WCS.pixToSky(32, 32, wcs2).ra, WCS.pixToSky(32, 32, wcs2).dec, wcs1).x - 32;
+  const centerDy = WCS.skyToPix(WCS.pixToSky(32, 32, wcs2).ra, WCS.pixToSky(32, 32, wcs2).dec, wcs1).y - 32;
+  const rigidAligned = ScientificPipeline.resampleBilinear(data1, width, height, centerDx, centerDy);
+  const rigidErrAtStar = Math.abs(data2[48 * width + 16] - rigidAligned[48 * width + 16]);
+  assert.ok(rigidErrAtStar > 20.0 && Math.abs(rigidCenterDx - centerDx) > 3.0, 'Off-axis rigid translation must suffer multi-pixel rotation/SIP error');
+
+  const obs1: any = { obs_id: 'SYN-1', s_ra: 180, s_dec: 35, t_min: 60000, t_max: 60000.01, em_min: 0.8e-6, em_max: 1.0e-6, wavelength_um: 0.9, dataproduct_type: 'image', access_url: '', fits_url: '', access_format: '' };
+  const obs2: any = { ...obs1, obs_id: 'SYN-2', t_min: 60010, t_max: 60010.01 };
+
+  const diffOut = ScientificPipeline.processDifference(obs1, obs2, fits1, fits2);
+  assert.equal(diffOut.registration.reprojectionMode, 'PIXEL_BY_PIXEL_WCS');
+  assert.equal(diffOut.registration.method, 'Pixel-by-Pixel WCS Reprojection (TAN-SIP)');
+
+  // Verify resampled value at (16, 48) matches exact analytical bilinear interpolation of data1 at (starIn1.x, starIn1.y)
+  const reproj = ScientificPipeline.reprojectPixelByPixel(fits1, wcs2, width, height);
+  const sx = reproj.grid.srcX[48 * width + 16];
+  const sy = reproj.grid.srcY[48 * width + 16];
+  assert.ok(Math.hypot(sx - starIn1.x, sy - starIn1.y) < 1e-10);
+  const x0 = Math.floor(sx), y0 = Math.floor(sy);
+  const fx = sx - x0, fy = sy - y0;
+  const expectedBilinear =
+    (1 - fx) * (1 - fy) * data1[y0 * width + x0] +
+    fx * (1 - fy) * data1[y0 * width + (x0 + 1)] +
+    (1 - fx) * fy * data1[(y0 + 1) * width + x0] +
+    fx * fy * data1[(y0 + 1) * width + (x0 + 1)];
+  assert.ok(Math.abs(reproj.alignedData[48 * width + 16] - expectedBilinear) < 1e-4);
+  assert.ok(Math.abs(data2[48 * width + 16] - reproj.alignedData[48 * width + 16]) < rigidErrAtStar * 0.25);
+});
+
+test('Synthetic Test G: Variance propagation under bilinear interpolation and missing-variance protection', () => {
+  const width = 16;
+  const height = 16;
+  const size = width * height;
+  const scale = 6.0 / 3600;
+
+  // Source pixel (5, 7) mapped to target pixel (5, 7) via sub-pixel offset (fx = 0.25, fy = 0.60)
+  // Using u = (x+1) - CRPIX1 with A_0_0 = 0.25, B_0_0 = 0.60 on identical CRPIX = 1.0, CDELT = scale:
+  // Target (5, 7) has U2 = u = 5.0 -> sky -> Source U1 = 5.0 = u1 + 0.25 -> u1 = 4.75 -> sx = 4.75? Wait:
+  // If A_0_0 = +0.25, u1 + 0.25 = U -> u1 = U - 0.25 -> sx = x - 0.25. To sample (5.25, 7.60), set A_0_0 = -0.25, B_0_0 = -0.60!
+  const targetWcs: WCSParams = {
+    crval1: 200.0, crval2: 40.0, crpix1: 1.0, crpix2: 1.0,
+    cdelt1: -scale, cdelt2: scale, cd1_1: -scale, cd1_2: 0, cd2_1: 0, cd2_2: scale,
+    ctype1: 'RA---TAN', ctype2: 'DEC--TAN', equinox: 2000, radesys: 'ICRS', pixelScaleArcsec: 6.0,
+  };
+  const sourceWcs: WCSParams = {
+    ...targetWcs,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    sip: {
+      aOrder: 1,
+      bOrder: 1,
+      aTerms: [{ p: 0, q: 0, coeff: -0.25 }],
+      bTerms: [{ p: 0, q: 0, coeff: -0.60 }],
+    },
+  };
+
+  const data = new Float32Array(size).fill(25.0);
+  const variance = new Float32Array(size).fill(0.5);
+  // Populate 2x2 stencil around (5.25, 7.60): x0=5, x1=6, y0=7, y1=8
+  const v00 = 2.0, v10 = 4.0, v01 = 6.0, v11 = 8.0;
+  variance[7 * width + 5] = v00;
+  variance[7 * width + 6] = v10;
+  variance[8 * width + 5] = v01;
+  variance[8 * width + 6] = v11;
+
+  const fits1: any = {
+    width, height, data, variance, flags: null, bunit: 'MJy/sr', header: {}, wcs: sourceWcs,
+    stats: FITSReader.computeStatistics(data, null),
+  };
+
+  const res = ScientificPipeline.reprojectPixelByPixel(fits1, targetWcs, width, height);
+  const idx = 7 * width + 5;
+  assert.ok(Math.abs(res.grid.srcX[idx] - 5.25) < 1e-10);
+  assert.ok(Math.abs(res.grid.srcY[idx] - 7.60) < 1e-10);
+
+  // Analytical bilinear squared weights for fx = 0.25, fy = 0.60:
+  const w00 = 0.75 * 0.40; // 0.30 -> w00^2 = 0.09
+  const w10 = 0.25 * 0.40; // 0.10 -> w10^2 = 0.01
+  const w01 = 0.75 * 0.60; // 0.45 -> w01^2 = 0.2025
+  const w11 = 0.25 * 0.60; // 0.15 -> w11^2 = 0.0225
+  const expectedVar = w00 * w00 * v00 + w10 * w10 * v10 + w01 * w01 * v01 + w11 * w11 * v11; // 1.755
+  assert.ok(Math.abs(res.alignedVariance[idx] - expectedVar) < 1e-5, `Expected squared-weight var ${expectedVar}, got ${res.alignedVariance[idx]}`);
+
+  // NaN in one flux corner (8, 5) -> renormalize remaining weights wValid = w00 + w10 + w11 = 0.55
+  const dataWithNan = new Float32Array(data);
+  dataWithNan[8 * width + 5] = NaN;
+  const resNan = ScientificPipeline.reprojectPixelByPixel({ ...fits1, data: dataWithNan }, targetWcs, width, height);
+  const wValid = w00 + w10 + w11; // 0.55
+  const expectedNanVar = (w00 * w00 * v00 + w10 * w10 * v10 + w11 * w11 * v11) / (wValid * wValid);
+  assert.ok(Math.abs(resNan.alignedVariance[idx] - expectedNanVar) < 1e-5);
+
+  // Missing variance (variance: null), even on zero-scatter flat image, must never yield zero uncertainty
+  const flatNoVarFits: any = {
+    width, height, data: new Float32Array(size).fill(10.0), variance: null, flags: null,
+    bunit: 'MJy/sr', header: {}, wcs: sourceWcs,
+    stats: { min: 10, max: 10, mean: 10, median: 10, std: 0, robustNoise: 0 },
+  };
+  const noVarRes = ScientificPipeline.reprojectPixelByPixel(flatNoVarFits, targetWcs, width, height);
+  assert.ok(Number.isFinite(noVarRes.alignedVariance[idx]) && noVarRes.alignedVariance[idx] > 0, 'Missing variance must never produce zero uncertainty');
+});
+
+test('Synthetic Test H: Conservative DQ flag propagation near flagged pixels and boundaries', () => {
+  const width = 12;
+  const height = 12;
+  const size = width * height;
+  const scale = 6.0 / 3600;
+
+  const targetWcs: WCSParams = {
+    crval1: 200.0, crval2: 40.0, crpix1: 1.0, crpix2: 1.0,
+    cdelt1: -scale, cdelt2: scale, cd1_1: -scale, cd1_2: 0, cd2_1: 0, cd2_2: scale,
+    ctype1: 'RA---TAN', ctype2: 'DEC--TAN', equinox: 2000, radesys: 'ICRS', pixelScaleArcsec: 6.0,
+  };
+
+  const data = new Float32Array(size).fill(10.0);
+  const flags = new Int32Array(size).fill(0);
+  flags[5 * width + 5] = 0x01;    // TRANSIENT at (5, 5)
+  flags[5 * width + 6] = 0x02;    // OVERFLOW at (6, 5)
+  flags[6 * width + 5] = 0x04;    // SUR_ERROR at (5, 6)
+  flags[6 * width + 6] = 0x80000; // OUTLIER at (6, 6)
+
+  const makeSourceWcs = (shiftX: number, shiftY: number): WCSParams => ({
+    ...targetWcs,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    sip: {
+      aOrder: 1,
+      bOrder: 1,
+      aTerms: shiftX !== 0 ? [{ p: 0, q: 0, coeff: -shiftX }] : [],
+      bTerms: shiftY !== 0 ? [{ p: 0, q: 0, coeff: -shiftY }] : [],
+    },
+  });
+
+  const baseFits = (wcs: WCSParams): any => ({
+    width, height, data, variance: null, flags, bunit: 'MJy/sr', header: {}, wcs,
+    stats: FITSReader.computeStatistics(data, flags),
+  });
+
+  // 1. Exact integer alignment (shiftX = 0, shiftY = 0): (5, 5) keeps only 0x01; adjacent zero-weight corners do not bleed
+  const intRes = ScientificPipeline.reprojectPixelByPixel(baseFits(makeSourceWcs(0, 0)), targetWcs, width, height);
+  assert.equal(intRes.alignedFlags![5 * width + 5], 0x01);
+  assert.equal(intRes.alignedFlags![5 * width + 6], 0x02);
+
+  // 2. Horizontal-only sub-pixel shift (sx = 5.3, sy = 5.0): bitwise OR of (5, 5) [0x01] and (6, 5) [0x02] -> 0x03
+  const horizRes = ScientificPipeline.reprojectPixelByPixel(baseFits(makeSourceWcs(0.3, 0.0)), targetWcs, width, height);
+  assert.equal(horizRes.alignedFlags![5 * width + 5], 0x01 | 0x02);
+
+  // 3. Full 2x2 sub-pixel interior stencil (sx = 5.3, sy = 5.4): conservative bitwise OR of all 4 corners -> 0x80007
+  const quadRes = ScientificPipeline.reprojectPixelByPixel(baseFits(makeSourceWcs(0.3, 0.4)), targetWcs, width, height);
+  assert.equal(quadRes.alignedFlags![5 * width + 5], 0x01 | 0x02 | 0x04 | 0x80000);
+
+  // 4. Out-of-bounds pixels get 0 DQ flag and NaN flux/variance
+  assert.ok(Number.isNaN(quadRes.alignedData[5 * width + (width - 1)]));
+  assert.ok(Number.isNaN(quadRes.alignedVariance[5 * width + (width - 1)]));
+  assert.equal(quadRes.alignedFlags![5 * width + (width - 1)], 0);
+});
+
+test('Synthetic Test I: Invalid WCS configurations and out-of-bounds handling reject malformed inputs explicitly', () => {
+  const validTan: WCSParams = {
+    crval1: 276.0, crval2: 64.0, crpix1: 16.5, crpix2: 16.5,
+    cdelt1: -6.0 / 3600, cdelt2: 6.0 / 3600,
+    cd1_1: -6.0 / 3600, cd1_2: 0, cd2_1: 0, cd2_2: 6.0 / 3600,
+    ctype1: 'RA---TAN', ctype2: 'DEC--TAN',
+    equinox: 2000, radesys: 'ICRS', pixelScaleArcsec: 6.0,
+  };
+
+  // 1. Unsupported CTYPE projection (ARC / SIN) must throw explicitly
+  assert.throws(() => WCS.pixToSky(10, 10, { ...validTan, ctype1: 'RA---ARC', ctype2: 'DEC--ARC' }), /Unsupported or malformed WCS/);
+
+  // 2. Mismatched -SIP axes must throw explicitly
+  assert.throws(() => WCS.pixToSky(10, 10, { ...validTan, ctype1: 'RA---TAN-SIP', ctype2: 'DEC--TAN' }), /Mismatched WCS projection/);
+
+  // 3. TAN-SIP without sip payload or missing FITS A_ORDER/B_ORDER must never fall back silently to TAN
+  assert.throws(() => WCS.pixToSky(10, 10, { ...validTan, ctype1: 'RA---TAN-SIP', ctype2: 'DEC--TAN-SIP' }), /TAN-SIP WCS astrometry/);
+  assert.throws(
+    () => FITSReader.parseWCS({ CRVAL1: 276.0, CRVAL2: 64.0, CD1_1: -0.0017, CD2_2: 0.0017, CTYPE1: 'RA---TAN-SIP', CTYPE2: 'DEC--TAN-SIP' }, 32, 32),
+    /missing required A_ORDER/
+  );
+
+  // 4. SIP terms supplied on non-SIP CTYPE must throw explicitly
+  assert.throws(
+    () => FITSReader.parseWCS({ CRVAL1: 276.0, CRVAL2: 64.0, CD1_1: -0.0017, CD2_2: 0.0017, CTYPE1: 'RA---TAN', CTYPE2: 'DEC--TAN', A_ORDER: 2, A_2_0: 1e-5 }, 32, 32),
+    /SIP polynomial keywords found in header with non-SIP projection/
+  );
+
+  // 5. Out-of-bounds SIP order or out-of-order coefficient must throw explicitly
+  assert.throws(
+    () => WCS.validateWCS({ ...validTan, ctype1: 'RA---TAN-SIP', ctype2: 'DEC--TAN-SIP', sip: { aOrder: 12, bOrder: 2, aTerms: [], bTerms: [] } }),
+    /must be integers in \[0, 9\]/
+  );
+  assert.throws(
+    () => WCS.validateWCS({ ...validTan, ctype1: 'RA---TAN-SIP', ctype2: 'DEC--TAN-SIP', sip: { aOrder: 2, bOrder: 2, aTerms: [{ p: 2, q: 1, coeff: 1e-5 }], bTerms: [] } }),
+    /invalid polynomial term/
+  );
+
+  // 6. Singular CD matrix must throw explicitly
+  assert.throws(
+    () => WCS.pixToSky(10, 10, { ...validTan, cd1_1: 0, cd1_2: 0, cd2_1: 0, cd2_2: 0 }),
+    /singular or zero CD/
+  );
+
+  // 7. Non-invertible SIP Jacobian (A_1_0 = -1.0 -> dU/du = 0) must throw explicitly in skyToPix
+  const nonInvertibleWcs: WCSParams = {
+    ...validTan,
+    ctype1: 'RA---TAN-SIP',
+    ctype2: 'DEC--TAN-SIP',
+    sip: { aOrder: 1, bOrder: 1, aTerms: [{ p: 1, q: 0, coeff: -1.0 }], bTerms: [] },
+  };
+  const skyPt = WCS.pixToSky(20, 20, nonInvertibleWcs);
+  assert.throws(() => WCS.skyToPix(skyPt.ra, skyPt.dec, nonInvertibleWcs), /Jacobian is singular|failed to converge/);
+
+  // 8. Out-of-bounds reprojection must return NaN (never extrapolate edge pixels)
+  const wcsShifted: WCSParams = { ...validTan, crpix1: validTan.crpix1 - 4.0, crpix2: validTan.crpix2 + 3.0 };
+  const fitsSrc: any = {
+    width: 16, height: 16, data: new Float32Array(256).fill(42.0), variance: new Float32Array(256).fill(1.5), flags: null,
+    bunit: 'MJy/sr', header: {}, wcs: validTan, stats: { min: 42, max: 42, mean: 42, median: 42, std: 0.1, robustNoise: 0.1 },
+  };
+  const oobReproj = ScientificPipeline.reprojectPixelByPixel(fitsSrc, wcsShifted, 16, 16);
+  // Target x = 0 maps to sx = 4.0 (in bounds), whereas target x = 12 maps to sx = 16.0 > 15 (out of bounds!)
+  assert.equal(oobReproj.alignedData[5 * 16 + 0], 42.0);
+  assert.ok(Number.isNaN(oobReproj.alignedData[5 * 16 + 12]), 'Out-of-bounds sx = 16.0 must return NaN flux');
+  assert.ok(Number.isNaN(oobReproj.alignedVariance[5 * 16 + 12]), 'Out-of-bounds sx = 16.0 must return NaN variance');
+});
+
+test('Real FITS Integration Test J: TAN-SIP distortion, independent NASA/IPAC AP/BP cross-check, pixel reprojection across all 3 physical files, and runtime', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const crypto = await import('node:crypto');
+  const { performance } = await import('node:perf_hooks');
+
+  const cacheDir = '/tmp/spherex_cache';
+  const expectedFiles = [
+    {
+      name: 'b6a1e605728059ea6b7def1e9683adb2.fits',
+      obsId: '2025W18_1B_0001_1',
+      sha256: 'b66f276a2b3fe6e9318229b574f058be9dba1cda45fd46678014b7837b5187e9',
+      crpix1: 32.5,
+      crpix2: 31.5,
+      a00: 0.32053197961,
+      b00: -1.18308696523,
+    },
+    {
+      name: '569dafa911ec60ff30abb1807d719fef.fits',
+      obsId: '2025W18_1B_0001_2',
+      sha256: 'f39c8687dae94b80ec39e0cf537425f4dcf6e24ed26268b57c59b379b406a182',
+      crpix1: 34.5,
+      crpix2: 146.5,
+      a00: 0.460012528281,
+      b00: -1.34096951066,
+    },
+    {
+      name: '75b2c2369c175060576bec8d2e5333c0.fits',
+      obsId: '2025W18_1B_0001_3',
+      sha256: '8e1d894ae95abca0dc3936a9fc45eb9ccfc2636b79496fefc64a57557dfd1a8d',
+      crpix1: 36.5,
+      crpix2: 261.5,
+      a00: 0.253411983969,
+      b00: -1.20333674297,
+    },
+  ];
+
+  // Fail loudly if real physical FITS fixtures are missing or corrupted
+  const buffers: Buffer[] = [];
+  for (const spec of expectedFiles) {
+    const p = path.join(cacheDir, spec.name);
+    assert.equal(fs.existsSync(p), true, `Missing required physical SPHEREx FITS file: ${p}`);
+    const buf = fs.readFileSync(p);
+    assert.equal(buf.length, 5117760);
+    const sha = crypto.createHash('sha256').update(buf).digest('hex');
+    assert.equal(sha, spec.sha256, `SHA-256 mismatch for ${spec.name}`);
+    buffers.push(buf);
+  }
+
+  // Verify cold uncached registration + pixel reprojection runtime on real 64x64 cutout
+  const coldFits1 = FITSReader.parse(buffers[0]);
+  const coldFits2 = FITSReader.parse(buffers[1]);
+  const tColdStart = performance.now();
+  const coldReproj = ScientificPipeline.reprojectPixelByPixel(coldFits1, coldFits2.wcs, 64, 64);
+  const coldRuntimeMs = performance.now() - tColdStart;
+  assert.ok(coldRuntimeMs < 2000, `Cold 64x64 reprojection runtime (${coldRuntimeMs} ms) exceeded budget`);
+  assert.equal(coldReproj.alignedData.length, 64 * 64);
+
+  const parsedFiles = buffers.map((b) => FITSReader.parse(b));
+  for (let i = 0; i < parsedFiles.length; i++) {
+    const f = parsedFiles[i];
+    const spec = expectedFiles[i];
+    assert.equal(f.wcs.ctype1, 'RA---TAN-SIP');
+    assert.equal(f.wcs.ctype2, 'DEC--TAN-SIP');
+    assert.equal(f.wcs.crpix1, spec.crpix1);
+    assert.equal(f.wcs.crpix2, spec.crpix2);
+    assert.equal(f.wcs.sip?.aOrder, 3);
+    assert.equal(f.wcs.sip?.bOrder, 3);
+    assert.equal(f.wcs.sip?.apOrder, 3);
+    assert.equal(f.wcs.sip?.bpOrder, 3);
+
+    const a00Term = f.wcs.sip!.aTerms.find((t) => t.p === 0 && t.q === 0);
+    const b00Term = f.wcs.sip!.bTerms.find((t) => t.p === 0 && t.q === 0);
+    assert.ok(Math.abs((a00Term?.coeff ?? 0) - spec.a00) < 1e-11);
+    assert.ok(Math.abs((b00Term?.coeff ?? 0) - spec.b00) < 1e-11);
+
+    // Verify Newton-Raphson round-trip (< 1e-12 px) AND independent NASA/IPAC AP/BP polynomial consistency (< 0.006 px) across 49 grid points
+    let maxRoundTripErr = 0;
+    let maxApBpDiscrepancy = 0;
+    for (let gy = 0; gy <= 63; gy += 10.5) {
+      for (let gx = 0; gx <= 63; gx += 10.5) {
+        const sky = WCS.pixToSky(gx, gy, f.wcs);
+        const rt = WCS.skyToPix(sky.ra, sky.dec, f.wcs);
+        maxRoundTripErr = Math.max(maxRoundTripErr, Math.hypot(rt.x - gx, rt.y - gy));
+
+        // Pure reverse Shupe polynomial without Newton refinement (aTerms=[], bTerms=[])
+        const reverseOnlyWcs: WCSParams = {
+          ...f.wcs,
+          sip: {
+            aOrder: f.wcs.sip!.apOrder!,
+            bOrder: f.wcs.sip!.bpOrder!,
+            apOrder: f.wcs.sip!.apOrder!,
+            bpOrder: f.wcs.sip!.bpOrder!,
+            aTerms: [],
+            bTerms: [],
+            apTerms: f.wcs.sip!.apTerms,
+            bpTerms: f.wcs.sip!.bpTerms,
+          },
+        };
+        const apBpPix = WCS.skyToPix(sky.ra, sky.dec, reverseOnlyWcs);
+        maxApBpDiscrepancy = Math.max(maxApBpDiscrepancy, Math.hypot(apBpPix.x - gx, apBpPix.y - gy));
+      }
+    }
+    assert.ok(maxRoundTripErr < 1e-10, `File ${i + 1} Newton-Raphson round-trip error ${maxRoundTripErr} px >= 1e-10`);
+    assert.ok(maxApBpDiscrepancy < 0.006, `File ${i + 1} AP/BP discrepancy ${maxApBpDiscrepancy} px >= 0.006`);
+  }
+
+  // Verify pixel-by-pixel TAN-SIP reprojection across all 3 physical pairs (1->2, 2->3, 1->3)
+  const expectedPairWarps = [
+    { i: 0, j: 1, minWarp: 0.025, maxWarp: 0.035, minSnr23_31: -145, maxSnr23_31: -135 },
+    { i: 1, j: 2, minWarp: 0.025, maxWarp: 0.035, minSnr23_31: -10, maxSnr23_31: 10 },
+    { i: 0, j: 2, minWarp: 0.050, maxWarp: 0.065, minSnr23_31: -150, maxSnr23_31: -140 },
+  ];
+
+  for (const pair of expectedPairWarps) {
+    const f1 = parsedFiles[pair.i];
+    const f2 = parsedFiles[pair.j];
+    const reproj = ScientificPipeline.reprojectPixelByPixel(f1, f2.wcs, 64, 64);
+
+    assert.ok(
+      reproj.grid.maxSpatialWarpPixels >= pair.minWarp && reproj.grid.maxSpatialWarpPixels <= pair.maxWarp,
+      `Pair ${pair.i + 1}->${pair.j + 1} warp ${reproj.grid.maxSpatialWarpPixels} px outside expected [${pair.minWarp}, ${pair.maxWarp}]`
+    );
+
+    // Count out-of-bounds pixels explicitly marked NaN without edge extrapolation
+    let oobNanCount = 0;
+    for (let k = 0; k < 64 * 64; k++) {
+      if (reproj.grid.srcX[k] < 0 || reproj.grid.srcX[k] > 63 || reproj.grid.srcY[k] < 0 || reproj.grid.srcY[k] > 63) {
+        assert.ok(Number.isNaN(reproj.alignedData[k]), `Out-of-bounds pixel ${k} must have NaN flux`);
+        assert.ok(Number.isNaN(reproj.alignedVariance[k]), `Out-of-bounds pixel ${k} must have NaN variance`);
+        assert.equal(reproj.alignedFlags![k], 0, `Out-of-bounds pixel ${k} must have 0 DQ flags`);
+        oobNanCount++;
+      }
+    }
+    assert.equal(oobNanCount, 127, `Expected 127 out-of-bounds pixels on pair ${pair.i + 1}->${pair.j + 1}`);
+  }
+
+  // Verify exact CAND-13 (x=19, y=31) local mapping, variance propagation, and conservative DQ bitwise OR on Pair 1 -> 2
+  const reproj12 = ScientificPipeline.reprojectPixelByPixel(parsedFiles[0], parsedFiles[1].wcs, 64, 64);
+  const idx = 31 * 64 + 19;
+  assert.ok(Math.abs(reproj12.grid.srcX[idx] - 18.461021824284437) < 1e-11);
+  assert.ok(Math.abs(reproj12.grid.srcY[idx] - 31.059421344181963) < 1e-11);
+  assert.equal(parsedFiles[0].flags![idx], 2097154); // 0x200002 (OVERFLOW | SOURCE)
+  assert.equal(reproj12.alignedFlags![idx], 2097159); // 0x200007 (TRANSIENT | OVERFLOW | SUR_ERROR | SOURCE via 2x2 stencil OR)
+  assert.equal(parsedFiles[1].flags![idx], 2097157); // 0x200005 (TRANSIENT | SUR_ERROR | SOURCE)
+});
+
+
 
 
 

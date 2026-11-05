@@ -242,8 +242,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnFastBlink: 'Fast Blink',
 
     // View Mode Status Labels
-    statusVisit1: 'Visit 1 (Original Calibrated FITS)',
-    statusVisit2: 'Visit 2 (Original Calibrated FITS)',
+    statusVisit1: 'Exposure 1 (Original Calibrated FITS)',
+    statusVisit2: 'Exposure 2 (Original Calibrated FITS)',
     statusDifference: 'Difference Image (Flux Residuals)',
     statusSignificance: 'Significance Map (Signal-to-Noise σ)',
     statusSplit: 'Interactive Split Slider',
@@ -373,7 +373,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeHeroSubtitle:
       'Did something actually change in this part of the sky? Compare multi-epoch infrared snapshots from NASA’s SPHEREx space observatory, compute difference maps, and investigate the evidence with SPEX, your astrophysicist companion.',
     homeStep1Title: '01. Two Looks',
-    homeStep1Desc: 'SPHEREx observes the same sky months apart in the infrared spectrum.',
+    homeStep1Desc: 'SPHEREx captures multi-epoch infrared exposures of the same sky region across intra-visit and survey cadences.',
     homeStep2Title: '02. Subtract Sky',
     homeStep2Desc: 'Subtracting visits leaves only objects that brightened, dimmed, or moved.',
     homeStep3Title: '03. Verify Facts',
@@ -388,7 +388,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeSpexSpeechGreeting: 'SPEX says hello!',
     homeSpexSpeechText:
       '"I am SPEX, guardian of the SPHEREx infrared sky! I help you subtract observations to see whether a star genuinely fluctuated or if it is just detector noise. Step into the workspace and let’s explore!"',
-    homeProvenanceNoteTitle: '100% Real NASA Data Provenance',
+    homeProvenanceNoteTitle: 'Calibrated NASA Archive Data Provenance',
     homeProvenanceNoteText:
       'Every pixel originates from calibrated FITS archives at NASA/IPAC IRSA, processed with zero synthetic imagery or mock placeholders.',
 
@@ -430,7 +430,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnSpectralBands: '102 Spectral Bands',
     btnDiscoveryPassport: 'Discovery Passport',
     btnCompareCandidates: 'Compare Findings',
-    btnTimelinePlay: 'Play Visits Sequence',
+    btnTimelinePlay: 'Play Exposure Sequence',
     btnTimelinePause: 'Pause Sequence',
     labelFov: 'Field of View (FOV):',
     labelEpochPair: 'Difference Pair:',
@@ -466,8 +466,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnFastBlink: 'وميض سريع',
 
     // View Mode Status Labels
-    statusVisit1: 'الرصدة 1 (FITS أصلي ومعاير)',
-    statusVisit2: 'الرصدة 2 (FITS أصلي ومعاير)',
+    statusVisit1: 'التعريض 1 (FITS أصلي ومعاير)',
+    statusVisit2: 'التعريض 2 (FITS أصلي ومعاير)',
     statusDifference: 'صورة الفرق (طرح التدفق الإشعاعي)',
     statusSignificance: 'خريطة الأهمية الإحصائية (سيجما σ)',
     statusSplit: 'شريحة مقارنة تفاعلية متجاورة',
@@ -597,7 +597,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeHeroSubtitle:
       'هل حدث تغير حقيقي في هذا الجزء من السماء؟ قارن بين لقطتين زمنيتين من مرصد SPHEREx الفضائي التابع لناسا، واحسب خريطة الفروق الضوئية، ودقق في الأدلة الفلكية مع سبيكس (SPEX)، مرشدك الفلكي الذكي.',
     homeStep1Title: '01. لقطتان زمنيتان',
-    homeStep1Desc: 'يرصد تلسكوب SPHEREx نفس البقعة في السماء بفاصل شهور في طيف الأشعة تحت الحمراء.',
+    homeStep1Desc: 'يرصد تلسكوب SPHEREx نفس البقعة في السماء عبر تعريضات متتابعة في طيف الأشعة تحت الحمراء.',
     homeStep2Title: '02. طرح السماء',
     homeStep2Desc: 'طرح الصورتين يلغي الخلفية الثابتة تماماً ويظهر فقط ما زاد سطوعه، أو خفت، أو تحرك.',
     homeStep3Title: '03. إثبات الدليل',
@@ -612,7 +612,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeSpexSpeechGreeting: 'سبيكس يرحب بك!',
     homeSpexSpeechText:
       '«أنا سبيكس، حارس سماء SPHEREx والرفيق الفلكي! بساعدك تطرح صور الأشعة تحت الحمراء، ونعرف سوا لو النجم ومض بجد ولا مجرد بكسل مشوش. ادخل المعمل ويلا نبدأ!»',
-    homeProvenanceNoteTitle: 'بيانات حقيقية 100% من وكالة ناسا',
+    homeProvenanceNoteTitle: 'مصدر بيانات موثق من أرشيف وكالة ناسا',
     homeProvenanceNoteText:
       'كل بكسل في المنصة مستخرج مباشرة من أرشيف FITS المعاير في NASA/IPAC IRSA، بدون أي صور تخيلية أو بيانات وهمية.',
 
@@ -620,7 +620,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     casesHeaderBadge: 'NASA/IPAC IRSA SPHEREx QR2 · تحقيقات علمية حقيقية',
     casesHeaderTitle: 'ملفات الحالات الفلكية الموثقة',
     casesHeaderDesc:
-      'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية. من اكتشاف النجوم المتغيرة، إلى إثبات الثبات الضوئي، وتصفية تشويش المستشعر والـ208σ persistence.',
+      'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل قياس الفروق الضوئية ومعايير الثبات وتصفية أعلام الجودة (0x01/0x02/0x80000).',
     casesBtnInvestigate: 'افحص هذه الحالة الفلكية',
     casesClassificationLabel: 'التصنيف الفلكي:',
 
@@ -654,7 +654,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnSpectralBands: 'النطاقات الطيفية الـ 102',
     btnDiscoveryPassport: 'جواز الاكتشاف الفلكي',
     btnCompareCandidates: 'مقارنة المرشحين',
-    btnTimelinePlay: 'تشغيل تسلسل الرصدات',
+    btnTimelinePlay: 'تشغيل تسلسل التعريضات',
     btnTimelinePause: 'إيقاف التسلسل مؤقتاً',
     labelFov: 'مجال الرؤية (FOV):',
     labelEpochPair: 'زوج المقارنة:',

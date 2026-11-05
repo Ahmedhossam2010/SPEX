@@ -134,10 +134,20 @@ export const SpexPopup: React.FC<SpexPopupProps> = React.memo(({
 
     if (currentResult.evidence.classification === 'SIGNIFICANT CHANGE DETECTED') {
       initialMood = 'eureka';
+      const cadenceSec = currentResult.compatibility.startToStartCadenceSec;
+      const intSec = currentResult.compatibility.integrationDuration1Sec;
+      const baselineEn =
+        cadenceSec !== undefined && cadenceSec < 3600
+          ? `${cadenceSec.toFixed(1)}s start-to-start cadence${intSec ? ` (${intSec.toFixed(1)}s integration)` : ''}`
+          : `${currentResult.compatibility.timeBaselineDays.toFixed(1)} days`;
+      const baselineAr =
+        cadenceSec !== undefined && cadenceSec < 3600
+          ? `تتابع زمني ${cadenceSec.toFixed(1)} ثانية${intSec ? ` (زمن تكامل ${intSec.toFixed(1)} ثانية)` : ''}`
+          : `${currentResult.compatibility.timeBaselineDays.toFixed(1)} يوم`;
       greeting =
         language === 'ar'
-          ? `رصدنا تغير تدفق حقيقي بقوة S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ عبر ${currentResult.compatibility.timeBaselineDays.toFixed(1)} يوم. اسألني عن قياسات التدفق وتطابق Gaia!`
-          : `Verified real flux variation at S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ across ${currentResult.compatibility.timeBaselineDays.toFixed(1)} days. Ask me about the aperture flux and Gaia match!`;
+          ? `رصدنا تغير تدفق بقوة S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ عبر ${baselineAr}. اسألني عن قياسات التدفق وتطابق Gaia!`
+          : `Verified flux residual at S/N = ${Math.abs(currentResult.evidence.maxSignificance).toFixed(1)}σ across ${baselineEn}. Ask me about the aperture flux and Gaia match!`;
     } else if (currentResult.evidence.classification === 'NO SIGNIFICANT CHANGE DETECTED') {
       initialMood = 'serious';
       greeting =
