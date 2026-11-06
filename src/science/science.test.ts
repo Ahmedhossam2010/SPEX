@@ -846,6 +846,18 @@ test('DataReleaseAdapter: normalizes incoming FITS and generates release validat
   if (!fs.existsSync(cacheDir)) {
     fs.mkdirSync(cacheDir, { recursive: true });
   }
+  const persistentDir = path.join(process.cwd(), 'data', 'spherex_cache');
+  if (fs.existsSync(persistentDir)) {
+    try {
+      const pFiles = fs.readdirSync(persistentDir).filter((f: string) => f.endsWith('.fits'));
+      for (const pf of pFiles) {
+        const dest = path.join(cacheDir, pf);
+        if (!fs.existsSync(dest)) {
+          fs.copyFileSync(path.join(persistentDir, pf), dest);
+        }
+      }
+    } catch {}
+  }
   let cachedFiles = fs.readdirSync(cacheDir).filter((f: string) => f.endsWith('.fits'));
   if (cachedFiles.length === 0) {
     const makeCard = (key: string, value: string | number) => {
@@ -2322,6 +2334,103 @@ test('Real FITS Integration Test J: TAN-SIP distortion, independent NASA/IPAC AP
   assert.equal(reproj12.alignedFlags![idx], 2097159); // 0x200007 (TRANSIENT | OVERFLOW | SUR_ERROR | SOURCE via 2x2 stencil OR)
   assert.equal(parsedFiles[1].flags![idx], 2097157); // 0x200005 (TRANSIENT | SUR_ERROR | SOURCE)
 });
+
+test('Scientific Integrity Regression: Weak stationary PSF residuals separated by 71-175" are NOT classified as moving objects', () => {
+  const width = 64;
+  const height = 64;
+  const size = width * height;
+
+  const data1 = new Float32Array(size).fill(2.0);
+  const data2 = new Float32Array(size).fill(2.0);
+  const varMap = new Float32Array(size).fill(0.1);
+  const diff = new Float32Array(size).fill(0.0);
+  const sig = new Float32Array(size).fill(0.0);
+
+  // Star 1 at (15, 20): stationary star present in both epochs, slight pointing jitter residual (+1.8)
+  data1[20 * width + 15] = 45.0;
+  data2[20 * width + 15] = 46.8;
+  diff[20 * width + 15] = 1.8;
+  sig[20 * width + 15] = 1.8 / Math.sqrt(0.2); // ~4.02 sigma
+
+  // Star 2 at (35, 20): another stationary star 20 px (~123") away with slight negative residual (-1.6)
+  data1[20 * width + 35] = 50.0;
+  data2[20 * width + 35] = 48.4;
+  diff[20 * width + 35] = -1.6;
+  sig[20 * width + 35] = -1.6 / Math.sqrt(0.2); // ~ -3.58 sigma
+
+  const wcs: WCSParams = {
+    crval1: 276.26,
+    crval2: 64.82,
+    crpix1: 32.5,
+    crpix2: 32.5,
+    cdelt1: -6.15 / 3600,
+    cdelt2: 6.15 / 3600,
+    cd1_1: -6.15 / 3600,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: 6.15 / 3600,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.15,
+  };
+
+  // Intra-visit cadence: 128 seconds = 0.00148 days
+  const timeBaselineDays = 128.93 / 86400;
+  const candidates = ScientificPipeline.detectCandidates(
+    diff,
+    varMap,
+    sig,
+    data1,
+    data2,
+    null,
+    null,
+    width,
+    height,
+    wcs,
+    0.3,
+    timeBaselineDays
+  );
+
+  // Verify that neither candidate is falsely classified as a moving object
+  const movingCands = candidates.filter((c) => c.status === 'Moving object candidate' || c.motion?.isMoving);
+  assert.equal(movingCands.length, 0, 'Weak stationary PSF residuals must NOT be paired into a false moving object');
+
+  // Verify classifications are separated
+  const star1Cand = candidates.find((c) => c.peakX === 15 && c.peakY === 20);
+  if (star1Cand) {
+    assert.notEqual(star1Cand.scientificClassification, 'POSSIBLE_MOVING_OBJECT');
+    assert.ok(
+      star1Cand.scientificClassification === 'SIGNIFICANT_FLUX_CHANGE' ||
+      star1Cand.scientificClassification === 'STATIONARY_SOURCE_RESIDUAL' ||
+      star1Cand.scientificClassification === 'REGISTRATION_OR_PSF_ARTIFACT',
+      'Star 1 must have an authentic stationary classification'
+    );
+  }
+});
+
+test('Scientific Integrity Regression: Subpixel centroiding preserves integer peaks and provides subpixel accuracy', () => {
+  const width = 64;
+  const height = 64;
+  const diff = new Float32Array(width * height).fill(0.0);
+
+  // Asymmetric peak centered near (25.3, 30.2)
+  diff[30 * width + 25] = 10.0;
+  diff[30 * width + 26] = 6.0;
+  diff[31 * width + 25] = 4.0;
+  diff[29 * width + 25] = 1.0;
+  diff[30 * width + 24] = 1.0;
+
+  const centroid = ScientificPipeline.computeSubpixelCentroid(diff, width, height, 25, 30, 2);
+  assert.equal(centroid.valid, true);
+  // Integer peak is at 25, subpixel centroid is shifted towards 26 (x > 25)
+  assert.ok(centroid.cx > 25.0 && centroid.cx < 26.0, `Centroid cx should be > 25.0, got ${centroid.cx}`);
+  // Subpixel centroid shifted towards 31 (y > 30)
+  assert.ok(centroid.cy > 30.0 && centroid.cy < 31.0, `Centroid cy should be > 30.0, got ${centroid.cy}`);
+  assert.ok(centroid.uncertaintyPix > 0.05 && centroid.uncertaintyPix < 0.5);
+});
+
 
 
 

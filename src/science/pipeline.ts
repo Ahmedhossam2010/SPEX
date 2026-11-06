@@ -869,6 +869,78 @@ export class ScientificPipeline {
   }
 
   /**
+   * Subpixel 2D Center-of-Mass / Intensity-Weighted Centroiding
+   * Computes subpixel centroid coordinates (cx, cy) and positional uncertainty
+   * within a local 5x5 window around the detected peak (peakX, peakY).
+   */
+  public static computeSubpixelCentroid(
+    diff: Float32Array,
+    width: number,
+    height: number,
+    peakX: number,
+    peakY: number,
+    radius = 2
+  ): { cx: number; cy: number; uncertaintyPix: number; valid: boolean } {
+    let sumWeight = 0;
+    let sumWx = 0;
+    let sumWy = 0;
+    const peakIdx = peakY * width + peakX;
+    const peakVal = diff[peakIdx];
+    const isPositive = peakVal >= 0;
+
+    // Estimate local background from outer perimeter of 5x5 box
+    let bgSum = 0;
+    let bgCount = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+          const nx = peakX + dx;
+          const ny = peakY + dy;
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            bgSum += diff[ny * width + nx];
+            bgCount++;
+          }
+        }
+      }
+    }
+    const bg = bgCount > 0 ? bgSum / bgCount : 0;
+
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const nx = peakX + dx;
+        const ny = peakY + dy;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const val = diff[ny * width + nx];
+          const net = isPositive ? val - bg : -(val - bg);
+          if (net > 0) {
+            sumWeight += net;
+            sumWx += net * nx;
+            sumWy += net * ny;
+          }
+        }
+      }
+    }
+
+    if (sumWeight > 0) {
+      const cx = sumWx / sumWeight;
+      const cy = sumWy / sumWeight;
+      // Positional deviation must be within physical radius of peak pixel
+      if (Math.abs(cx - peakX) <= radius && Math.abs(cy - peakY) <= radius) {
+        const snr = Math.max(1, Math.abs(peakVal));
+        const uncertaintyPix = Math.max(0.05, Math.min(0.5, 1.0 / Math.sqrt(snr)));
+        return {
+          cx: Number(cx.toFixed(3)),
+          cy: Number(cy.toFixed(3)),
+          uncertaintyPix: Number(uncertaintyPix.toFixed(3)),
+          valid: true,
+        };
+      }
+    }
+
+    return { cx: peakX, cy: peakY, uncertaintyPix: 0.5, valid: false };
+  }
+
+  /**
    * Real peak candidate detection with circular aperture photometry & artifact rejection
    */
   public static detectCandidates(
@@ -926,8 +998,25 @@ export class ScientificPipeline {
               }
             }
 
-            // Perform circular aperture photometry
-            const phot = this.aperturePhotometry(x, y, data1, data2, diff, varMap, width, height, 2.5, 4.0, 6.0);
+            // Subpixel 2D centroid fitting
+            const centroid = this.computeSubpixelCentroid(diff, width, height, x, y, 2);
+            const peakSky = WCS.pixToSky(x, y, wcs);
+            const centroidSky = centroid.valid ? WCS.pixToSky(centroid.cx, centroid.cy, wcs) : peakSky;
+
+            // Perform circular aperture photometry centered at candidate coordinates
+            const phot = this.aperturePhotometry(
+              centroid.cx,
+              centroid.cy,
+              data1,
+              data2,
+              diff,
+              varMap,
+              width,
+              height,
+              2.5,
+              4.0,
+              6.0
+            );
 
             // Artifact assessment
             const artifact = this.assessArtifact(
@@ -942,17 +1031,18 @@ export class ScientificPipeline {
               noiseSigma
             );
 
-            // Sky coordinates
-            const sky = WCS.pixToSky(x, y, wcs);
-
             // Aperture S/N verification: authentic astrophysical sources require significant integrated aperture flux
             const apertureSnr = phot.deltaUncertainty > 0 ? Math.abs(phot.deltaFlux) / phot.deltaUncertainty : 0;
             let status: CandidateDetection['status'] = 'Candidate';
+            let scientificClassification: CandidateDetection['scientificClassification'] = 'SIGNIFICANT_FLUX_CHANGE';
+
             if (artifact.artifactScore >= 0.65 || artifact.flags.includes('REGISTRATION_OR_PSF_DIPOLE')) {
               status = 'Possible artifact';
+              scientificClassification = 'REGISTRATION_OR_PSF_ARTIFACT';
             } else if (apertureSnr < 3.0 && absS >= 4.0) {
               // High single-pixel residual without significant integrated aperture flux is an unmodeled PSF/registration artifact
               status = 'Possible artifact';
+              scientificClassification = 'REGISTRATION_OR_PSF_ARTIFACT';
               if (!artifact.flags.includes('LOW_APERTURE_SIGNIFICANCE')) {
                 artifact.flags.push('LOW_APERTURE_SIGNIFICANCE');
               }
@@ -961,16 +1051,28 @@ export class ScientificPipeline {
               artifact.artifactScore = Math.max(artifact.artifactScore, 0.70);
             } else if (apertureSnr >= 3.5 && artifact.artifactScore < 0.35) {
               status = 'Candidate';
+              scientificClassification = 'SIGNIFICANT_FLUX_CHANGE';
+            } else if (apertureSnr >= 2.0 && absS >= 3.5) {
+              status = 'Stationary source residual';
+              scientificClassification = 'STATIONARY_SOURCE_RESIDUAL';
             } else {
               status = 'Insufficient evidence';
+              scientificClassification = 'INSUFFICIENT_EVIDENCE';
             }
 
             candidates.push({
               id: `CAND-${String(candidates.length + 1).padStart(2, '0')}`,
               x,
               y,
-              ra: sky.ra,
-              dec: sky.dec,
+              peakX: x,
+              peakY: y,
+              peakRa: Number(peakSky.ra.toFixed(6)),
+              peakDec: Number(peakSky.dec.toFixed(6)),
+              centroidX: centroid.cx,
+              centroidY: centroid.cy,
+              centroidUncertaintyPix: centroid.uncertaintyPix,
+              ra: Number(centroidSky.ra.toFixed(6)),
+              dec: Number(centroidSky.dec.toFixed(6)),
               peakSignificance: Number(s.toFixed(2)),
               apertureSignificance: Number(apertureSnr.toFixed(2)),
               deltaFlux: Number(phot.deltaFlux.toFixed(4)),
@@ -980,6 +1082,7 @@ export class ScientificPipeline {
               apertureUncertainty1: Number(phot.unc1.toFixed(4)),
               apertureUncertainty2: Number(phot.unc2.toFixed(4)),
               status,
+              scientificClassification,
               artifactScore: Number(artifact.artifactScore.toFixed(2)),
               artifactFlags: artifact.flags,
               whyFlagged: artifact.whyFlagged,
@@ -995,11 +1098,31 @@ export class ScientificPipeline {
     // -------------------------------------------------------------
     // MOTION / ASTEROID DETECTION ALGORITHM:
     // Identifies moving objects (e.g. Solar System asteroids or high-proper-motion stars)
-    // by searching for a complementary opposite-sign counterpart in the difference frame
-    // separated by >= 1.8 pixels (beyond unaligned PSF pointing jitter).
+    // by searching for a complementary opposite-sign counterpart in the difference frame.
+    // RIGOROUS GUARDS TO PREVENT FALSE POSITIVE MOVING OBJECTS:
+    // 1. Neither component may be flagged as a registration/PSF artifact or dipole.
+    // 2. Both components must have clean point-like morphology.
+    // 3. True displacement check:
+    //    - At Epoch 1 (negative candidate position), a real source existed, and was absent at Epoch 2.
+    //    - At Epoch 2 (positive candidate position), a real source exists, and was absent at Epoch 1.
+    //    - Stationary stars with flux in both epochs MUST NOT be classified as moving objects!
+    // 4. Physical velocity constraint:
+    //    - Apparent motion must be physically plausible (< 3000 arcsec/day for Solar System objects).
+    //    - Over intra-visit cadences (< 0.05 days / < 1 hour), displacement cannot exceed realistic
+    //      asteroid velocities (e.g. < 5 pixels).
     // -------------------------------------------------------------
-    const positiveCandidates = candidates.filter((c) => c.deltaFlux > 0);
-    const negativeCandidates = candidates.filter((c) => c.deltaFlux < 0);
+    const positiveCandidates = candidates.filter(
+      (c) =>
+        c.deltaFlux > 0 &&
+        !c.artifactFlags.includes('REGISTRATION_OR_PSF_DIPOLE') &&
+        !c.artifactFlags.includes('DETECTOR_OVERFLOW')
+    );
+    const negativeCandidates = candidates.filter(
+      (c) =>
+        c.deltaFlux < 0 &&
+        !c.artifactFlags.includes('REGISTRATION_OR_PSF_DIPOLE') &&
+        !c.artifactFlags.includes('DETECTOR_OVERFLOW')
+    );
 
     for (const posCand of positiveCandidates) {
       let bestMatch: CandidateDetection | null = null;
@@ -1011,15 +1134,41 @@ export class ScientificPipeline {
         const distPix = Math.hypot(dx, dy);
 
         // Displaced dipole condition: spatial displacement between 1.8 and 30 pixels
-        if (distPix >= 1.8 && distPix <= 30.0) {
-          const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
-          // Flux balance condition (within a factor of 2.8)
-          if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
-            const discrepancy = Math.abs(1.0 - fluxRatio) + distPix * 0.04;
-            if (discrepancy < minDiscrepancy) {
-              minDiscrepancy = discrepancy;
-              bestMatch = negCand;
-            }
+        if (distPix < 1.8 || distPix > 30.0) continue;
+
+        const sepArcsec = WCS.angularSeparationArcsec(posCand.ra, posCand.dec, negCand.ra, negCand.dec);
+        const dtDays = timeBaselineDays > 0 ? timeBaselineDays : 1.0;
+        const speedArcsecDay = sepArcsec / dtDays;
+
+        // Physical velocity constraint:
+        // Solar System asteroids move at ~200 - 2500 arcsec/day.
+        // For intra-visit cadences (dtDays < 0.05 = ~1.2 hours), a separation > 5 pixels (~31 arcsec)
+        // implies > 25,000 "/day, which is physically impossible for asteroids!
+        // Unrelated stationary PSF residuals separated by 71-175" (11-28 px) must NOT be paired!
+        if (dtDays < 0.05 && distPix > 5.0) continue;
+        if (speedArcsecDay > 4000.0) continue;
+
+        // Check astrophysical displacement:
+        // PosCand in Epoch 1 should NOT have had a dominant stationary star:
+        const posEpoch1Significance =
+          posCand.apertureUncertainty1 > 0 ? posCand.apertureFluxEpoch1 / posCand.apertureUncertainty1 : 0;
+        const posRatio = posCand.apertureFluxEpoch1 / Math.max(1e-4, posCand.apertureFluxEpoch2);
+        // If posCand already had > 60% of its flux in Epoch 1 with high significance, it is a stationary star, not a moving object!
+        if (posRatio > 0.6 && posEpoch1Significance > 4.0) continue;
+
+        // Similarly for negCand in Epoch 2:
+        const negEpoch2Significance =
+          negCand.apertureUncertainty2 > 0 ? negCand.apertureFluxEpoch2 / negCand.apertureUncertainty2 : 0;
+        const negRatio = negCand.apertureFluxEpoch2 / Math.max(1e-4, negCand.apertureFluxEpoch1);
+        if (negRatio > 0.6 && negEpoch2Significance > 4.0) continue;
+
+        const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
+        // Flux balance condition (within a factor of 2.8)
+        if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
+          const discrepancy = Math.abs(1.0 - fluxRatio) + distPix * 0.04;
+          if (discrepancy < minDiscrepancy) {
+            minDiscrepancy = discrepancy;
+            bestMatch = negCand;
           }
         }
       }
@@ -1055,9 +1204,8 @@ export class ScientificPipeline {
         };
 
         posCand.status = 'Moving object candidate';
-        posCand.artifactScore = Math.min(posCand.artifactScore, 0.20);
-        // Clear registration dipole flag since this is a genuine displaced moving source
-        posCand.artifactFlags = posCand.artifactFlags.filter((f) => f !== 'REGISTRATION_OR_PSF_DIPOLE');
+        posCand.scientificClassification = 'POSSIBLE_MOVING_OBJECT';
+        posCand.artifactScore = Math.min(posCand.artifactScore, 0.2);
         posCand.whyFlagged = `Moving object candidate: displacement of ${sepArcsec.toFixed(1)}" detected across ${dtDays.toFixed(1)} days (apparent speed ${speedArcsecDay.toFixed(2)}"/day, PA ${paDeg.toFixed(1)}°).`;
       }
     }

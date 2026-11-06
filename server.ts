@@ -37,6 +37,22 @@ if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
 
+// Ensure persistent benchmark FITS are copied into ephemeral cache on container boot
+const PERSISTENT_CACHE_DIR = path.join(process.cwd(), 'data', 'spherex_cache');
+if (fs.existsSync(PERSISTENT_CACHE_DIR)) {
+  try {
+    const pFiles = fs.readdirSync(PERSISTENT_CACHE_DIR).filter((f) => f.endsWith('.fits'));
+    for (const pf of pFiles) {
+      const destFile = path.join(CACHE_DIR, pf);
+      if (!fs.existsSync(destFile)) {
+        fs.copyFileSync(path.join(PERSISTENT_CACHE_DIR, pf), destFile);
+      }
+    }
+  } catch (seedErr) {
+    console.warn('[Cache] Could not seed cache from persistent storage:', seedErr);
+  }
+}
+
 app.use(express.json({ limit: '20mb' }));
 
 // Initialize Google GenAI safely when GEMINI_API_KEY is available

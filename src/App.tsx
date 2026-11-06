@@ -4,11 +4,12 @@ import { HomeView } from './components/HomeView';
 import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
+import { CosmicDetectiveGame } from './game/CosmicDetectiveGame';
 import { InvestigationResult } from './science/types';
 import { Language, translations } from './utils/translations';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'cases' | 'about'>('explore');
+  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'game' | 'cases' | 'about'>('explore');
   const [language, setLanguage] = useState<Language>(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const langParam = params.get('lang');
@@ -60,6 +61,8 @@ export function App() {
 
     if (tabParam === 'home') {
       setActiveTab('home');
+    } else if (tabParam === 'game') {
+      setActiveTab('game');
     } else if (tabParam === 'cases') {
       setActiveTab('cases');
     } else if (tabParam === 'about') {
@@ -208,6 +211,7 @@ export function App() {
             onStartExplore={handleStartExplore}
             onOpenAbout={() => setActiveTab('about')}
             onOpenCases={() => setActiveTab('cases')}
+            onPlayGame={() => setActiveTab('game')}
             language={language}
           />
         )}
@@ -220,6 +224,14 @@ export function App() {
             onSelectCase={handleSelectCase}
             cases={cases}
             language={language}
+          />
+        )}
+
+        {activeTab === 'game' && (
+          <CosmicDetectiveGame
+            language={language}
+            onExitToExplore={(caseId) => handleStartExplore(caseId)}
+            onBackToHome={() => setActiveTab('home')}
           />
         )}
 

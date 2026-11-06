@@ -95,11 +95,21 @@ export interface CatalogMatch {
 
 export type CandidateStatus =
   | 'Candidate'
+  | 'Significant flux change'
   | 'Likely known source'
   | 'Possible artifact'
+  | 'Stationary source residual'
   | 'Insufficient evidence'
   | 'No significant change'
   | 'Moving object candidate';
+
+export type CandidateScientificClassification =
+  | 'POSSIBLE_MOVING_OBJECT'
+  | 'STATIONARY_SOURCE_RESIDUAL'
+  | 'REGISTRATION_OR_PSF_ARTIFACT'
+  | 'INSUFFICIENT_EVIDENCE'
+  | 'SIGNIFICANT_FLUX_CHANGE'
+  | 'KNOWN_CATALOG_SOURCE';
 
 export interface CandidateMotion {
   isMoving: boolean;
@@ -118,10 +128,17 @@ export interface CandidateMotion {
 
 export interface CandidateDetection {
   id: string;
-  x: number; // 0-based pixel index
-  y: number;
-  ra: number;
-  dec: number;
+  x: number; // Centroid or primary x position (0-based)
+  y: number; // Centroid or primary y position (0-based)
+  peakX?: number; // Exact integer pixel peak x
+  peakY?: number; // Exact integer pixel peak y
+  peakRa?: number; // Sky coordinates of the integer peak
+  peakDec?: number;
+  centroidX?: number; // Subpixel fitted centroid x
+  centroidY?: number; // Subpixel fitted centroid y
+  centroidUncertaintyPix?: number; // 1-sigma centroid positional uncertainty in pixels
+  ra: number; // Celestial Right Ascension in decimal degrees (ICRS) using subpixel centroid
+  dec: number; // Celestial Declination in decimal degrees (ICRS) using subpixel centroid
   peakSignificance: number; // Signal-to-noise ratio S/N of the central peak pixel: |D(x,y)| / sigma_D
   apertureSignificance: number; // Signal-to-noise ratio S/N of integrated aperture flux: |Delta_F| / sigma_Delta_F
   deltaFlux: number; // Residual flux in BUNIT
@@ -131,6 +148,7 @@ export interface CandidateDetection {
   apertureUncertainty1: number;
   apertureUncertainty2: number;
   status: CandidateStatus;
+  scientificClassification?: CandidateScientificClassification;
   artifactScore: number; // 0.0 (clean point source) to 1.0 (definite artifact)
   artifactFlags: string[];
   whyFlagged?: string;

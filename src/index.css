@@ -13,4 +13,22 @@ input::placeholder, textarea::placeholder {
   font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;
 }
 
+.image-rendering-pixelated {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
 
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

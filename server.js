@@ -1476,6 +1476,64 @@ var ScientificPipeline = class {
     };
   }
   /**
+   * Subpixel 2D Center-of-Mass / Intensity-Weighted Centroiding
+   * Computes subpixel centroid coordinates (cx, cy) and positional uncertainty
+   * within a local 5x5 window around the detected peak (peakX, peakY).
+   */
+  static computeSubpixelCentroid(diff, width, height, peakX, peakY, radius = 2) {
+    let sumWeight = 0;
+    let sumWx = 0;
+    let sumWy = 0;
+    const peakIdx = peakY * width + peakX;
+    const peakVal = diff[peakIdx];
+    const isPositive = peakVal >= 0;
+    let bgSum = 0;
+    let bgCount = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+          const nx = peakX + dx;
+          const ny = peakY + dy;
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            bgSum += diff[ny * width + nx];
+            bgCount++;
+          }
+        }
+      }
+    }
+    const bg = bgCount > 0 ? bgSum / bgCount : 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const nx = peakX + dx;
+        const ny = peakY + dy;
+        if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+          const val = diff[ny * width + nx];
+          const net = isPositive ? val - bg : -(val - bg);
+          if (net > 0) {
+            sumWeight += net;
+            sumWx += net * nx;
+            sumWy += net * ny;
+          }
+        }
+      }
+    }
+    if (sumWeight > 0) {
+      const cx = sumWx / sumWeight;
+      const cy = sumWy / sumWeight;
+      if (Math.abs(cx - peakX) <= radius && Math.abs(cy - peakY) <= radius) {
+        const snr = Math.max(1, Math.abs(peakVal));
+        const uncertaintyPix = Math.max(0.05, Math.min(0.5, 1 / Math.sqrt(snr)));
+        return {
+          cx: Number(cx.toFixed(3)),
+          cy: Number(cy.toFixed(3)),
+          uncertaintyPix: Number(uncertaintyPix.toFixed(3)),
+          valid: true
+        };
+      }
+    }
+    return { cx: peakX, cy: peakY, uncertaintyPix: 0.5, valid: false };
+  }
+  /**
    * Real peak candidate detection with circular aperture photometry & artifact rejection
    */
   static detectCandidates(diff, varMap, significance, data1, data2, flags1, flags2, width, height, wcs, noiseSigma, timeBaselineDays = 0) {
@@ -1512,7 +1570,22 @@ var ScientificPipeline = class {
                 }
               }
             }
-            const phot = this.aperturePhotometry(x, y, data1, data2, diff, varMap, width, height, 2.5, 4, 6);
+            const centroid = this.computeSubpixelCentroid(diff, width, height, x, y, 2);
+            const peakSky = WCS.pixToSky(x, y, wcs);
+            const centroidSky = centroid.valid ? WCS.pixToSky(centroid.cx, centroid.cy, wcs) : peakSky;
+            const phot = this.aperturePhotometry(
+              centroid.cx,
+              centroid.cy,
+              data1,
+              data2,
+              diff,
+              varMap,
+              width,
+              height,
+              2.5,
+              4,
+              6
+            );
             const artifact = this.assessArtifact(
               x,
               y,
@@ -1524,13 +1597,15 @@ var ScientificPipeline = class {
               height,
               noiseSigma
             );
-            const sky = WCS.pixToSky(x, y, wcs);
             const apertureSnr = phot.deltaUncertainty > 0 ? Math.abs(phot.deltaFlux) / phot.deltaUncertainty : 0;
             let status = "Candidate";
+            let scientificClassification = "SIGNIFICANT_FLUX_CHANGE";
             if (artifact.artifactScore >= 0.65 || artifact.flags.includes("REGISTRATION_OR_PSF_DIPOLE")) {
               status = "Possible artifact";
+              scientificClassification = "REGISTRATION_OR_PSF_ARTIFACT";
             } else if (apertureSnr < 3 && absS >= 4) {
               status = "Possible artifact";
+              scientificClassification = "REGISTRATION_OR_PSF_ARTIFACT";
               if (!artifact.flags.includes("LOW_APERTURE_SIGNIFICANCE")) {
                 artifact.flags.push("LOW_APERTURE_SIGNIFICANCE");
               }
@@ -1538,15 +1613,27 @@ var ScientificPipeline = class {
               artifact.artifactScore = Math.max(artifact.artifactScore, 0.7);
             } else if (apertureSnr >= 3.5 && artifact.artifactScore < 0.35) {
               status = "Candidate";
+              scientificClassification = "SIGNIFICANT_FLUX_CHANGE";
+            } else if (apertureSnr >= 2 && absS >= 3.5) {
+              status = "Stationary source residual";
+              scientificClassification = "STATIONARY_SOURCE_RESIDUAL";
             } else {
               status = "Insufficient evidence";
+              scientificClassification = "INSUFFICIENT_EVIDENCE";
             }
             candidates.push({
               id: `CAND-${String(candidates.length + 1).padStart(2, "0")}`,
               x,
               y,
-              ra: sky.ra,
-              dec: sky.dec,
+              peakX: x,
+              peakY: y,
+              peakRa: Number(peakSky.ra.toFixed(6)),
+              peakDec: Number(peakSky.dec.toFixed(6)),
+              centroidX: centroid.cx,
+              centroidY: centroid.cy,
+              centroidUncertaintyPix: centroid.uncertaintyPix,
+              ra: Number(centroidSky.ra.toFixed(6)),
+              dec: Number(centroidSky.dec.toFixed(6)),
               peakSignificance: Number(s.toFixed(2)),
               apertureSignificance: Number(apertureSnr.toFixed(2)),
               deltaFlux: Number(phot.deltaFlux.toFixed(4)),
@@ -1556,6 +1643,7 @@ var ScientificPipeline = class {
               apertureUncertainty1: Number(phot.unc1.toFixed(4)),
               apertureUncertainty2: Number(phot.unc2.toFixed(4)),
               status,
+              scientificClassification,
               artifactScore: Number(artifact.artifactScore.toFixed(2)),
               artifactFlags: artifact.flags,
               whyFlagged: artifact.whyFlagged,
@@ -1567,8 +1655,12 @@ var ScientificPipeline = class {
         }
       }
     }
-    const positiveCandidates = candidates.filter((c) => c.deltaFlux > 0);
-    const negativeCandidates = candidates.filter((c) => c.deltaFlux < 0);
+    const positiveCandidates = candidates.filter(
+      (c) => c.deltaFlux > 0 && !c.artifactFlags.includes("REGISTRATION_OR_PSF_DIPOLE") && !c.artifactFlags.includes("DETECTOR_OVERFLOW")
+    );
+    const negativeCandidates = candidates.filter(
+      (c) => c.deltaFlux < 0 && !c.artifactFlags.includes("REGISTRATION_OR_PSF_DIPOLE") && !c.artifactFlags.includes("DETECTOR_OVERFLOW")
+    );
     for (const posCand of positiveCandidates) {
       let bestMatch = null;
       let minDiscrepancy = Infinity;
@@ -1576,14 +1668,24 @@ var ScientificPipeline = class {
         const dx = posCand.x - negCand.x;
         const dy = posCand.y - negCand.y;
         const distPix = Math.hypot(dx, dy);
-        if (distPix >= 1.8 && distPix <= 30) {
-          const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
-          if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
-            const discrepancy = Math.abs(1 - fluxRatio) + distPix * 0.04;
-            if (discrepancy < minDiscrepancy) {
-              minDiscrepancy = discrepancy;
-              bestMatch = negCand;
-            }
+        if (distPix < 1.8 || distPix > 30) continue;
+        const sepArcsec = WCS.angularSeparationArcsec(posCand.ra, posCand.dec, negCand.ra, negCand.dec);
+        const dtDays = timeBaselineDays > 0 ? timeBaselineDays : 1;
+        const speedArcsecDay = sepArcsec / dtDays;
+        if (dtDays < 0.05 && distPix > 5) continue;
+        if (speedArcsecDay > 4e3) continue;
+        const posEpoch1Significance = posCand.apertureUncertainty1 > 0 ? posCand.apertureFluxEpoch1 / posCand.apertureUncertainty1 : 0;
+        const posRatio = posCand.apertureFluxEpoch1 / Math.max(1e-4, posCand.apertureFluxEpoch2);
+        if (posRatio > 0.6 && posEpoch1Significance > 4) continue;
+        const negEpoch2Significance = negCand.apertureUncertainty2 > 0 ? negCand.apertureFluxEpoch2 / negCand.apertureUncertainty2 : 0;
+        const negRatio = negCand.apertureFluxEpoch2 / Math.max(1e-4, negCand.apertureFluxEpoch1);
+        if (negRatio > 0.6 && negEpoch2Significance > 4) continue;
+        const fluxRatio = Math.abs(posCand.deltaFlux) / Math.max(1e-4, Math.abs(negCand.deltaFlux));
+        if (fluxRatio >= 0.35 && fluxRatio <= 2.8) {
+          const discrepancy = Math.abs(1 - fluxRatio) + distPix * 0.04;
+          if (discrepancy < minDiscrepancy) {
+            minDiscrepancy = discrepancy;
+            bestMatch = negCand;
           }
         }
       }
@@ -1614,8 +1716,8 @@ var ScientificPipeline = class {
           }
         };
         posCand.status = "Moving object candidate";
+        posCand.scientificClassification = "POSSIBLE_MOVING_OBJECT";
         posCand.artifactScore = Math.min(posCand.artifactScore, 0.2);
-        posCand.artifactFlags = posCand.artifactFlags.filter((f) => f !== "REGISTRATION_OR_PSF_DIPOLE");
         posCand.whyFlagged = `Moving object candidate: displacement of ${sepArcsec.toFixed(1)}" detected across ${dtDays.toFixed(1)} days (apparent speed ${speedArcsecDay.toFixed(2)}"/day, PA ${paDeg.toFixed(1)}\xB0).`;
       }
     }
@@ -3098,6 +3200,20 @@ var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
 var CACHE_DIR = path.join("/tmp", "spherex_cache");
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
+var PERSISTENT_CACHE_DIR = path.join(process.cwd(), "data", "spherex_cache");
+if (fs.existsSync(PERSISTENT_CACHE_DIR)) {
+  try {
+    const pFiles = fs.readdirSync(PERSISTENT_CACHE_DIR).filter((f) => f.endsWith(".fits"));
+    for (const pf of pFiles) {
+      const destFile = path.join(CACHE_DIR, pf);
+      if (!fs.existsSync(destFile)) {
+        fs.copyFileSync(path.join(PERSISTENT_CACHE_DIR, pf), destFile);
+      }
+    }
+  } catch (seedErr) {
+    console.warn("[Cache] Could not seed cache from persistent storage:", seedErr);
+  }
 }
 app.use(express.json({ limit: "20mb" }));
 function getGenAIClient() {

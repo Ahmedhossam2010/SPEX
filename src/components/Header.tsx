@@ -1,11 +1,11 @@
 import React from 'react';
-import { Compass, BookOpen, Layers, Sparkles, Languages, Sun, Moon } from 'lucide-react';
+import { Compass, BookOpen, Layers, Sparkles, Languages, Sun, Moon, Telescope } from 'lucide-react';
 import { SpherexLogo } from './SpherexLogo';
 import { Language, translations } from '../utils/translations';
 
 interface HeaderProps {
-  activeTab: 'home' | 'explore' | 'cases' | 'about';
-  setActiveTab: (tab: 'home' | 'explore' | 'cases' | 'about') => void;
+  activeTab: 'home' | 'explore' | 'game' | 'cases' | 'about';
+  setActiveTab: (tab: 'home' | 'explore' | 'game' | 'cases' | 'about') => void;
   targetCoords?: { ra: number; dec: number };
   language: Language;
   onToggleLanguage: () => void;
@@ -91,6 +91,19 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Sparkles className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
               <span>{t.navExplore}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('game')}
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-lg transition-all ${
+                activeTab === 'game'
+                  ? 'bg-cyan-500/15 dark:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 font-semibold'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-white/50 dark:hover:bg-white/[0.04]'
+              }`}
+            >
+              <Telescope className="h-3.5 w-3.5 text-cyan-600 dark:text-cyan-400" />
+              <span>{t.navGame}</span>
             </button>
 
             <button

@@ -45,16 +45,22 @@ export const FindingCard: React.FC<FindingCardProps> = ({
 
   // Generate plain-English headline
   const getHeadline = () => {
-    if (isMoving) {
+    if (candidate.scientificClassification === 'POSSIBLE_MOVING_OBJECT' || isMoving) {
       return isRtl ? 'جرم متحرك مرصود' : 'Moving Object Candidate';
     }
-    if (isArtifact) {
-      return isRtl ? 'عيب في الحساس (مستبعد)' : 'Detector Glitch (Filtered)';
+    if (candidate.scientificClassification === 'REGISTRATION_OR_PSF_ARTIFACT' || isArtifact) {
+      return isRtl ? 'عيب محاذاة / أثر نقطي (مستبعد)' : 'Registration / PSF Artifact (Filtered)';
+    }
+    if (candidate.scientificClassification === 'STATIONARY_SOURCE_RESIDUAL') {
+      return isRtl ? 'أثر متبقٍ لمصدر ثابت' : 'Stationary Source Residual';
+    }
+    if (candidate.scientificClassification === 'INSUFFICIENT_EVIDENCE') {
+      return isRtl ? 'أدلة غير كافية' : 'Insufficient Evidence';
     }
     if (isKnownStar) {
       return isRtl ? 'نجم متغير مسجل' : 'Cataloged Variable Star';
     }
-    return isRtl ? 'إشارة فلكية حقيقية' : 'Significant Celestial Signal';
+    return isRtl ? 'تغير ضوئي ذو دلالة' : 'Significant Flux Change';
   };
 
   // Generate plain-English explanation
@@ -244,12 +250,35 @@ export const FindingCard: React.FC<FindingCardProps> = ({
           onClick={(e) => e.stopPropagation()}
           className="mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.08] bg-slate-50 dark:bg-black/40 rounded-xl p-3 text-xs font-mono space-y-2 animate-in fade-in duration-150"
         >
+          {candidate.scientificClassification && (
+            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+              <span>Scientific Class:</span>
+              <span className="font-semibold text-cyan-700 dark:text-cyan-300">
+                {candidate.scientificClassification}
+              </span>
+            </div>
+          )}
+
           <div className="flex justify-between text-slate-500 dark:text-slate-400">
-            <span>Pixel Position (X, Y):</span>
+            <span>Peak Pixel (X, Y):</span>
             <span className="text-slate-800 dark:text-slate-200">
-              ({candidate.x.toFixed(1)}, {candidate.y.toFixed(1)})
+              ({candidate.peakX ?? candidate.x}, {candidate.peakY ?? candidate.y})
             </span>
           </div>
+
+          {candidate.centroidX != null && candidate.centroidY != null && (
+            <div className="flex justify-between text-slate-500 dark:text-slate-400">
+              <span>Subpixel Centroid:</span>
+              <span className="text-cyan-700 dark:text-cyan-300">
+                ({candidate.centroidX.toFixed(2)}, {candidate.centroidY.toFixed(2)})
+                {candidate.centroidUncertaintyPix != null && (
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-1">
+                    ±{candidate.centroidUncertaintyPix.toFixed(2)}px
+                  </span>
+                )}
+              </span>
+            </div>
+          )}
 
           <div className="flex justify-between text-slate-500 dark:text-slate-400">
             <span>Celestial (RA, Dec):</span>

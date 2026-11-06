@@ -248,17 +248,31 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     if (pixelX >= 0 && pixelX < w && pixelY >= 0 && pixelY < h) {
       const idx = pixelY * w + pixelX;
       let val = currentResult.difference.diff[idx];
-      if (viewMode === 'significance') {
-        val = currentResult.difference.significance[idx];
+      let activeWcs = currentResult.epoch1.wcs;
+
+      if (viewMode === 'significance' || viewMode === 'difference' || viewMode === 'epoch2') {
+        if (viewMode === 'significance') {
+          val = currentResult.difference.significance[idx];
+        } else if (viewMode === 'epoch2') {
+          val = currentResult.epoch2.flux[idx];
+        }
+        activeWcs = currentResult.epoch2.wcs;
       } else if (viewMode === 'epoch1') {
         val = currentResult.epoch1.flux[idx];
-      } else if (viewMode === 'epoch2') {
-        val = currentResult.epoch2.flux[idx];
+        activeWcs = currentResult.epoch1.wcs;
+      } else if (viewMode === 'split') {
+        const isLeftOfSplit = clientX / rect.width < sliderPos;
+        val = isLeftOfSplit ? currentResult.epoch1.flux[idx] : currentResult.epoch2.flux[idx];
+        activeWcs = isLeftOfSplit ? currentResult.epoch1.wcs : currentResult.epoch2.wcs;
+      } else if (viewMode === 'blink') {
+        val = blinkEpoch === 'epoch1' ? currentResult.epoch1.flux[idx] : currentResult.epoch2.flux[idx];
+        activeWcs = blinkEpoch === 'epoch1' ? currentResult.epoch1.wcs : currentResult.epoch2.wcs;
       } else if (viewMode === 'sequence' && currentResult.epochs && currentResult.epochs[activeEpochIdx]) {
         val = currentResult.epochs[activeEpochIdx].flux[idx];
+        activeWcs = currentResult.epochs[activeEpochIdx].wcs || currentResult.epoch1.wcs;
       }
 
-      const sky = WCS.pixToSky(pixelX, pixelY, currentResult.epoch1.wcs);
+      const sky = WCS.pixToSky(pixelX, pixelY, activeWcs);
       setCursorPos({ x: pixelX, y: pixelY, ra: sky.ra, dec: sky.dec, val });
     }
   };
@@ -742,26 +756,31 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   transformOrigin: 'center center',
                   transition: isDragging ? 'none' : 'transform 0.15s ease-out',
                 }}
-                className="relative flex items-center justify-center"
+                className="relative inline-block select-none"
               >
                 <canvas
                   ref={canvasRef}
                   className="w-[320px] h-[320px] sm:w-[480px] sm:h-[480px] rounded-xl shadow-2xl block image-rendering-pixelated"
                 />
 
-                {/* Candidate Highlight Markers */}
+                {/* Candidate Highlight Markers - positioned responsive to canvas bounds using percentage */}
                 {showMarkers &&
                   currentResult &&
                   filteredCandidates.map((cand) => {
                     const isSelected = selectedCandidate?.id === cand.id;
-                    const isMoving = cand.motion?.isMoving === true || cand.status === 'Moving object candidate';
-                    const isArtifact = cand.status === 'Possible artifact' || (cand.artifactScore ?? 0) >= 0.5;
+                    const isMoving =
+                      cand.scientificClassification === 'POSSIBLE_MOVING_OBJECT' ||
+                      cand.motion?.isMoving === true ||
+                      cand.status === 'Moving object candidate';
+                    const isArtifact =
+                      cand.scientificClassification === 'REGISTRATION_OR_PSF_ARTIFACT' ||
+                      cand.status === 'Possible artifact' ||
+                      (cand.artifactScore ?? 0) >= 0.5;
 
-                    const canvasSize = 480;
                     const origW = currentResult.epoch1.width || 64;
                     const origH = currentResult.epoch1.height || 64;
-                    const posX = (cand.x / origW) * canvasSize - canvasSize / 2;
-                    const posY = (cand.y / origH) * canvasSize - canvasSize / 2;
+                    const pctX = (((cand.centroidX ?? cand.x) + 0.5) / origW) * 100;
+                    const pctY = (((cand.centroidY ?? cand.y) + 0.5) / origH) * 100;
 
                     return (
                       <button
@@ -772,11 +791,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                           setSelectedCandidate(cand);
                         }}
                         style={{
-                          transform: `translate(${posX}px, ${posY}px)`,
+                          left: `${pctX}%`,
+                          top: `${pctY}%`,
                         }}
-                        className={`absolute z-20 w-8 h-8 -ml-4 -mt-4 rounded-full flex items-center justify-center transition-all ${
+                        className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
                           isSelected
-                            ? 'ring-2 ring-amber-400 bg-amber-500/25 scale-125'
+                            ? 'ring-2 ring-amber-400 bg-amber-500/30 scale-125'
                             : 'hover:scale-110'
                         }`}
                         title={`Candidate #${cand.id} (${cand.peakSignificance.toFixed(1)}σ)`}
@@ -784,10 +804,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         <span
                           className={`w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-mono font-bold ${
                             isMoving
-                              ? 'border-cyan-400 text-cyan-300 bg-cyan-950/80'
+                              ? 'border-cyan-400 text-cyan-300 bg-cyan-950/80 shadow-[0_0_8px_rgba(6,182,212,0.6)]'
                               : isArtifact
                               ? 'border-rose-400 text-rose-300 bg-rose-950/80'
-                              : 'border-amber-400 text-amber-300 bg-amber-950/80'
+                              : 'border-amber-400 text-amber-300 bg-amber-950/80 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
                           }`}
                         >
                           {cand.id}

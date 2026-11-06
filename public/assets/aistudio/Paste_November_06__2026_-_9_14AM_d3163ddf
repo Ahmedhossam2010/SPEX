@@ -1,0 +1,1253 @@
+# SPEX — COMPLETE PRODUCT TRANSFORMATION
+## Scientific Integrity Repair + Full Visual Redesign + Interactive Educational Game
+
+You are acting as a senior multidisciplinary product team:
+- Principal Software Architect
+- Senior Full-Stack Engineer
+- Scientific Python/JavaScript Engineer
+- Astronomy Data Pipeline Engineer
+- Award-winning Product Designer
+- UX Researcher
+- Creative Director
+- Educational Game Designer
+- Accessibility Engineer
+- QA and Test Automation Engineer
+
+Your mission is to transform the EXISTING SPEX repository into a polished, scientifically responsible, visually distinctive, interactive astronomy exploration platform.
+
+This is NOT a greenfield project.
+This is NOT a simple UI refresh.
+This is NOT permission to replace working science with mock data.
+
+You must inspect the actual repository, understand its architecture, preserve its scientific capabilities, fix known scientific/UI defects, and deliver a coherent product transformation.
+
+---
+
+# 0. PRODUCT IDENTITY AND PURPOSE
+
+Product name: SPEX
+
+Product subtitle: The Changing Sky
+
+Core message:
+
+"Don't just look at the sky. Investigate what changed."
+
+SPEX is a web-based astronomy exploration platform built around NASA's SPHEREx mission.
+
+Its purpose is to help users explore infrared observations, compare observations from different times, inspect image differences, investigate candidate sources, and understand the scientific evidence behind possible changes in the sky.
+
+SPEX should serve two audiences:
+
+1. Beginners who want to understand how SPHEREx observes the universe and how to use the platform.
+2. Curious scientific users who want to investigate real observational data and inspect evidence.
+
+The product must feel like a real scientific instrument that is approachable to newcomers.
+
+The final experience should combine:
+- A professional scientific exploration tool.
+- A distinctive visual identity.
+- An educational interactive experience.
+- A carefully designed onboarding journey.
+- A trustworthy scientific data pipeline.
+
+The educational game must strengthen the scientific product rather than distract from it.
+
+---
+
+# 1. NON-NEGOTIABLE RULES
+
+Before editing anything, follow these rules.
+
+1. Inspect the entire repository and understand its architecture.
+2. Identify the actual frontend, backend, science engine, data ingestion, API routes, tests, assets, and deployment configuration.
+3. Do not assume that files or functions exist based on this prompt. Verify them.
+4. Preserve working scientific functionality.
+5. Never replace real scientific calculations with fabricated results.
+6. Never label synthetic educational data as real SPHEREx observations.
+7. Never invent astronomical measurements, observation dates, coverage, candidate detections, or catalog matches.
+8. Do not silently fall back from official challenge data to development benchmark data.
+9. Do not rewrite the science engine just to make the interface easier to implement.
+10. Do not delete existing features without documenting the reason and obtaining approval.
+11. Do not perform destructive Git operations.
+12. Do not commit secrets, API keys, credentials, or private configuration.
+13. Do not report a test as passing unless it was actually executed.
+14. Do not claim that scientific validation occurred when only internal consistency tests were performed.
+15. Do not stop after producing a design proposal. Implement the approved transformation.
+
+Create a dedicated branch:
+
+spex-redesign-and-education
+
+Preserve the original branch.
+
+---
+
+# 2. PHASE ZERO — REPOSITORY FORENSIC AUDIT
+
+Before changing code, inspect the complete codebase.
+
+Produce a concise architecture map containing:
+
+- Application entry points.
+- Main frontend routes and views.
+- Component structure.
+- Styling system and design tokens.
+- Backend services and API routes.
+- FITS ingestion and parsing.
+- WCS implementation.
+- Image registration and reprojection.
+- Difference imaging.
+- Variance propagation.
+- Candidate extraction and classification.
+- Catalog cross-matching.
+- AI integration.
+- Data release adapter.
+- Existing educational/help content.
+- Tests and build scripts.
+- Static assets and logo references.
+
+Identify the actual framework, language, package manager, and dependencies from the repository.
+
+Create a file named:
+
+`docs/TRANSFORMATION_AUDIT.md`
+
+Document:
+- What currently works.
+- What is incomplete.
+- What is broken.
+- What must be preserved.
+- What can safely be redesigned.
+- What scientific assumptions require verification.
+
+Do not invent architecture.
+
+Do not start a major rewrite before completing this audit.
+
+---
+
+# 3. PHASE ONE — SCIENTIFIC INTEGRITY REPAIR
+
+The following issues were identified in previous technical audits. Locate each issue in the actual source code, verify that it still exists, and fix it properly.
+
+Do not assume that previous line numbers remain valid.
+
+## 3.1 False Moving-Object Candidates
+
+Previously identified issue:
+
+The candidate pipeline could pair weak stationary PSF residuals with unrelated negative residuals separated by approximately 71–175 arcseconds, incorrectly presenting them as moving-object candidates.
+
+A weak stationary residual must not become a moving-object detection merely because a negative residual exists nearby.
+
+Required behavior:
+
+Separate the scientific interpretation of:
+
+- POSSIBLE_MOVING_OBJECT
+- STATIONARY_SOURCE_RESIDUAL
+- REGISTRATION_OR_PSF_ARTIFACT
+- INSUFFICIENT_EVIDENCE
+- SIGNIFICANT_FLUX_CHANGE
+
+These classifications must have distinct scientific meanings.
+
+Do not force every candidate into one category.
+
+Moving-object classification must require evidence consistent with actual displacement across valid observations.
+
+Inspect:
+- Observation timing.
+- Astrometric positions.
+- Source morphology.
+- Positive/negative residual relationships.
+- Detection significance.
+- Registration uncertainty.
+- Data quality flags.
+- Available independent observations.
+
+A significant flux change is not automatically a moving object.
+
+A difference-image dipole is not automatically a moving object.
+
+A PSF residual is not automatically astrophysical variability.
+
+If the available observations are insufficient, explicitly report insufficient evidence.
+
+Do not introduce arbitrary universal thresholds.
+
+If thresholds are needed:
+- Derive them from available evidence or existing calibration.
+- Document their scientific rationale.
+- Expose provisional parameters explicitly.
+- Make clear when they have not been calibrated.
+
+## 3.2 Subpixel Candidate Coordinates
+
+Previously identified issue:
+
+Candidate RA/Dec could be calculated using integer pixel peak coordinates, introducing coordinate quantization.
+
+Implement scientifically appropriate subpixel centroiding.
+
+Requirements:
+- Preserve integer peak coordinates.
+- Calculate subpixel centroid coordinates independently.
+- Preserve centroid uncertainty where available.
+- Use the correct WCS associated with the relevant image.
+- Do not pretend a subpixel centroid is more accurate than the image supports.
+- Provide a documented fallback when centroid fitting fails.
+- Keep peak and centroid coordinates separately available in the candidate model.
+
+Candidate overlays and catalog cross-matches must use the correct coordinate representation.
+
+## 3.3 Epoch-Specific WCS Cursor Coordinates
+
+Previously identified issue:
+
+The Explore view cursor could use epoch 1 WCS even when viewing epoch 2, a difference image, significance image, split view, or right-hand comparison pane.
+
+Fix the coordinate transformation.
+
+The cursor must use the WCS of the actual rendered image under the cursor.
+
+Requirements:
+- Epoch 1 uses epoch 1 WCS.
+- Epoch 2 uses epoch 2 WCS.
+- Difference products use their documented reference grid.
+- Significance products use their documented reference grid.
+- Split panes use the WCS corresponding to each pane.
+- Sequence animation uses the currently displayed frame's correct WCS.
+
+Do not use one global WCS for every visualization.
+
+## 3.4 Candidate Overlay Positioning
+
+Previously identified issue:
+
+Candidate overlays used hardcoded canvas dimensions and inconsistent pixel-center conventions.
+
+Fix the rendering transformation.
+
+Requirements:
+- Use actual rendered image dimensions.
+- Support responsive resizing.
+- Support mobile layouts.
+- Preserve correct pixel-center conventions.
+- Handle image scaling, cropping, and aspect-ratio changes.
+- Keep overlays aligned when changing comparison modes.
+- Avoid hardcoded 480px or other assumed canvas dimensions.
+
+The overlay must use the same coordinate-to-screen transformation as the image renderer.
+
+## 3.5 Footprint Geometry
+
+Previously identified issue:
+
+Footprint area calculations mixed pixel outer boundaries with pixel-center extrema.
+
+Make the geometry consistent.
+
+Clearly distinguish:
+- Pixel-center coordinate extrema.
+- Outer image footprint boundaries.
+- Actual spherical footprint area.
+- Bounding-box area.
+
+Use the appropriate pixel boundary convention for each quantity.
+
+Do not label a rectangular bounding-box area as the true sky footprint area.
+
+Document the method and assumptions.
+
+## 3.6 Deterministic WCS Tests
+
+Previously identified issue:
+
+A test selected the first FITS file alphabetically from a shared cache and accidentally loaded a larger parent image instead of the intended 64×64 fixture.
+
+Fix the test fixture selection.
+
+Requirements:
+- Select fixtures by explicit identity or verified dimensions.
+- Avoid filesystem-order assumptions.
+- Keep the intended scientific assertion.
+- Do not weaken tests to make them pass.
+- Ensure tests remain deterministic regardless of cache contents.
+
+## 3.7 WCS Documentation
+
+The project uses a generalized SPHEREx-compatible TAN-SIP implementation.
+
+Preserve its existing conventions unless independent evidence demonstrates a defect.
+
+Update outdated descriptions that claim the system uses only rigid translation or PC-only WCS handling.
+
+Do not remove generalized SIP support.
+
+Document:
+- Forward transformation.
+- Inverse transformation.
+- Pixel-coordinate convention.
+- SIP coefficients.
+- TAN projection.
+- Reprojection behavior.
+- Known limitations.
+
+Do not claim external Astropy/WCSLIB validation unless it is actually executed.
+
+## 3.8 PSF and Resampling Artifacts
+
+Investigate the known behavior where bilinear reprojection can attenuate undersampled stellar peaks while preserving aperture flux approximately.
+
+Do not simply increase peak brightness artificially.
+
+Explain the difference between:
+- Pixel peak preservation.
+- Aperture flux conservation.
+- Resampling-induced morphology changes.
+- Registration artifacts.
+
+Where necessary, expose the limitation in the scientific UI.
+
+## 3.9 Science Integrity Requirements
+
+Preserve:
+- Difference = epoch2 - epoch1.
+- Variance propagation based on the documented independent-error assumptions.
+- Squared interpolation weights for variance resampling.
+- DQ flag propagation.
+- Real WCS transformations.
+- Real FITS ingestion.
+- Real metadata.
+- Provenance tracking.
+
+If the scientific assumptions differ in the current implementation, inspect and document the actual behavior rather than forcing this exact formula blindly.
+
+The UI must never display a heuristic artifact score as a calibrated probability.
+
+Never convert a significance value into a probability without a justified statistical model.
+
+---
+
+# 4. PHASE TWO — COMPLETE VISUAL REDESIGN
+
+This is a major product redesign.
+
+Do not merely adjust colors, border radii, fonts, or spacing.
+
+Reconsider the entire information architecture, navigation, layout, hierarchy, and interaction design.
+
+The final product should feel like a carefully designed scientific instrument from a world-class space research organization.
+
+## 4.1 Creative Direction
+
+Visual keywords:
+
+- Premium scientific instrument.
+- Deep space.
+- Precision.
+- Exploration.
+- Intelligence.
+- Clarity.
+- Calm confidence.
+- Minimalism.
+- Elegant scientific visualization.
+- Human-friendly technology.
+
+Avoid:
+- Generic AI dashboard appearance.
+- Excessive neon.
+- Gaming-dashboard aesthetics.
+- Excessive gradients.
+- Unnecessary glassmorphism.
+- Too many cards.
+- Tiny typography.
+- Crowded panels.
+- Decorative elements without a purpose.
+- Excessive animation.
+- Overly complex navigation.
+
+The interface must feel intentional, not template-generated.
+
+## 4.2 Color System
+
+Create a cohesive design system.
+
+Suggested direction:
+
+- Deep midnight navy as the primary dark surface.
+- Near-black blue for the deepest backgrounds.
+- Warm white for primary text.
+- Muted cool gray for secondary information.
+- Controlled cyan or ice-blue for active scientific interactions.
+- A restrained warm amber for warnings or attention.
+- A restrained violet accent for spectral or educational elements.
+
+Do not use every accent everywhere.
+
+Scientific states must remain distinguishable without relying on color alone.
+
+Provide both:
+- Primary dark theme.
+- Fully polished light theme.
+
+Use consistent tokens for:
+- Backgrounds.
+- Surfaces.
+- Text.
+- Borders.
+- Interactive states.
+- Scientific states.
+- Charts.
+- Focus indicators.
+- Shadows.
+- Spacing.
+- Typography.
+
+## 4.3 Logo — STRICT BRAND ASSET REQUIREMENT
+
+I will provide the original SPEX logo file.
+
+This file is the authoritative brand asset.
+
+You MUST:
+- Inspect the supplied asset.
+- Use the exact original artwork.
+- Preserve its proportions.
+- Preserve its geometry.
+- Preserve its distinctive details.
+- Preserve its intended colors unless the supplied asset includes approved variants.
+- Use correct aspect ratio.
+- Avoid stretching.
+- Avoid cropping.
+- Avoid redrawing.
+- Avoid generating a similar replacement.
+- Avoid adding or removing visual elements.
+- Avoid changing the logo into an AI-generated approximation.
+
+The currently existing logo implementation is not necessarily accurate.
+
+Search the repository for all existing logo instances and replace incorrect versions with the supplied original asset.
+
+Use the logo consistently across:
+- Navigation.
+- Landing page.
+- Game introduction.
+- Loading screen where appropriate.
+- Footer.
+- Favicon or application icon only if a suitable supplied variant exists.
+
+If a light/dark version is needed but not supplied, use the original artwork on an appropriate background rather than modifying the logo.
+
+The logo must look crisp at desktop and mobile sizes.
+
+## 4.4 Typography
+
+Use a refined typography system.
+
+Requirements:
+- Strong readable headings.
+- Clear hierarchy.
+- Comfortable body text.
+- Monospaced typography only for scientific values, IDs, coordinates, timestamps, and technical metadata where appropriate.
+- Consistent line heights.
+- Good Arabic typography and RTL support.
+- Avoid tiny scientific labels.
+
+## 4.5 Homepage Redesign
+
+The homepage must communicate the project within 10–15 seconds.
+
+The first screen should answer:
+
+1. What is SPEX?
+2. What is SPHEREx?
+3. What can I do here?
+4. Where should I start?
+
+Create a strong hero section.
+
+Suggested message:
+
+"Don't just look at the sky.
+Investigate what changed."
+
+Supporting copy:
+
+"Explore infrared observations, compare the changing sky, and investigate astronomical evidence with SPEX."
+
+Primary action:
+"Start Exploring"
+
+Secondary action:
+"Discover the Mission"
+
+Add a visually compelling scientific image visualization.
+
+Do not use a fake space background that competes with the interface.
+
+Make the hero elegant, spacious, and immediately understandable.
+
+## 4.6 Main Navigation
+
+Redesign navigation around the actual product journey.
+
+Suggested information architecture:
+
+- Home
+- Explore
+- Mission
+- Learn / Mission Game
+- About
+
+Do not create routes that duplicate existing functionality.
+
+Use descriptive navigation labels.
+
+Make the primary scientific action obvious.
+
+Mobile navigation must be carefully designed.
+
+## 4.7 Explore Workspace
+
+The Explore workspace is the most important scientific screen.
+
+It must feel like a real scientific instrument, not an ordinary admin dashboard.
+
+Redesign:
+- Coordinate search.
+- Observation selection.
+- Epoch selection.
+- Image visualization.
+- Comparison modes.
+- Difference view.
+- Significance view.
+- Candidate list.
+- Candidate details.
+- Metadata inspection.
+- Catalog matches.
+- SPEX AI assistance.
+
+The scientific image should receive the highest visual priority.
+
+Keep controls discoverable without overwhelming the image.
+
+Use progressive disclosure:
+- Basic controls first.
+- Advanced controls when requested.
+- Detailed evidence in expandable sections.
+
+Important scientific information must remain visible and understandable.
+
+Provide:
+- Clear loading states.
+- Empty states.
+- Error states.
+- No-data states.
+- Out-of-coverage states.
+- Incompatible-data states.
+- Processing states.
+
+Never show fake successful results when a request fails.
+
+## 4.8 Scientific Data Presentation
+
+Create polished visualizations for:
+- Observation timeline.
+- Spectral bands.
+- Difference images.
+- Significance maps.
+- Candidate evidence.
+- Observation metadata.
+- Data quality flags.
+- Source matching.
+
+Use real data wherever available.
+
+When no real data is available, show a clear empty state or an explicitly labeled educational example.
+
+Never silently substitute a fabricated visualization.
+
+## 4.9 SPEX Assistant Character
+
+Preserve the existing SPEX mascot concept: an Egyptian-inspired mechanical cat guardian.
+
+The character should feel like a scientific guide.
+
+It must:
+- Explain scientific concepts.
+- Help users navigate.
+- Interpret UI terminology.
+- Explain candidate classifications.
+- Guide users through the educational game.
+- Provide contextual help.
+
+Avoid making it look like a generic chatbot.
+
+Do not let the character obscure scientific data.
+
+Use the existing approved mascot assets if available.
+
+Do not invent new brand artwork that conflicts with supplied assets.
+
+---
+
+# 5. PHASE THREE — BUILD THE EDUCATIONAL GAME
+
+This is a major new product feature.
+
+Game name:
+
+SPHEREx: THE COSMIC DETECTIVE
+
+Tagline:
+
+"Learn how the universe is observed. Discover what changes."
+
+The game must be integrated into SPEX as an educational experience.
+
+It should feel like a polished interactive mission simulation, not a basic quiz.
+
+It must be fun, visually engaging, scientifically accurate, and useful for first-time users.
+
+## 5.1 Educational Goals
+
+By the end, a player should understand:
+
+1. What SPHEREx is.
+2. Why infrared astronomy matters.
+3. What spectral bands represent.
+4. Why SPHEREx observes the sky across 102 spectral bands.
+5. How an all-sky survey works at a conceptual level.
+6. Why observations at different times matter.
+7. How astronomical images become scientific data.
+8. What image comparison means.
+9. What difference imaging means.
+10. Why not every difference is a real astronomical event.
+11. How SPEX helps users investigate observations.
+
+Do not overload players with advanced equations.
+
+Use intuitive visual demonstrations.
+
+## 5.2 Game Structure
+
+Create two main levels.
+
+### LEVEL 1 — BECOME THE OBSERVER
+
+Theme:
+
+"Learn how SPHEREx sees the universe."
+
+Opening scene:
+
+The player enters a futuristic but elegant mission control environment.
+
+SPEX introduces the mission and explains:
+
+"Your mission is to understand how we observe the sky beyond what human eyes can see."
+
+The level contains several short interactive tasks.
+
+#### Mission 1: See Beyond Visible Light
+
+Show a simplified electromagnetic spectrum.
+
+Allow the player to switch between:
+- Visible light.
+- Near-infrared regions.
+- Different illustrative spectral ranges.
+
+The visualization should show that different wavelength ranges reveal different information.
+
+Explain that SPHEREx is an infrared space telescope.
+
+Do not imply that the game visualization represents the complete real instrument response.
+
+#### Mission 2: Understand 102 Spectral Bands
+
+Show an interactive spectral-band explorer.
+
+The player can select different bands and see a simplified demonstration of how spectral information differs.
+
+Explain:
+- A spectral band represents a wavelength range.
+- Different bands provide different information.
+- SPHEREx observes in 102 near-infrared spectral bands.
+
+Do not fabricate actual measurements.
+
+Use clearly labeled illustrative data if necessary.
+
+#### Mission 3: Explore the Sky Survey
+
+Create an interactive conceptual sky map.
+
+Show a simplified survey progression.
+
+Explain:
+- SPHEREx is designed to survey the entire sky.
+- Repeated observations help build a time-dependent picture of the sky.
+- The mission revisits the sky on an approximately six-month survey cadence.
+
+Do not present a simplified animation as the exact operational scanning sequence.
+
+Use wording such as "Conceptual mission visualization" where appropriate.
+
+#### Mission 4: From Observation to Image
+
+Create a visual educational sequence:
+
+Observation → Detector Data → Calibration → Image Products → Scientific Analysis.
+
+Explain each step in simple language.
+
+Do not claim that this animation reproduces every actual instrument processing operation.
+
+At the end of Level 1, award:
+
+"MISSION OBSERVER"
+
+Show a compact learning summary.
+
+### LEVEL 2 — FIND WHAT CHANGED
+
+Theme:
+
+"Become an astronomical investigator."
+
+The player receives two clearly labeled synthetic educational images of the same fictional sky field at different times.
+
+These images MUST be synthetic and must never be presented as actual SPHEREx observations.
+
+#### Mission 1: Compare Two Epochs
+
+Display two images.
+
+Allow:
+- Side-by-side comparison.
+- Swipe comparison.
+- Blink comparison.
+- Timeline switching.
+
+Teach the meaning of different observation times.
+
+#### Mission 2: Find the Difference
+
+Show a simplified educational difference image.
+
+Explain:
+
+Difference Image = Later Image - Earlier Image
+
+Use a simple visual example.
+
+Show positive and negative residuals with clear explanations.
+
+Do not imply that every positive or negative feature is an actual astronomical object.
+
+#### Mission 3: Investigate the Evidence
+
+Present several fictional examples:
+- A source that becomes brighter.
+- A source that becomes fainter.
+- A source that appears displaced.
+- A stationary source with an image-processing artifact.
+- A case with insufficient evidence.
+
+Ask the player to classify each example.
+
+After each choice, explain the correct scientific reasoning.
+
+The game must teach that:
+- Motion and brightness variation are different phenomena.
+- Image artifacts can resemble real changes.
+- More evidence may be required.
+- A difference image alone does not prove an astrophysical discovery.
+
+Do not use these synthetic examples to train or modify the real scientific candidate classifier.
+
+#### Mission 4: Final Investigation
+
+Present a final synthetic educational case.
+
+The player must:
+1. Compare the observations.
+2. Inspect the difference image.
+3. Review simplified metadata.
+4. Choose a scientifically responsible conclusion.
+
+Provide a detailed explanation of the reasoning.
+
+Award:
+
+"COSMIC DETECTIVE"
+
+Show the player's learning summary.
+
+## 5.3 Game Visual Design
+
+The game should feel like a combination of:
+- Mission control.
+- Scientific exploration.
+- Interactive museum experience.
+- Space mission briefing.
+
+Use a visually rich but restrained design.
+
+Potential elements:
+- Mission map.
+- Observation timeline.
+- Spectral visualization.
+- Animated scan paths.
+- Interactive star fields.
+- Scientific image panels.
+- Mission progress.
+- Contextual SPEX character reactions.
+- Clear level completion moments.
+
+Use animation to explain scientific concepts, not merely decorate.
+
+Avoid:
+- Excessive particle effects.
+- Loud arcade aesthetics.
+- Overly childish cartoon visuals.
+- Excessive sound effects.
+- Distracting motion.
+- Confusing controls.
+
+The game must look appropriate for a NASA Space Apps Challenge presentation.
+
+## 5.4 Game Interaction Requirements
+
+Implement:
+- Start screen.
+- Mission introduction.
+- Level selection.
+- Progress indicator.
+- Interactive tasks.
+- Feedback after each decision.
+- Pause/resume if appropriate.
+- Replay.
+- Completion summary.
+- Clear exit back to SPEX.
+
+Do not require account registration.
+
+Do not create a leaderboard requiring user data.
+
+Do not collect personal information.
+
+Support keyboard navigation.
+
+Support mobile touch interactions.
+
+Respect reduced-motion preferences.
+
+Do not rely on audio to communicate essential information.
+
+All instructions must remain readable and accessible.
+
+## 5.5 Game Technical Architecture
+
+Implement the game as a separate, maintainable feature module.
+
+Inspect the existing routing and component architecture before deciding where it belongs.
+
+Separate:
+- Game content.
+- Mission data.
+- Interaction state.
+- Educational explanations.
+- Visual components.
+- Progress tracking.
+
+Do not put all game logic in one enormous component.
+
+Keep game state local unless the existing application architecture requires otherwise.
+
+Do not introduce unnecessary backend services.
+
+Do not introduce a new database solely for game progress.
+
+Do not add heavy dependencies unless clearly justified.
+
+Use existing project conventions.
+
+## 5.6 Synthetic Data Isolation
+
+This is critical.
+
+All synthetic educational game data must be isolated from the real science pipeline.
+
+Use explicit names such as:
+
+`EDUCATIONAL_SYNTHETIC_DATA`
+
+Every educational visualization must visibly state:
+
+"Educational simulation — not actual SPHEREx observational data."
+
+Never:
+- Send synthetic game data into the real candidate engine.
+- Store synthetic detections as scientific discoveries.
+- Mix synthetic and real observation provenance.
+- Present game results in the real investigation history.
+- Use fictional measurements in real scientific charts.
+
+The educational module must be fully isolated.
+
+---
+
+# 6. PHASE FOUR — ONBOARDING AND PRODUCT LEARNING
+
+The game should lead users naturally into the real SPEX application.
+
+After completing the game, show:
+
+"You've learned how SPHEREx observes the sky.
+Now investigate real observations with SPEX."
+
+Provide a clear action:
+
+"Start Your First Investigation"
+
+Also improve onboarding for users who skip the game.
+
+Create a short guided first-use journey:
+
+1. Enter celestial coordinates.
+2. Select available observations.
+3. Compare images.
+4. Inspect differences.
+5. Review candidate evidence.
+6. Understand the result.
+
+Explain the difference between:
+- Real observation.
+- Educational simulation.
+- Development benchmark.
+- Official challenge release.
+
+Never confuse these data categories.
+
+---
+
+# 7. PHASE FIVE — DATA RELEASE READINESS
+
+The official challenge data release is expected on November 13, 2026.
+
+Treat that date as a project-provided planning date, not as a verified external guarantee.
+
+The existing QR2 benchmark must remain clearly labeled as development/benchmark data.
+
+Keep these concepts separate:
+
+`DEVELOPMENT_BENCHMARK`
+
+`OFFICIAL_CHALLENGE_RELEASE`
+
+Do not hardcode the QR2 development footprint as the official challenge footprint.
+
+The system must inspect actual release metadata.
+
+Prepare a release adapter that can inspect:
+- FITS HDUs.
+- IMAGE arrays.
+- VARIANCE arrays.
+- FLAGS arrays.
+- WCS headers.
+- Observation identifiers.
+- Timestamps.
+- Spectral metadata.
+- Data quality metadata.
+- Available coverage.
+- Missing or incompatible fields.
+
+Do not assume that the official release will use identical filenames, HDUs, metadata, or observation structure.
+
+The application must report compatibility honestly.
+
+Do not fabricate missing measurements.
+
+Do not silently fall back to benchmark data when official release ingestion fails.
+
+Document the release-day validation workflow.
+
+---
+
+# 8. PHASE SIX — ACCESSIBILITY, RESPONSIVENESS, AND PERFORMANCE
+
+The entire application must work on:
+- 320px mobile.
+- 375px mobile.
+- 390px mobile.
+- 430px mobile.
+- Tablet.
+- Laptop.
+- Desktop.
+- Large displays.
+
+No horizontal overflow.
+
+No clipped critical scientific information.
+
+No inaccessible controls.
+
+No tiny mobile text.
+
+Use responsive image rendering.
+
+Keep large scientific arrays out of unnecessary React state if the existing architecture provides better alternatives.
+
+Avoid expensive unnecessary rerenders.
+
+Lazy-load heavy educational assets where appropriate.
+
+Use efficient rendering for image visualizations.
+
+Respect reduced motion.
+
+Maintain readable contrast.
+
+Provide keyboard focus indicators.
+
+Provide accessible labels for controls.
+
+---
+
+# 9. PHASE SEVEN — VISUAL QA
+
+Do not judge the design only from source code.
+
+Run the application.
+
+Inspect actual rendered pages.
+
+Use browser-based testing or screenshots if available.
+
+Inspect at minimum:
+- Homepage.
+- Explore page.
+- Observation comparison.
+- Candidate details.
+- Game introduction.
+- Level 1.
+- Level 2.
+- Game completion.
+- Mobile navigation.
+- Light theme.
+- Dark theme.
+
+Check:
+- Alignment.
+- Typography.
+- Spacing.
+- Contrast.
+- Responsive behavior.
+- Logo accuracy.
+- Visual consistency.
+- Empty states.
+- Loading states.
+- Error states.
+- Scientific labels.
+- Game instructions.
+
+Fix visual problems you discover.
+
+Do not claim visual QA occurred if the browser was never opened.
+
+---
+
+# 10. PHASE EIGHT — TESTING AND VERIFICATION
+
+Run all relevant project commands.
+
+At minimum, where available:
+
+- TypeScript type check.
+- Unit tests.
+- Integration tests.
+- Production build.
+- Lint.
+- Browser E2E tests.
+- Responsive visual inspection.
+
+Add regression tests for all repaired scientific issues.
+
+Specifically test:
+
+1. Weak stationary PSF residuals are not automatically classified as moving objects.
+2. Flux-change classification remains separate from motion classification.
+3. Subpixel centroid coordinates are retained.
+4. Candidate coordinates use the correct WCS.
+5. Cursor coordinates use the actual rendered epoch.
+6. Split-view panes use the correct WCS.
+7. Candidate overlays remain aligned at responsive sizes.
+8. Footprint geometry uses consistent conventions.
+9. FITS fixture selection is deterministic.
+10. Synthetic educational data cannot enter the real science pipeline.
+11. Game interactions work correctly.
+12. Game completion leads to the real exploration onboarding.
+13. Logo assets are used without distortion.
+
+Do not weaken scientific tests to obtain a passing result.
+
+If an external scientific validation library is unavailable, report that explicitly.
+
+Do not claim scientific discovery validation from software tests.
+
+---
+
+# 11. DELIVERABLES
+
+The completed work must include:
+
+1. Full visual redesign.
+2. Accurate supplied logo integration.
+3. Redesigned homepage.
+4. Redesigned Explore workspace.
+5. Improved navigation.
+6. Polished dark and light themes.
+7. Fully implemented two-level educational game.
+8. Synthetic data isolation.
+9. Improved onboarding.
+10. Scientific integrity fixes.
+11. Responsive behavior.
+12. Accessibility improvements.
+13. Regression tests.
+14. Updated documentation.
+15. Updated architecture map.
+
+Create:
+
+`docs/TRANSFORMATION_AUDIT.md`
+
+`docs/REDESIGN_IMPLEMENTATION.md`
+
+`docs/SCIENTIFIC_INTEGRITY.md`
+
+`docs/EDUCATIONAL_GAME.md`
+
+`docs/QA_REPORT.md`
+
+`docs/OFFICIAL_RELEASE_READINESS.md`
+
+---
+
+# 12. WORKING METHOD
+
+Work in controlled stages.
+
+Stage A — Inspect repository and create architecture map.
+
+Stage B — Identify and repair scientific defects.
+
+Stage C — Establish new design system and application information architecture.
+
+Stage D — Implement the complete visual redesign.
+
+Stage E — Implement the educational game.
+
+Stage F — Connect the game to the onboarding journey.
+
+Stage G — Test all functionality and responsive layouts.
+
+Stage H — Produce final reports.
+
+Do not stop after Stage A.
+
+Do not create a separate throwaway prototype instead of modifying the actual project.
+
+Do not replace the existing application with a new template.
+
+Do not remove important scientific capabilities to simplify the design.
+
+If you encounter a major architectural limitation, document it and choose the smallest safe solution.
+
+If a decision could change scientific meaning, stop and explain the issue rather than guessing.
+
+---
+
+# 13. FINAL ACCEPTANCE CRITERIA
+
+The transformation is complete only when:
+
+- The existing application still works.
+- The scientific engine remains real and traceable.
+- Known scientific defects have been addressed or explicitly documented.
+- The logo matches the supplied original asset exactly.
+- The entire interface has a coherent and distinctive new visual identity.
+- The Explore experience is clearer and easier to use.
+- The educational game has two complete interactive levels.
+- The game teaches the mission accurately.
+- Synthetic game data is isolated.
+- Users can move naturally from learning into real exploration.
+- Mobile and desktop layouts work.
+- Tests and builds have been executed.
+- Remaining limitations are honestly documented.
+
+---
+
+# 14. FINAL REPORT FORMAT
+
+At the end, provide a precise report:
+
+## A. Repository Changes
+List every important file created, modified, or removed.
+
+## B. Scientific Fixes
+For each issue:
+- Original behavior.
+- Root cause.
+- Implemented correction.
+- Regression test.
+- Remaining limitations.
+
+## C. Design Transformation
+Explain:
+- New design system.
+- New homepage.
+- New navigation.
+- Explore workspace changes.
+- Logo integration.
+- Responsive behavior.
+
+## D. Educational Game
+Explain:
+- Level 1.
+- Level 2.
+- Interactions.
+- Learning outcomes.
+- Synthetic data isolation.
+- Integration with onboarding.
+
+## E. Test Results
+Provide actual command output and results.
+
+Clearly distinguish:
+- Passed.
+- Failed.
+- Not run.
+- Blocked.
+
+## F. Remaining Risks
+List all known limitations honestly.
+
+## G. Release Readiness
+Explain what is ready and what still needs the official November 13 data release.
+
+## H. Final Product Assessment
+Give a candid assessment of the delivered product.
+
+Do not claim perfection.
+Do not claim that all scientific behavior is validated simply because tests pass.
+
+The goal is not to make SPEX look impressive for screenshots only.
+
+The goal is to make SPEX a genuinely useful, scientifically responsible, visually memorable, and educationally engaging space exploration platform.
+
+Build it carefully.

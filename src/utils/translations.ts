@@ -8,6 +8,7 @@ export interface TranslationDictionary {
   workspaceSubtitle: string;
   navHome: string;
   navExplore: string;
+  navGame: string;
   navCases: string;
   navAbout: string;
   langToggle: string;
@@ -158,6 +159,7 @@ export interface TranslationDictionary {
   homeStep3Title: string;
   homeStep3Desc: string;
   homeBtnStartExplore: string;
+  homeBtnPlayGame: string;
   homeBtnBrowseCases: string;
   homeBtnScientificAudit: string;
   homeBenchmarksHeader: string;
@@ -220,6 +222,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     workspaceSubtitle: 'Astronomical Transient & Variability Workspace',
     navHome: 'Home',
     navExplore: 'Explore Sky',
+    navGame: 'Cosmic Detective',
     navCases: 'Benchmarks',
     navAbout: 'Science & Audit',
     langToggle: 'عربي',
@@ -379,6 +382,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeStep3Title: '03. Verify Facts',
     homeStep3Desc: 'Check signal significance, eliminate detector glitches, and cross-match Gaia.',
     homeBtnStartExplore: 'Start Investigation',
+    homeBtnPlayGame: 'Play Cosmic Detective',
     homeBtnBrowseCases: 'Browse Benchmarks',
     homeBtnScientificAudit: 'Scientific Audit',
     homeBenchmarksHeader: 'Verified Astronomical Benchmarks in SPHEREx QR2:',
@@ -444,6 +448,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     workspaceSubtitle: 'منصة استكشاف التغيرات الفلكية والكويكبات',
     navHome: 'الرئيسية',
     navExplore: 'المستكشف الفلكي',
+    navGame: 'المحقق الكوني',
     navCases: 'حالات موثقة',
     navAbout: 'التدقيق العلمي',
     langToggle: 'English',
@@ -603,6 +608,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeStep3Title: '03. إثبات الدليل',
     homeStep3Desc: 'فحص قوة الإشارة الإحصائية، واستبعاد عيوب الحساس، ومطابقة النجوم مع مرصد جايا ووايز.',
     homeBtnStartExplore: 'بدء الاستكشاف والتحليل',
+    homeBtnPlayGame: 'العب المحقق الكوني',
     homeBtnBrowseCases: 'تصفح الحالات الموثقة',
     homeBtnScientificAudit: 'سجل التدقيق العلمي',
     homeBenchmarksHeader: 'حالات فلكية نموذجية موثقة في أرشيف SPHEREx QR2:',
