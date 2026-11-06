@@ -41,6 +41,7 @@ import { SkyCoverageModal } from './SkyCoverageModal';
 import { SpectralExplorerModal } from './SpectralExplorerModal';
 import { DiscoveryReportModal } from './DiscoveryReportModal';
 import { CandidateComparisonModal } from './CandidateComparisonModal';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 import { Language, translations } from '../utils/translations';
 
 interface ExploreViewProps {
@@ -117,6 +118,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showSpectralExplorer, setShowSpectralExplorer] = useState<boolean>(false);
   const [showDiscoveryReport, setShowDiscoveryReport] = useState<boolean>(false);
   const [showCandidateComparison, setShowCandidateComparison] = useState<boolean>(false);
+
+  useModalBehavior(isSearchOpen, () => setIsSearchOpen(false));
 
   // Custom Coordinate Inputs
   const [customRa, setCustomRa] = useState<string>('276.2614');
@@ -1086,8 +1089,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
       {/* Coordinate Search Modal */}
       {isSearchOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setIsSearchOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
+        >
           <div
+            onClick={(e) => e.stopPropagation()}
             className={`w-full max-w-md rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-6 space-y-4 ${
               isRtl ? 'font-cairo' : 'font-sans'
             }`}

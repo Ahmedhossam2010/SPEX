@@ -4,7 +4,7 @@ import { HomeView } from './components/HomeView';
 import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
-import { CosmicDetectiveGame } from './game/CosmicDetectiveGame';
+import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { InvestigationResult } from './science/types';
 import { Language, translations } from './utils/translations';
 
@@ -228,7 +228,7 @@ export function App() {
         )}
 
         {activeTab === 'game' && (
-          <CosmicDetectiveGame
+          <SpexAdventureGame
             language={language}
             onExitToExplore={(caseId) => handleStartExplore(caseId)}
             onBackToHome={() => setActiveTab('home')}

@@ -26,6 +26,10 @@ import {
   BadgeCheck,
   RefreshCw,
   Zap,
+  Printer,
+  Copy,
+  Check,
+  Info,
 } from 'lucide-react';
 import {
   EDUCATIONAL_DISCLAIMER,
@@ -60,22 +64,23 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
   const [level, setLevel] = useState<1 | 2>(1);
   const [missionIndex, setMissionIndex] = useState<number>(0);
   const [xp, setXp] = useState<number>(100);
-  const [badges, setBadges] = useState<string[]>([]);
+  const [badges, setBadges] = useState<string[]>(['cadet_initiate']);
 
-  // Level 1 Challenge 1: See Beyond Visible Light (Interactive Wipe / Crossfade)
+  // Level 1 Challenge 1: See Beyond Visible Light
   const [l1WipePos, setL1WipePos] = useState<number>(50); // 0 (100% visible) to 100 (100% IR)
   const [l1InspectedSpot, setL1InspectedSpot] = useState<'dust' | 'protostar' | null>(null);
 
   // Level 1 Challenge 2: The 102 Colors (Fluid Wavelength Scrubber)
   const [l1Wavelength, setL1Wavelength] = useState<number>(3.05); // 0.75 um to 5.0 um
+  const [activeMolecule, setActiveMolecule] = useState<string | null>('h2o');
 
   // Level 1 Challenge 3: Map the Universe (Orbital Cadence)
   const [orbitStep, setOrbitStep] = useState<number>(0); // 0 to 4
-  const [isOrbiting, setIsOrbiting] = useState<boolean>(false);
+  const [isOrbiting, setIsOrbiting] = useState<boolean>(true);
 
   // Level 1 Challenge 4: From Light to Science (Interactive Photon Conveyor)
   const [pipelineActiveStep, setPipelineActiveStep] = useState<number>(0);
-  const [isPhotonMoving, setIsPhotonMoving] = useState<boolean>(false);
+  const [isTracingPhoton, setIsTracingPhoton] = useState<boolean>(false);
 
   // Level 2 Interactive Astronomical Viewport
   const [compareMode, setCompareMode] = useState<'split' | 'blink' | 'side' | 'diff'>('split');
@@ -85,12 +90,16 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
   const [scenarioIdx, setScenarioIdx] = useState<number>(0);
   const [selectedChoiceId, setSelectedChoiceId] = useState<string | null>(null);
   const [showExplanation, setShowExplanation] = useState<boolean>(false);
-  const [probeCoords, setProbeCoords] = useState<{ x: number; y: number; val1: number; val2: number; diffVal: number } | null>(null);
+  const [probeCoords, setProbeCoords] = useState<{ x: number; y: number; val1: number; val2: number; diffVal: number; snr: number } | null>(null);
+
+  // Dynamic SPEX emotional reaction
+  const [spexReaction, setSpexReaction] = useState<'greeting' | 'thinking' | 'eureka' | 'explaining'>('greeting');
 
   // Level 2 Final Mystery Investigation
+  const [investigatorName, setInvestigatorName] = useState<string>('Cadet Detective');
   const [finalVerdictCategory, setFinalVerdictCategory] = useState<string | null>(null);
   const [finalEvidenceChecked, setFinalEvidenceChecked] = useState<{ [key: string]: boolean }>({});
-  const [finalReportGenerated, setFinalReportGenerated] = useState<boolean>(false);
+  const [copiedReport, setCopiedReport] = useState<boolean>(false);
 
   // Canvas refs for astronomical rendering
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -105,10 +114,11 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
   // Update synthetic data when scenario changes
   useEffect(() => {
     if (missionIndex === 3) {
-      // Final mystery scenario
       setSynthData(generateSyntheticScenarioImages('final_mystery'));
+      setSpexReaction('thinking');
     } else {
       setSynthData(generateSyntheticScenarioImages(currentScenario.syntheticImagePattern));
+      setSpexReaction('thinking');
     }
     setSelectedChoiceId(null);
     setShowExplanation(false);
@@ -130,9 +140,25 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     if (!isOrbiting) return;
     const timer = setInterval(() => {
       setOrbitStep((prev) => (prev + 1) % 6);
-    }, 1200);
+    }, 1400);
     return () => clearInterval(timer);
   }, [isOrbiting]);
+
+  // Photon tracing animation
+  const handleTracePhoton = () => {
+    setIsTracingPhoton(true);
+    let step = 0;
+    setPipelineActiveStep(0);
+    const interval = setInterval(() => {
+      step++;
+      if (step < 5) {
+        setPipelineActiveStep(step);
+      } else {
+        clearInterval(interval);
+        setIsTracingPhoton(false);
+      }
+    }, 600);
+  };
 
   // Render Synthetic Astronomical Canvas in Level 2
   useEffect(() => {
@@ -140,10 +166,9 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const width = synthData.width;
     const height = synthData.height;
 
-    // Helper to map flux to color
+    // Scientific Infrared Colormap (Deep Navy -> Violet -> Amber -> White)
     const getFluxColor = (val: number, minVal = 0, maxVal = 60) => {
       const norm = Math.max(0, Math.min(1, (val - minVal) / (maxVal - minVal)));
-      // Scientific Infrared Colormap (Deep Navy -> Violet -> Amber -> White)
       const r = Math.floor(Math.min(255, norm * 2.5 * 255));
       const g = Math.floor(Math.min(255, Math.max(0, (norm - 0.3) * 2.2 * 255)));
       const b = Math.floor(Math.min(255, Math.max(0, (norm - 0.6) * 3 * 255) + (1 - norm) * 40));
@@ -154,13 +179,11 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const getDiffColor = (val: number, maxAbs = 35) => {
       const norm = Math.max(-1, Math.min(1, val / maxAbs));
       if (norm > 0) {
-        // Positive surge (Orange / Amber / Yellow)
         const r = Math.floor(norm * 255);
         const g = Math.floor(norm * 180);
         const b = 0;
         return [r, g, b];
       } else {
-        // Negative drop (Cyan / Electric Blue)
         const absN = Math.abs(norm);
         const r = 0;
         const g = Math.floor(absN * 210);
@@ -193,7 +216,6 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             } else if (compareMode === 'split') {
               const val = x < splitThresholdX ? synthData.epoch1[idx] : synthData.epoch2[idx];
               rgb = getFluxColor(val);
-              // Draw split dividing line
               if (x === splitThresholdX) {
                 rgb = [255, 255, 255];
               }
@@ -247,32 +269,46 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     }
   }, [level, compareMode, splitPos, blinkEpoch, synthData]);
 
-  // Handle click on astronomical canvas to probe flux
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = e.currentTarget;
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+  // Handle probe on canvas
+  const updateProbeAt = (clientX: number, clientY: number, target: HTMLCanvasElement) => {
+    const rect = target.getBoundingClientRect();
+    const clickX = clientX - rect.left;
+    const clickY = clientY - rect.top;
 
     const px = Math.floor((clickX / rect.width) * synthData.width);
     const py = Math.floor((clickY / rect.height) * synthData.height);
 
     if (px >= 0 && px < synthData.width && py >= 0 && py < synthData.height) {
       const idx = py * synthData.width + px;
+      const val1 = synthData.epoch1[idx];
+      const val2 = synthData.epoch2[idx];
+      const diffVal = synthData.diff[idx];
+      // Noise estimation ~ 2.5 MJy/sr
+      const snr = Math.abs(diffVal) / 2.5;
+
       setProbeCoords({
         x: px,
         y: py,
-        val1: synthData.epoch1[idx],
-        val2: synthData.epoch2[idx],
-        diffVal: synthData.diff[idx],
+        val1,
+        val2,
+        diffVal,
+        snr,
       });
     }
   };
 
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    updateProbeAt(e.clientX, e.clientY, e.currentTarget);
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    updateProbeAt(e.clientX, e.clientY, e.currentTarget);
+  };
+
   // Rank title computation
   const getRank = () => {
-    if (xp >= 800) return isArabic ? 'كبير محققي الكون الفلكيين' : 'Master Cosmic Detective';
-    if (xp >= 500) return isArabic ? 'محلل طيفي متقدم' : 'Senior Spectral Analyst';
+    if (xp >= 1000) return isArabic ? 'كبير محققي الكون الفلكيين' : 'Master Cosmic Detective';
+    if (xp >= 600) return isArabic ? 'محلل طيفي متقدم' : 'Senior Spectral Sleuth';
     if (xp >= 300) return isArabic ? 'راصد الأشعة تحت الحمراء' : 'Infrared Field Scout';
     return isArabic ? 'محقّق متدرب' : 'Cadet Investigator';
   };
@@ -282,10 +318,12 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     if (missionIndex < 3) {
       setMissionIndex((prev) => prev + 1);
       setXp((prev) => prev + 100);
+      setSpexReaction('eureka');
     } else {
-      setXp((prev) => prev + 200);
-      setBadges((prev) => [...new Set([...prev, 'mission_observer'])]);
+      setXp((prev) => prev + 250);
+      setBadges((prev) => [...new Set([...prev, 'mission_observer', 'spectral_sleuth'])]);
       setGameState('level1_complete');
+      setSpexReaction('eureka');
     }
   };
 
@@ -294,7 +332,10 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     setSelectedChoiceId(choiceId);
     setShowExplanation(true);
     if (isCorrect) {
-      setXp((prev) => prev + 100);
+      setXp((prev) => prev + 120);
+      setSpexReaction('eureka');
+    } else {
+      setSpexReaction('explaining');
     }
   };
 
@@ -303,34 +344,48 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     if (scenarioIdx < EDUCATIONAL_SCENARIOS.length - 1) {
       setScenarioIdx((prev) => prev + 1);
     } else {
-      // Transition to final mystery mission
       setMissionIndex(3);
     }
   };
 
   // Complete final report
   const handleGenerateFinalReport = () => {
-    setFinalReportGenerated(true);
-    setXp((prev) => prev + 300);
-    setBadges((prev) => [...new Set([...prev, 'cosmic_detective'])]);
+    setXp((prev) => prev + 350);
+    setBadges((prev) => [...new Set([...prev, 'difference_master', 'cosmic_detective'])]);
     setGameState('level2_complete');
+    setSpexReaction('eureka');
+  };
+
+  // Copy report summary
+  const handleCopySummary = () => {
+    const reportText = `NASA SPHEREx Cosmic Detective Discovery Report
+Investigator: ${investigatorName}
+Rank: ${getRank()} (${xp} XP)
+Target: SIM-MYSTERY-077
+Status: VERIFIED SOLAR SYSTEM MOVING ASTEROID
+Cadence: 24h Epoch Difference | Proper Motion: 78.7"/day
+Badges: Mission Observer, Spectral Sleuth, Difference Master, Cosmic Detective
+Verification: NASA Space Apps Challenge 2026`;
+    navigator.clipboard?.writeText(reportText);
+    setCopiedReport(true);
+    setTimeout(() => setCopiedReport(false), 2500);
   };
 
   return (
     <div
-      className={`min-h-[calc(100vh-4rem)] bg-[#060810] text-slate-100 flex flex-col justify-between selection:bg-amber-500/30 selection:text-amber-200 ${
+      className={`min-h-[calc(100vh-4rem)] bg-[#05070d] text-slate-100 flex flex-col justify-between selection:bg-amber-500/30 selection:text-amber-200 ${
         isArabic ? 'font-cairo' : 'font-sans'
       }`}
       dir={isArabic ? 'rtl' : 'ltr'}
     >
       {/* Top Educational Isolation Disclaimer Banner */}
-      <div className="w-full bg-cyan-950/80 border-b border-cyan-500/30 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-3 shadow-sm backdrop-blur-xl">
+      <div className="w-full bg-[#0a1224]/90 border-b border-cyan-500/25 px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-3 shadow-sm backdrop-blur-xl">
         <div className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
           <span className="font-mono font-bold tracking-wider text-cyan-300 uppercase">
             {isArabic ? 'بيئة المحاكاة التعليمية المستقلة' : 'INTERACTIVE EDUCATIONAL ENVIRONMENT'}
           </span>
-          <span className="text-slate-400 hidden sm:inline">·</span>
+          <span className="text-slate-500 hidden sm:inline">·</span>
           <span className="text-cyan-200/80 hidden sm:inline">{EDUCATIONAL_DISCLAIMER}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -348,7 +403,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       {/* Main Game Shell */}
       <div className="mx-auto max-w-6xl w-full px-4 sm:px-6 lg:px-8 py-6 flex-1 flex flex-col justify-between space-y-6">
         {/* Game Navigation Header & HUD */}
-        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl bg-[#0b0f19] border border-white/[0.08] shadow-xl">
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-3xl bg-[#090d19]/90 border border-white/[0.08] shadow-xl backdrop-blur-xl">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -367,12 +422,12 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             </button>
           </div>
 
-          {/* XP & Detective Rank */}
-          <div className="flex items-center gap-3">
+          {/* XP & Detective Rank & Badges */}
+          <div className="flex flex-wrap items-center gap-3">
             <div className="px-3 py-1.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2">
               <Zap className="w-4 h-4 text-amber-400" />
               <div className="text-left font-mono">
-                <div className="text-[10px] text-slate-400 leading-none">XP POINTS</div>
+                <div className="text-[9px] text-slate-400 leading-none">XP POINTS</div>
                 <div className="text-xs font-bold text-amber-300 tabular-nums">{xp} XP</div>
               </div>
             </div>
@@ -380,12 +435,12 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             <div className="px-3 py-1.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center gap-2">
               <Award className="w-4 h-4 text-cyan-400" />
               <div className="text-left font-mono">
-                <div className="text-[10px] text-cyan-300 leading-none">RANK</div>
+                <div className="text-[9px] text-cyan-300 leading-none">RANK</div>
                 <div className="text-xs font-bold text-white">{getRank()}</div>
               </div>
             </div>
 
-            {/* Level Selector Pills */}
+            {/* Level Selector Tabs */}
             <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
               <button
                 type="button"
@@ -455,7 +510,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       setMissionIndex(0);
                       setGameState('playing');
                     }}
-                    className="p-4 rounded-2xl border border-cyan-500/30 bg-[#0b1021] hover:border-cyan-400/60 transition-all cursor-pointer group"
+                    className="p-5 rounded-2xl border border-cyan-500/30 bg-[#090f20] hover:border-cyan-400/60 transition-all cursor-pointer group shadow-lg"
                   >
                     <div className="text-xs font-mono text-cyan-400 font-bold mb-1">
                       {isArabic ? 'المستوى 1' : 'LEVEL 1'}
@@ -476,7 +531,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       setMissionIndex(0);
                       setGameState('playing');
                     }}
-                    className="p-4 rounded-2xl border border-amber-500/30 bg-[#0b1021] hover:border-amber-400/60 transition-all cursor-pointer group"
+                    className="p-5 rounded-2xl border border-amber-500/30 bg-[#090f20] hover:border-amber-400/60 transition-all cursor-pointer group shadow-lg"
                   >
                     <div className="text-xs font-mono text-amber-400 font-bold mb-1">
                       {isArabic ? 'المستوى 2' : 'LEVEL 2'}
@@ -584,15 +639,22 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                 <div className="lg:col-span-7 space-y-4">
                   {/* Interactive Split-Wipe Astronomical Cloud Viewport */}
                   <div className="relative aspect-video rounded-3xl overflow-hidden border border-white/[0.1] bg-black shadow-2xl select-none">
-                    {/* Background Layer: Infrared (Visible when wipe slider moves) */}
+                    {/* Background Layer: Infrared */}
                     <div className="absolute inset-0 bg-gradient-to-tr from-purple-950 via-slate-950 to-indigo-950 p-6 flex items-center justify-center">
                       {/* Protostar Glowing through Dust */}
                       <div className="relative flex items-center justify-center">
                         <div className="absolute w-48 h-48 rounded-full bg-amber-500/20 blur-2xl animate-pulse" />
                         <div className="absolute w-24 h-24 rounded-full bg-rose-500/40 blur-xl" />
-                        <div className="w-10 h-10 rounded-full bg-amber-200 shadow-[0_0_40px_rgba(245,158,11,1)] flex items-center justify-center">
-                          <Flame className="w-5 h-5 text-amber-900" />
-                        </div>
+                        
+                        {/* Interactive Protostar Hotspot */}
+                        <button
+                          type="button"
+                          onClick={() => setL1InspectedSpot('protostar')}
+                          className="w-12 h-12 rounded-full bg-amber-200 shadow-[0_0_40px_rgba(245,158,11,1)] flex items-center justify-center ring-4 ring-amber-400/50 hover:scale-110 transition-transform cursor-pointer"
+                        >
+                          <Flame className="w-6 h-6 text-amber-900" />
+                        </button>
+
                         {/* Protoplanetary Ice Ring */}
                         <div className="absolute w-56 h-20 rounded-full border border-cyan-400/60 rotate-12 shadow-[0_0_15px_rgba(6,182,212,0.4)] pointer-events-none" />
                       </div>
@@ -602,17 +664,21 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       </div>
                     </div>
 
-                    {/* Foreground Layer: Optical Visible Light (Clipped by slider) */}
+                    {/* Foreground Layer: Optical Visible Light */}
                     <div
                       style={{ clipPath: `inset(0 ${100 - l1WipePos}% 0 0)` }}
                       className="absolute inset-0 bg-[#070912] p-6 flex items-center justify-center transition-all"
                     >
-                      {/* Dark Opaque Dust Cloud blocking the star */}
-                      <div className="relative w-72 h-44 rounded-full bg-slate-950/95 blur-md border border-white/[0.05] flex items-center justify-center">
+                      {/* Dark Opaque Dust Cloud Hotspot */}
+                      <button
+                        type="button"
+                        onClick={() => setL1InspectedSpot('dust')}
+                        className="relative w-72 h-44 rounded-full bg-slate-950/95 blur-md border border-white/[0.05] flex items-center justify-center hover:scale-102 transition-transform cursor-pointer"
+                      >
                         <span className="text-xs font-mono text-slate-500 text-center px-4">
-                          {isArabic ? 'سحابة غبار بينجمي كثيفة تحجب الضوء تماماً' : 'Dense Interstellar Dust Cloud (Blocks Visible Light)'}
+                          {isArabic ? 'سحابة غبار بينجمي كثيفة تحجب الضوء تماماً' : 'Dense Interstellar Dust Cloud (Click to inspect)'}
                         </span>
-                      </div>
+                      </button>
                       <div className="absolute bottom-4 left-4 text-[10px] font-mono text-slate-400 bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-md">
                         λ = 0.55 µm · VISIBLE LIGHT (BLOCKED)
                       </div>
@@ -642,7 +708,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                   </div>
                 </div>
 
-                {/* Right Column: Interactive Lesson */}
+                {/* Right Column: Interactive Lesson & Hotspot Inspector */}
                 <div className="lg:col-span-5 space-y-4 text-left">
                   <div className="p-5 rounded-2xl bg-[#0b1021] border border-white/[0.08] space-y-3">
                     <h3 className="text-base font-bold text-white font-['Outfit']">
@@ -659,6 +725,35 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       <span className="text-emerald-400">TRANSPARENT AT 3.05 µm</span>
                     </div>
                   </div>
+
+                  {/* Hotspot Inspection Card */}
+                  {l1InspectedSpot && (
+                    <div className="p-4 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 space-y-2 animate-in fade-in duration-150">
+                      <div className="flex items-center justify-between text-xs font-mono text-cyan-300 font-bold">
+                        <span>
+                          {l1InspectedSpot === 'protostar'
+                            ? isArabic ? '★ النجم الأولي وقرص جليد الماء' : '★ Hidden Protostar & Ice Disk'
+                            : isArabic ? '☁ حبيبات الغبار البينجمي' : '☁ Interstellar Dust Grains'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setL1InspectedSpot(null)}
+                          className="text-slate-400 hover:text-white text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <p className="text-xs text-slate-200 leading-snug">
+                        {l1InspectedSpot === 'protostar'
+                          ? (isArabic
+                            ? 'نجم وليد محاط بقرص كوكبي أولي غني بجليد الماء عند 3.05 ميكرومتر. كان غير مرئي تماماً في الضوء المرئي!'
+                            : 'A newborn star surrounded by a protoplanetary disk rich in 3.05 µm water ice. Completely hidden from optical telescopes, but radiant in SPHEREx infrared!')
+                          : (isArabic
+                            ? 'حبيبات غبار السيليكات والكربون تحت الميكرون تمتص وتشتت فوتونات الضوء المرئي الأزرق والأخضر بفعالية شديدة.'
+                            : 'Sub-micron silicate and carbon dust grains scatter visible wavelengths efficiently, creating dense dark molecular clouds.')}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -677,7 +772,6 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                     {/* Interactive Curve SVG */}
                     <div className="relative h-44 w-full bg-black/40 rounded-2xl p-2 border border-white/[0.05] overflow-hidden">
                       <svg className="w-full h-full" viewBox="0 0 500 150" preserveAspectRatio="none">
-                        {/* Wavelength Gradient Glow */}
                         <defs>
                           <linearGradient id="spectrumGrad" x1="0%" y1="0%" x2="100%" y2="0%">
                             <stop offset="0%" stopColor="#38bdf8" />
@@ -696,15 +790,15 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                           strokeWidth="3.5"
                         />
 
-                        {/* Water Ice Absorption Marker (3.05 um ~ x=250) */}
-                        <circle cx="250" cy="110" r="5" fill="#a855f7" />
-                        <text x="255" y="130" fill="#a855f7" fontSize="10" fontFamily="monospace">
+                        {/* Water Ice Absorption Marker (3.05 um ~ x=270) */}
+                        <circle cx="270" cy="110" r="5" fill="#a855f7" />
+                        <text x="275" y="130" fill="#a855f7" fontSize="10" fontFamily="monospace">
                           H2O Ice (3.05 µm)
                         </text>
 
-                        {/* CO2 Ice Absorption Marker (4.27 um ~ x=400) */}
-                        <circle cx="400" cy="120" r="5" fill="#ec4899" />
-                        <text x="405" y="140" fill="#ec4899" fontSize="10" fontFamily="monospace">
+                        {/* CO2 Ice Absorption Marker (4.27 um ~ x=414) */}
+                        <circle cx="414" cy="120" r="5" fill="#ec4899" />
+                        <text x="360" y="142" fill="#ec4899" fontSize="10" fontFamily="monospace">
                           CO2 Ice (4.27 µm)
                         </text>
 
@@ -718,7 +812,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                               x2={needleX}
                               y2={150}
                               stroke="#f59e0b"
-                              strokeWidth="2"
+                              strokeWidth="2.5"
                               strokeDasharray="4 2"
                             />
                           );
@@ -743,107 +837,128 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                         className="w-full accent-amber-400 cursor-pointer"
                       />
                     </div>
+
+                    {/* Quick-Snap Molecule Buttons */}
+                    <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-white/[0.06]">
+                      <span className="text-[10px] font-mono text-slate-400">{isArabic ? 'بصمات الجزيئات:' : 'Molecules:'}</span>
+                      {[
+                        { id: 'h2o', label: '💧 H2O Ice (3.05 µm)', wl: 3.05 },
+                        { id: 'pah', label: '🧬 Organics / PAH (3.30 µm)', wl: 3.30 },
+                        { id: 'co2', label: '🧊 CO2 Ice (4.27 µm)', wl: 4.27 },
+                        { id: 'co', label: '💨 CO Ice (4.67 µm)', wl: 4.67 },
+                      ].map((mol) => (
+                        <button
+                          key={mol.id}
+                          type="button"
+                          onClick={() => {
+                            setL1Wavelength(mol.wl);
+                            setActiveMolecule(mol.id);
+                          }}
+                          className={`px-2.5 py-1 rounded-xl text-xs font-mono transition-all cursor-pointer ${
+                            Math.abs(l1Wavelength - mol.wl) < 0.1
+                              ? 'bg-amber-500 text-slate-950 font-bold shadow-md'
+                              : 'bg-white/[0.05] text-slate-300 hover:bg-white/[0.1]'
+                          }`}
+                        >
+                          {mol.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Column: Diagnostic Feature Detection */}
+                {/* Right Column: 6 Detector Arrays & Science */}
                 <div className="lg:col-span-5 space-y-4 text-left">
                   <div className="p-5 rounded-2xl bg-[#0b1021] border border-white/[0.08] space-y-3">
-                    <div className="text-[10px] font-mono text-cyan-400 uppercase font-bold">
-                      {isArabic ? 'الكشف الكيميائي الفوري' : 'ACTIVE SPECTRAL DIAGNOSTIC'}
-                    </div>
-
                     <h3 className="text-base font-bold text-white font-['Outfit']">
-                      {l1Wavelength >= 2.95 && l1Wavelength <= 3.2
-                        ? isArabic ? '💧 امتصاص جليد الماء (H2O Ice)' : '💧 Water Ice (H2O) Absorption'
-                        : l1Wavelength >= 4.15 && l1Wavelength <= 4.4
-                        ? isArabic ? '🧊 جليد ثاني أكسيد الكربون (CO2)' : '🧊 Carbon Dioxide (CO2) Ice'
-                        : l1Wavelength >= 3.25 && l1Wavelength <= 3.4
-                        ? isArabic ? '✨ انبعاث الهيدروكربونات العطرية (PAH)' : '✨ Polycyclic Hydrocarbons (PAH)'
-                        : isArabic ? 'رصد متصل للطاقة النجمية' : 'Stellar Continuum Flux'}
+                      {isArabic ? 'مصفوفات المستشعرات الستة (H2RG)' : 'The 6 Hawaii-2RG Detector Arrays'}
                     </h3>
-
                     <p className="text-xs text-slate-300 leading-relaxed">
                       {isArabic
-                        ? 'بدلاً من استخدام مرشحات ميكانيكية تدور، يستخدم تلسكوب SPHEREx مرشحات متغيرة خطياً (LVF) فوق المستشعرات الستة. هذا يقسم الضوء لـ 102 لوناً متصلاً ويكشف المركبات الباعثة على الحياة عبر الكون!'
-                        : 'Instead of spinning filter wheels, SPHEREx uses Linear Variable Filters (LVF) directly deposited over the detectors. This resolves 102 continuous spectral channels, mapping biogenic ices across galaxies.'}
+                        ? 'يستخدم تلسكوب SPHEREx مرشحات متغيرة خطياً (LVF) فوق 6 مستشعرات H2RG بدقة 2048×2048 بكسل، لتسجيل 102 لون طيفي في وقت واحد دون أجزاء متحركة!'
+                        : 'SPHEREx glues Linear Variable Filters (LVFs) directly atop six Hawaii-2RG detector arrays. As the telescope points, it measures 102 continuous spectral bands without any moving filter wheels!'}
                     </p>
+
+                    <div className="space-y-1.5 pt-2 border-t border-white/[0.06]">
+                      {EDUCATIONAL_DETECTOR_ARRAYS.slice(0, 3).map((arr) => (
+                        <div key={arr.array} className="flex justify-between items-center text-xs font-mono">
+                          <span className="font-bold" style={{ color: arr.color }}>{arr.array} ({arr.wavelengthRange})</span>
+                          <span className="text-slate-400 text-[10px]">{arr.channels} bands</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Challenge 3: Map the Universe (Orbital Cadence) */}
+            {/* Challenge 3: Map the Universe & Orbit */}
             {missionIndex === 2 && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
                 <div className="lg:col-span-7 space-y-4">
-                  {/* Interactive Orbital Sphere SVG */}
-                  <div className="relative aspect-video rounded-3xl border border-white/[0.1] bg-[#060914] p-6 flex items-center justify-center shadow-2xl">
-                    <svg className="w-full h-full" viewBox="0 0 400 240">
+                  {/* Orbit Simulator Viewport */}
+                  <div className="relative aspect-video rounded-3xl overflow-hidden border border-white/[0.1] bg-[#04060c] shadow-2xl p-6 flex items-center justify-center">
+                    {/* Sun / Earth / Orbit Diagram */}
+                    <div className="relative w-full h-full flex items-center justify-center">
                       {/* Earth */}
-                      <circle cx="200" cy="120" r="45" fill="#1e293b" stroke="#38bdf8" strokeWidth="2" />
-                      <text x="200" y="125" textAnchor="middle" fill="#94a3b8" fontSize="10" fontFamily="sans-serif">
-                        EARTH
-                      </text>
+                      <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-blue-600 via-cyan-500 to-emerald-400 shadow-[0_0_50px_rgba(6,182,212,0.5)] flex items-center justify-center relative">
+                        <span className="text-[10px] font-mono font-bold text-slate-950">EARTH</span>
+                        
+                        {/* Polar Orbit Ring */}
+                        <div className="absolute -inset-10 rounded-full border-2 border-dashed border-cyan-400/40 animate-spin" style={{ animationDuration: '20s' }} />
 
-                      {/* North Ecliptic Pole (NEP) Spotlight */}
-                      <circle cx="200" cy="35" r="14" fill="#f59e0b" fillOpacity="0.3" stroke="#f59e0b" strokeWidth="2" />
-                      <text x="200" y="38" textAnchor="middle" fill="#fde68a" fontSize="8" fontFamily="monospace">
-                        NEP POLE
-                      </text>
+                        {/* SPHEREx Satellite in Orbit */}
+                        <div
+                          style={{
+                            transform: `rotate(${orbitStep * 60}deg) translate(64px) rotate(-${orbitStep * 60}deg)`,
+                          }}
+                          className="absolute w-6 h-6 rounded-lg bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,1)] flex items-center justify-center transition-all duration-700"
+                        >
+                          <Telescope className="w-3.5 h-3.5 text-slate-950" />
+                        </div>
+                      </div>
 
-                      {/* Satellite Terminator Orbit Path */}
-                      <ellipse
-                        cx="200"
-                        cy="120"
-                        rx="110"
-                        ry="80"
-                        fill="none"
-                        stroke="#64748b"
-                        strokeWidth="1.5"
-                        strokeDasharray="4 4"
-                      />
+                      {/* Continuous NEP Viewing Zone Cone */}
+                      <div className="absolute top-4 right-8 p-3 rounded-2xl bg-cyan-950/60 border border-cyan-400/40 text-left font-mono">
+                        <div className="text-[10px] text-cyan-300 font-bold">NORTH ECLIPTIC POLE (NEP)</div>
+                        <div className="text-xs text-white">Revisits: 100+ Cadences</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">Continuous Viewing Zone</div>
+                      </div>
+                    </div>
 
-                      {/* Spacecraft Position */}
-                      {(() => {
-                        const angle = (orbitStep * Math.PI) / 3;
-                        const satX = 200 + Math.cos(angle) * 110;
-                        const satY = 120 + Math.sin(angle) * 80;
-                        return (
-                          <g transform={`translate(${satX}, ${satY})`}>
-                            <circle r="7" fill="#06b6d4" />
-                            <line x1="0" y1="0" x2={200 - satX} y2={35 - satY} stroke="#06b6d4" strokeWidth="1" strokeDasharray="2 2" />
-                          </g>
-                        );
-                      })()}
-                    </svg>
-
-                    <div className="absolute bottom-4 left-4 text-[10px] font-mono text-amber-300 bg-black/60 px-2.5 py-1 rounded-lg backdrop-blur-md">
-                      ORBIT: SUN-SYNCHRONOUS TERMINATOR (700 KM)
+                    <div className="absolute bottom-4 left-4 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsOrbiting(!isOrbiting)}
+                        className="px-3 py-1.5 rounded-xl bg-cyan-500 text-slate-950 font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-md"
+                      >
+                        {isOrbiting ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        <span>{isOrbiting ? 'Pause Orbit' : 'Resume Orbit'}</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* Orbit Control Buttons */}
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setOrbitStep((prev) => (prev + 1) % 6)}
-                      className="px-4 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-mono font-bold text-white transition-colors cursor-pointer"
-                    >
-                      {isArabic ? 'تقدم مدار واحد (+90 دقيقة)' : 'Advance Orbit (+90 min)'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsOrbiting(!isOrbiting)}
-                      className="px-4 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-bold transition-colors cursor-pointer flex items-center gap-1.5"
-                    >
-                      {isOrbiting ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                      <span>{isOrbiting ? (isArabic ? 'إيقاف الحركة' : 'Pause Orbit') : (isArabic ? 'محاكاة مستمرة' : 'Auto Orbit')}</span>
-                    </button>
+                  {/* 4-Survey Progress Counter */}
+                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between text-xs font-mono">
+                    <span className="text-slate-400">All-Sky Surveys:</span>
+                    <div className="flex gap-2">
+                      {['Survey 1 (6m)', 'Survey 2 (12m)', 'Survey 3 (18m)', 'Survey 4 (24m)'].map((s, idx) => (
+                        <span
+                          key={s}
+                          className={`px-2.5 py-1 rounded-lg ${
+                            idx <= Math.floor(orbitStep / 2)
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                              : 'bg-white/[0.04] text-slate-500'
+                          }`}
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Column: Why Repeated Observations Matter */}
+                {/* Right Column: Mission Cadence Science */}
                 <div className="lg:col-span-5 space-y-4 text-left">
                   <div className="p-5 rounded-2xl bg-[#0b1021] border border-white/[0.08] space-y-3">
                     <h3 className="text-base font-bold text-white font-['Outfit']">
@@ -854,6 +969,12 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                         ? 'يدور مرصد SPHEREx في مدار قطبي متزامن مع الشمس. كل 90 دقيقة، يعبر التلسكوب فوق القطب السماوي (NEP). هذا يعني تراكم مئات الرصدات فوق نفس البقعة، مما يتيح اكتشاف التغيرات الزمنية الخافتة بدقة متناهية!'
                         : 'SPHEREx circles Earth in a polar Sun-synchronous terminator orbit. Every 90 minutes, it crosses the Ecliptic Poles. The North Ecliptic Pole (NEP) accumulates hundreds of repeat visits, enabling deep temporal variability science!'}
                     </p>
+
+                    <div className="p-3 rounded-xl bg-black/40 border border-white/[0.05] font-mono text-[11px] text-cyan-300 space-y-1">
+                      <div>ORBIT: Polar Sun-synchronous (90 min)</div>
+                      <div>PRECESSION: 1° / day (Terminator tracking)</div>
+                      <div>ALL-SKY CADENCE: Every 6 months</div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -862,6 +983,21 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             {/* Challenge 4: From Light to Science (Interactive Conveyor) */}
             {missionIndex === 3 && (
               <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-mono text-slate-400">
+                    {isArabic ? 'انقر على المراحل أو أطلق فوتوناً لتتبع مساره الفيزيائي:' : 'Click steps or fire a photon to trace physical calibration:'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isTracingPhoton}
+                    onClick={handleTracePhoton}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-mono text-xs font-bold transition-all shadow-md cursor-pointer"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>{isTracingPhoton ? 'Tracing Photon...' : '⚡ Launch Photon'}</span>
+                  </button>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
                   {EDUCATIONAL_PIPELINE_STEPS.map((s, idx) => {
                     const isStepActive = pipelineActiveStep === idx;
@@ -890,7 +1026,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                 {(() => {
                   const s = EDUCATIONAL_PIPELINE_STEPS[pipelineActiveStep];
                   return (
-                    <div className="p-6 rounded-3xl border border-white/[0.1] bg-[#080d1a] space-y-4 text-left">
+                    <div className="p-6 rounded-3xl border border-white/[0.1] bg-[#080d1a] space-y-4 text-left shadow-2xl">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 font-bold font-mono">
                           {s.step}
@@ -1047,6 +1183,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                     <canvas
                       ref={canvasRef}
                       onClick={handleCanvasClick}
+                      onMouseMove={handleCanvasMouseMove}
                       className="w-full h-full rounded-2xl block image-rendering-pixelated cursor-crosshair"
                     />
                   )}
@@ -1058,6 +1195,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                         <canvas
                           ref={canvasRefE1}
                           onClick={handleCanvasClick}
+                          onMouseMove={handleCanvasMouseMove}
                           className="w-full h-full rounded-xl block image-rendering-pixelated cursor-crosshair"
                         />
                         <span className="absolute top-2 left-2 text-[9px] font-mono bg-black/70 px-1.5 py-0.5 rounded text-slate-300">
@@ -1068,6 +1206,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                         <canvas
                           ref={canvasRefE2}
                           onClick={handleCanvasClick}
+                          onMouseMove={handleCanvasMouseMove}
                           className="w-full h-full rounded-xl block image-rendering-pixelated cursor-crosshair"
                         />
                         <span className="absolute top-2 left-2 text-[9px] font-mono bg-black/70 px-1.5 py-0.5 rounded text-amber-300">
@@ -1089,13 +1228,32 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                   )}
 
                   {/* Canvas Viewport HUD */}
-                  <div className="absolute bottom-3 left-3 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[10px] font-mono text-slate-300 flex items-center gap-2">
-                    <Crosshair className="w-3.5 h-3.5 text-amber-400" />
-                    <span>
-                      {probeCoords
-                        ? `PIXEL (${probeCoords.x}, ${probeCoords.y}) · E1: ${probeCoords.val1.toFixed(1)} · E2: ${probeCoords.val2.toFixed(1)} · Δ: ${probeCoords.diffVal > 0 ? '+' : ''}${probeCoords.diffVal.toFixed(1)} MJy/sr`
-                        : isArabic ? 'انقر على أي نقطة لقياس التدفق الضوئي' : 'Click any spot on canvas to probe flux'}
-                    </span>
+                  <div className="absolute bottom-3 left-3 right-3 bg-black/85 backdrop-blur-md px-3 py-2 rounded-xl border border-white/10 text-[10px] font-mono text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Crosshair className="w-3.5 h-3.5 text-amber-400" />
+                      <span>
+                        {probeCoords
+                          ? `(${probeCoords.x}, ${probeCoords.y}) · E1: ${probeCoords.val1.toFixed(1)} · E2: ${probeCoords.val2.toFixed(1)} · Δ: ${probeCoords.diffVal > 0 ? '+' : ''}${probeCoords.diffVal.toFixed(1)} MJy/sr`
+                          : isArabic ? 'مرر أو انقر لقياس التدفق الضوئي' : 'Hover or click to probe flux'}
+                      </span>
+                    </div>
+
+                    {probeCoords && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-400">SNR:</span>
+                        <span
+                          className={`font-bold px-1.5 py-0.5 rounded ${
+                            probeCoords.snr >= 5
+                              ? 'bg-emerald-500/20 text-emerald-300'
+                              : probeCoords.snr >= 3
+                              ? 'bg-amber-500/20 text-amber-300'
+                              : 'bg-rose-500/20 text-rose-300'
+                          }`}
+                        >
+                          {probeCoords.snr.toFixed(1)}σ
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1131,7 +1289,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                           key={hz}
                           type="button"
                           onClick={() => setBlinkSpeedHz(hz)}
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono cursor-pointer ${
                             blinkSpeedHz === hz ? 'bg-amber-500 text-black font-bold' : 'bg-white/10 text-slate-300'
                           }`}
                         >
@@ -1244,6 +1402,20 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       </p>
                     </div>
 
+                    {/* Cadet Investigator Name */}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
+                        {isArabic ? 'اسم المحقق الكوني' : 'INVESTIGATOR NAME'}
+                      </label>
+                      <input
+                        type="text"
+                        value={investigatorName}
+                        onChange={(e) => setInvestigatorName(e.target.value)}
+                        placeholder="Enter Cadet Name"
+                        className="w-full px-3 py-2 rounded-xl bg-black/40 border border-white/[0.1] text-xs font-mono text-white focus:outline-none focus:ring-1 focus:ring-amber-400"
+                      />
+                    </div>
+
                     {/* Final Classification Choices */}
                     <div className="space-y-2">
                       <span className="text-[10px] font-mono text-slate-400 uppercase font-bold block">
@@ -1299,7 +1471,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       onClick={handleGenerateFinalReport}
                       className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-black text-xs font-mono transition-all shadow-xl active:scale-95 cursor-pointer mt-2"
                     >
-                      {isArabic ? 'اعتماد التقرير العلمي الرسمي (+300 XP)' : 'ISSUE OFFICIAL DISCOVERY REPORT (+300 XP)'}
+                      {isArabic ? 'اعتماد التقرير العلمي الرسمي (+350 XP)' : 'ISSUE OFFICIAL DISCOVERY REPORT (+350 XP)'}
                     </button>
                   </div>
                 )}
@@ -1338,6 +1510,10 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             {/* Scientific Report Card */}
             <div className="p-5 rounded-2xl bg-black/60 border border-white/[0.06] space-y-3 font-mono text-xs">
               <div className="flex justify-between border-b border-white/[0.05] pb-2">
+                <span className="text-slate-400">Investigator:</span>
+                <span className="text-amber-300 font-bold">{investigatorName}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/[0.05] pb-2">
                 <span className="text-slate-400">Target Identifier:</span>
                 <span className="text-white font-bold">SIM-MYSTERY-077</span>
               </div>
@@ -1359,42 +1535,62 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
               </div>
             </div>
 
-            {/* Achievement Badge */}
-            <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-full bg-cyan-400 text-slate-950 flex items-center justify-center font-bold font-mono">
-                ★
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-white">
-                  {isArabic ? 'وسام المحقق الكوني الأكبر' : 'Master Cosmic Detective Achievement Unlocked'}
-                </h4>
-                <p className="text-xs text-cyan-200/80">
-                  {isArabic
-                    ? 'أنت الآن مؤهل بالكامل للعمل على بيانات NASA/IPAC SPHEREx الحقيقية!'
-                    : 'You have mastered temporal difference imaging and are ready for real NASA observations!'}
-                </p>
-              </div>
+            {/* Achievement Badges Showcase */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
+              {[
+                { name: 'Observer', icon: '🔭' },
+                { name: 'Spectral Sleuth', icon: '🌈' },
+                { name: 'Diff Master', icon: '⚖️' },
+                { name: 'Cosmic Det.', icon: '🏆' },
+              ].map((b) => (
+                <div key={b.name} className="p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-500/20">
+                  <div className="text-lg">{b.icon}</div>
+                  <div className="text-[10px] text-cyan-300 font-bold mt-1">{b.name}</div>
+                </div>
+              ))}
             </div>
 
-            {/* Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-              <button
-                type="button"
-                onClick={() => setGameState('intro')}
-                className="flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-white transition-colors cursor-pointer"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{isArabic ? 'إعادة تشغيل اللعبة' : 'Replay Missions'}</span>
-              </button>
+            {/* Actions: Print, Copy, Replay, Real Data */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySummary}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-xs font-mono text-slate-300 transition-colors cursor-pointer"
+                >
+                  {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedReport ? (isArabic ? 'تم النسخ!' : 'Copied!') : (isArabic ? 'نسخ التقرير' : 'Copy Summary')}</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => onExitToExplore('case-nep-var-01')}
-                className="px-6 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs font-mono transition-all shadow-xl active:scale-95 cursor-pointer flex items-center gap-2"
-              >
-                <span>{isArabic ? 'ابدأ تحليلك الفلكي الأول بالبيانات الحقيقية ◄' : 'START YOUR FIRST REAL INVESTIGATION ►'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-xs font-mono text-slate-300 transition-colors cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>{isArabic ? 'طباعة التقرير' : 'Print Certificate'}</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGameState('intro')}
+                  className="flex items-center gap-1 text-xs font-mono text-slate-400 hover:text-white transition-colors cursor-pointer mr-2"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{isArabic ? 'إعادة اللعب' : 'Replay'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onExitToExplore('case-nep-var-01')}
+                  className="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs font-mono transition-all shadow-xl active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>{isArabic ? 'الانتقال للرصد الحقيقي ◄' : 'TO REAL EXPLORE ►'}</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}

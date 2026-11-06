@@ -2,6 +2,7 @@ import React from 'react';
 import { X, ExternalLink, ShieldCheck, Database, Cpu, Hash, Clock, CheckCircle2, Radio } from 'lucide-react';
 import { ProvenanceRecord, EvidenceSummary } from '../science/types';
 import { Language, translations } from '../utils/translations';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 
 interface ProvenanceModalProps {
   provenance: ProvenanceRecord;
@@ -29,10 +30,16 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
 }) => {
   const isRtl = language === 'ar';
 
+  useModalBehavior(true, onClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md cursor-pointer"
+    >
       <div
-        className={`relative w-full max-w-2xl rounded-3xl border border-white/15 bg-[#050b18]/95 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-6 overflow-hidden backdrop-blur-2xl ${
+        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full max-w-2xl rounded-3xl border border-white/15 bg-[#050b18]/95 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-6 overflow-hidden backdrop-blur-2xl cursor-default ${
           isRtl ? 'font-cairo' : 'font-sans'
         }`}
         dir={isRtl ? 'rtl' : 'ltr'}

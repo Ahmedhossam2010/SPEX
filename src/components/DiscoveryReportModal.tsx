@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { CandidateDetection, InvestigationResult } from '../science/types';
 import { Language, translations } from '../utils/translations';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 
 interface DiscoveryReportModalProps {
   candidate: CandidateDetection;
@@ -32,6 +33,8 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
   const t = translations[language];
   const isRtl = language === 'ar';
   const [copiedUrl, setCopiedUrl] = useState(false);
+
+  useModalBehavior(true, onClose);
 
   const gaiaMatch = candidate.catalogMatches?.find((m) => m.catalog === 'Gaia DR3');
   const allwiseMatch = candidate.catalogMatches?.find((m) => m.catalog === 'AllWISE');
@@ -134,9 +137,13 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto cursor-pointer"
+    >
       <div
-        className={`relative w-full max-w-4xl rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 print:shadow-none print:border-none print:p-0 ${
+        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full max-w-4xl rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 print:shadow-none print:border-none print:p-0 cursor-default ${
           isRtl ? 'font-cairo' : 'font-sans'
         }`}
         dir={isRtl ? 'rtl' : 'ltr'}

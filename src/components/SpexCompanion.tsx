@@ -17,6 +17,7 @@ import { SPEX_ASSETS, SPEXMood } from '../spex/spexAssets';
 import { CandidateDetection, InvestigationResult } from '../science/types';
 import { Language } from '../utils/translations';
 import { ScienceTerm } from './ScienceTerm';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 
 interface ChatMessage {
   id: string;
@@ -56,6 +57,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   const toggleCollapse = controlledToggleCollapse || (() => setInternalCollapsed((prev) => !prev));
 
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  useModalBehavior(isChatOpen, () => setIsChatOpen(false));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
@@ -386,6 +388,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
         <div
           role="dialog"
           aria-modal="true"
+          onClick={() => setIsChatOpen(false)}
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
         >
           <div

@@ -3,6 +3,7 @@ import { X, Globe2, Compass, AlertCircle, CheckCircle2, ArrowRight, ShieldCheck 
 import { OFFICIAL_CHALLENGE_TARGETS, SPHEREX_QR2_FOOTPRINT } from '../science/challengeTargets';
 import { ChallengeTarget } from '../science/types';
 import { Language, translations } from '../utils/translations';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 
 interface SkyCoverageModalProps {
   onClose: () => void;
@@ -23,10 +24,16 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
   const isRtl = language === 'ar';
   const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget>(OFFICIAL_CHALLENGE_TARGETS[0]);
 
+  useModalBehavior(true, onClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto cursor-pointer"
+    >
       <div
-        className={`relative w-full max-w-4xl rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 ${
+        onClick={(e) => e.stopPropagation()}
+        className={`relative w-full max-w-4xl rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 cursor-default ${
           isRtl ? 'font-cairo' : 'font-sans'
         }`}
         dir={isRtl ? 'rtl' : 'ltr'}

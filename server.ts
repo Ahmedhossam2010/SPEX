@@ -959,6 +959,16 @@ Answer in 1-2 concise sentences with mood tag.`;
   }
 });
 
+// Serve public assets explicitly with image header support
+app.use('/assets', express.static(path.join(process.cwd(), 'public', 'assets'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.png') || filePath.endsWith('.svg')) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    }
+  },
+}));
+
 // Production static file serving or Vite dev middleware
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {

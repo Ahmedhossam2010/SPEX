@@ -1,0 +1,24 @@
+<svg viewBox="0 0 512 512" width="512" height="512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gUp" x1="100" y1="256" x2="412" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22d3ee" /><stop offset="35%" stop-color="#6366f1" /><stop offset="70%" stop-color="#a855f7" /><stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <linearGradient id="gLow" x1="100" y1="256" x2="412" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#f59e0b" /><stop offset="45%" stop-color="#f97316" /><stop offset="85%" stop-color="#ec4899" /><stop offset="100%" stop-color="#f43f5e" />
+    </linearGradient>
+    <linearGradient id="gStar" x1="256" y1="210" x2="256" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fef08a" /><stop offset="40%" stop-color="#f59e0b" /><stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#060810"/>
+  <path d="M 162 216 C 185 168, 225 146, 256 146 C 287 146, 327 168, 350 216" stroke="url(#gUp)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 162 296 C 185 344, 225 366, 256 366 C 287 366, 327 344, 350 296" stroke="url(#gLow)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M 108 256 C 145 198, 210 178, 256 178 C 302 178, 367 198, 404 256 C 362 222, 305 204, 256 204 C 207 204, 150 222, 108 256 Z" fill="url(#gUp)"/>
+  <path d="M 132 262 C 168 308, 215 320, 256 320 C 297 320, 344 308, 380 262 C 344 286, 302 296, 256 296 C 210 296, 168 286, 132 262 Z" fill="url(#gLow)"/>
+  <path d="M 256 122 L 253 154 L 259 154 Z" fill="#a855f7"/>
+  <line x1="256" y1="154" x2="256" y2="212" stroke="#6366f1" stroke-width="4" stroke-linecap="round"/>
+  <line x1="256" y1="300" x2="256" y2="368" stroke="#f97316" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="256" cy="384" r="5" fill="#f43f5e"/>
+  <circle cx="256" cy="256" r="44" stroke="#38bdf8" stroke-width="6" fill="#090d1a"/>
+  <polygon points="256,224 266,248 292,250 272,267 278,292 256,278 234,292 240,267 220,250 246,248" fill="url(#gStar)"/>
+</svg>
