@@ -60,6 +60,14 @@ export interface TranslationDictionary {
   btnHideContrast: string;
   labelStretch: string;
   labelColormap: string;
+  labelDisplayMode: string;
+  modeBilinear: string;
+  modeNative: string;
+  labelContrast: string;
+  labelIntensityScale: string;
+  markerModeReticle: string;
+  markerModeLabels: string;
+  markerModeHidden: string;
   stretchAsinh: string;
   stretchLinear: string;
   stretchSqrt: string;
@@ -275,6 +283,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnHideContrast: 'Hide',
     labelStretch: 'Mathematical Stretch:',
     labelColormap: 'Color Palette (Colormap):',
+    labelDisplayMode: 'Display Interpolation:',
+    modeBilinear: 'Smoothed (Bilinear)',
+    modeNative: 'Native Detector Grid (6.15″/px)',
+    labelContrast: 'Contrast Level:',
+    labelIntensityScale: 'Intensity Scale',
+    markerModeReticle: 'Subtle Reticles',
+    markerModeLabels: 'Show All Labels',
+    markerModeHidden: 'Hide Markers',
     stretchAsinh: 'Asinh',
     stretchLinear: 'Linear',
     stretchSqrt: 'Sqrt',
@@ -501,6 +517,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     btnHideContrast: 'إخفاء',
     labelStretch: 'التمدد الرياضي (Stretch):',
     labelColormap: 'لوحة الألوان الطيفية (Colormap):',
+    labelDisplayMode: 'طريقة عرض الصورة:',
+    modeBilinear: 'تنعيم فلكي (Bilinear)',
+    modeNative: 'بيكسلات الحساس الخام (6.15″/px)',
+    labelContrast: 'معامل التباين:',
+    labelIntensityScale: 'مقياس الشدة الفيزيائية',
+    markerModeReticle: 'دوائر دقيقة (Reticles)',
+    markerModeLabels: 'إظهار المعرفات',
+    markerModeHidden: 'إخفاء المؤشرات',
     stretchAsinh: 'Asinh (أقواس الجيب)',
     stretchLinear: 'خطي (Linear)',
     stretchSqrt: 'الجذر التربيعي (Sqrt)',

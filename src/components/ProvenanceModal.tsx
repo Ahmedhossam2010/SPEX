@@ -39,7 +39,7 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-2xl rounded-3xl border border-white/15 bg-[#050b18]/95 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-6 overflow-hidden backdrop-blur-2xl cursor-default ${
+        className={`relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl border border-white/15 bg-[#050b18]/95 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-6 backdrop-blur-2xl cursor-default ${
           isRtl ? 'font-cairo' : 'font-sans'
         }`}
         dir={isRtl ? 'rtl' : 'ltr'}

@@ -216,7 +216,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   className="relative z-10 w-64 sm:w-72 h-auto drop-shadow-2xl transition-transform hover:scale-102"
                   onError={(e) => {
                     // Fallback to high-res transparent cat asset
-                    (e.target as HTMLImageElement).src = '/assets/aistudio/character_transparent_fa4756c1.png';
+                    (e.target as HTMLImageElement).src = '/assets/spex_hero_standing.png';
                   }}
                 />
               </div>

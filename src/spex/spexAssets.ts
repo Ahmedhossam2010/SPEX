@@ -20,7 +20,8 @@ export type SPEXMood =
   | 'happy'
   | 'facepalm'
   | 'normal'
-  | 'success';
+  | 'success'
+  | 'proud';
 
 export interface SPEXAsset {
   mood: SPEXMood;
@@ -29,74 +30,80 @@ export interface SPEXAsset {
   labelAr: string;
 }
 
+// Authentic SPEX original character assets
+export const SPEX_HERO_IMAGE = '/assets/spex_hero_standing.png';
+export const SPEX_WAVING_HERO = '/assets/spex_hero_waving.png';
+export const SPEX_AVATAR_GREETING = '/assets/spex_avatar_greeting.png';
+export const SPEX_AVATAR_INVESTIGATOR = '/assets/spex_avatar_investigator.png';
+
 export const SPEX_ASSETS: Record<SPEXMood, SPEXAsset> = {
   // 1. Greeting
   greeting: {
     mood: 'greeting',
-    imagePath: '/assets/aistudio/10_pose_friendly_greeting_d504707f.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Welcome Greeting',
     labelAr: 'ترحيب SPEX',
   },
   // 2. Explaining
   explaining: {
     mood: 'explaining',
-    imagePath: '/assets/aistudio/08_pose_explaining_536bdeda.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Explaining Evidence',
     labelAr: 'SPEX يشرح الدليل',
   },
   // 3. Thinking
   thinking: {
     mood: 'thinking',
-    imagePath: '/assets/aistudio/07_pose_thinking_17f0c6f3.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Analyzing Data',
     labelAr: 'SPEX يفكر ويحسب',
   },
   // 4. Interesting Discovery
   discovery: {
     mood: 'discovery',
-    imagePath: '/assets/aistudio/03_face_curious_cfd683b2.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Interesting Discovery',
     labelAr: 'اكتشاف فلكي مثير',
   },
   // 5. Possible Moving Object (Cautious investigator)
   moving_object: {
     mood: 'moving_object',
-    imagePath: '/assets/aistudio/14_pose_confused_investigator_17aeebd5.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Investigating Possible Motion',
     labelAr: 'فحص حركة محتملة',
   },
   // 6. Artifact Detected
   artifact: {
     mood: 'artifact',
-    imagePath: '/assets/aistudio/16_pose_facepalm_comic_disbelief_8d0d15f9.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Detector Glitch / Artifact',
     labelAr: 'عيب حساس مستبعد',
   },
   // 7. Strong Evidence / Eureka
   eureka: {
     mood: 'eureka',
-    imagePath: '/assets/aistudio/13_pose_eureka_aa077563.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Strong Signal Found!',
     labelAr: 'إشارة مؤكدة واضحة!',
   },
   // 8. No Significant Change (Calm Field)
   calm: {
     mood: 'calm',
-    imagePath: '/assets/aistudio/01_face_normal_4a907552.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Calm & Stable Field',
     labelAr: 'حقل سماوي مستقر',
   },
   // 9. Error
   error: {
     mood: 'error',
-    imagePath: '/assets/aistudio/06_face_sarcastic_f9950fc1.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Query Issue / Warning',
     labelAr: 'تنبيه في الاتصال أو الإحداثيات',
   },
   // 10. Playful / Joking
   joking: {
     mood: 'joking',
-    imagePath: '/assets/aistudio/09_pose_playful_joker_c412f1b7.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Astronomy Humor',
     labelAr: 'دعابة فلكية لطيفة',
   },
@@ -104,70 +111,75 @@ export const SPEX_ASSETS: Record<SPEXMood, SPEXAsset> = {
   // Aliases for compatibility
   curious: {
     mood: 'curious',
-    imagePath: '/assets/aistudio/03_face_curious_cfd683b2.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Curious',
     labelAr: 'فضول فلكي',
   },
   investigator: {
     mood: 'investigator',
-    imagePath: '/assets/aistudio/14_pose_confused_investigator_17aeebd5.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Investigating',
     labelAr: 'فحص دقيق',
   },
   sassy: {
     mood: 'sassy',
-    imagePath: '/assets/aistudio/12_pose_unimpressed_sassy_77457b2d.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Sassy',
     labelAr: 'تهكم علمي',
   },
   sarcastic: {
     mood: 'sarcastic',
-    imagePath: '/assets/aistudio/06_face_sarcastic_f9950fc1.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Sarcastic',
     labelAr: 'تهكم لطيف',
   },
   laughter: {
     mood: 'laughter',
-    imagePath: '/assets/aistudio/11_pose_amused_laughter_7e7dc5fb.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Amused',
     labelAr: 'ضحك ساخر',
   },
   serious: {
     mood: 'serious',
-    imagePath: '/assets/aistudio/04_face_serious_a6a11712.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Serious',
     labelAr: 'جدية إحصائية',
   },
   surprised: {
     mood: 'surprised',
-    imagePath: '/assets/aistudio/05_face_surprised_52226baf.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Surprised',
     labelAr: 'انبهار كوني',
   },
   happy: {
     mood: 'happy',
-    imagePath: '/assets/aistudio/02_face_happy_be4401ce.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Happy',
     labelAr: 'مبسوط بالنتيجة',
   },
   facepalm: {
     mood: 'facepalm',
-    imagePath: '/assets/aistudio/16_pose_facepalm_comic_disbelief_8d0d15f9.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Facepalm',
     labelAr: 'عيب حساس',
   },
   normal: {
     mood: 'normal',
-    imagePath: '/assets/aistudio/01_face_normal_4a907552.png',
+    imagePath: SPEX_AVATAR_INVESTIGATOR,
     labelEn: 'Normal',
     labelAr: 'مراقبة عادية',
   },
   success: {
     mood: 'success',
-    imagePath: '/assets/aistudio/15_pose_proud_success_b2b0dd6c.png',
+    imagePath: SPEX_AVATAR_GREETING,
     labelEn: 'Success',
     labelAr: 'اكتمل التحليل',
   },
+  proud: {
+    mood: 'proud',
+    imagePath: SPEX_AVATAR_GREETING,
+    labelEn: 'Proud',
+    labelAr: 'فخور بالإنجاز',
+  },
 };
 
-export const SPEX_HERO_IMAGE = '/assets/aistudio/character_transparent_fa4756c1.png';

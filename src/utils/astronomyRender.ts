@@ -12,6 +12,7 @@ export interface RenderOptions {
   invert?: boolean;
   minPercentile?: number;
   maxPercentile?: number;
+  contrastFactor?: number; // Adjustable display contrast multiplier (e.g. 0.5 to 2.5)
   renderSize?: number; // target display canvas resolution (default: 512)
 }
 
@@ -23,6 +24,38 @@ export interface PixelRGB {
 }
 
 export class AstronomyRenderer {
+  /**
+   * Fast statistical calculation for colorbar limits and physical range readouts
+   */
+  public static computeDataStats(data: number[] | Float32Array): {
+    min: number;
+    max: number;
+    median: number;
+    robustSigma: number;
+    absMax: number;
+  } {
+    if (!data || data.length === 0) {
+      return { min: 0, max: 0, median: 0, robustSigma: 0, absMax: 0 };
+    }
+    const valid: number[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const v = data[i];
+      if (Number.isFinite(v)) valid.push(v);
+    }
+    if (valid.length === 0) {
+      return { min: 0, max: 0, median: 0, robustSigma: 0, absMax: 0 };
+    }
+    valid.sort((a, b) => a - b);
+    const mid = Math.floor(valid.length / 2);
+    const median = valid[mid];
+    const absDevs = valid.map((v) => Math.abs(v - median)).sort((a, b) => a - b);
+    const robustSigma = Math.max(1e-6, 1.4826 * (absDevs[mid] || 1e-3));
+    const min = valid[0];
+    const max = valid[valid.length - 1];
+    const absMax = Math.max(Math.abs(min), Math.abs(max));
+    return { min, max, median, robustSigma, absMax };
+  }
+
   /**
    * Pure mathematical stretch function.
    * Transforms input ratio x in [0, 1] into [0, 1] based on selected astronomical curve.
@@ -97,6 +130,8 @@ export class AstronomyRenderer {
         (options.colormap === 'diff_diverging' || (valid[0] < -2 * robustSigma && valid[valid.length - 1] > 2 * robustSigma))
       ));
 
+    const contrast = Math.max(0.2, options.contrastFactor ?? 1.0);
+
     if (isSigned) {
       // Symmetrical zero-centered dynamic range
       const p99Idx = Math.floor(valid.length * (options.maxPercentile ?? 0.995));
@@ -105,8 +140,8 @@ export class AstronomyRenderer {
         Math.abs(valid[p01Idx] || 0),
         Math.abs(valid[p99Idx] || 0),
         6 * robustSigma
-      );
-      const softKnee = Math.max(1e-5, 2.5 * robustSigma);
+      ) / contrast;
+      const softKnee = Math.max(1e-5, (2.5 * robustSigma) / contrast);
 
       for (let i = 0; i < data.length; i++) {
         const raw = data[i];
@@ -137,8 +172,8 @@ export class AstronomyRenderer {
       const pMaxIdx = Math.floor(valid.length * (options.maxPercentile ?? 0.995));
       const vMax = valid[Math.min(valid.length - 1, pMaxIdx)];
       const bgLevel = median;
-      const maxExcess = Math.max(1e-6, vMax - bgLevel);
-      const softKnee = Math.max(1e-5, 2.5 * robustSigma);
+      const maxExcess = Math.max(1e-6, (vMax - bgLevel) / contrast);
+      const softKnee = Math.max(1e-5, (2.5 * robustSigma) / contrast);
 
       for (let i = 0; i < data.length; i++) {
         const raw = data[i];

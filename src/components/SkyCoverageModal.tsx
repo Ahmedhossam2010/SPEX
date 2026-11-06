@@ -33,7 +33,7 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`relative w-full max-w-4xl rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 cursor-default ${
+        className={`relative w-full max-w-4xl max-h-[85vh] overflow-y-auto rounded-3xl border border-slate-200 dark:border-white/[0.1] bg-white dark:bg-[#0c1220] shadow-2xl p-5 sm:p-8 space-y-6 cursor-default ${
           isRtl ? 'font-cairo' : 'font-sans'
         }`}
         dir={isRtl ? 'rtl' : 'ltr'}

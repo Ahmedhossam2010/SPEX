@@ -72,6 +72,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [displayMode, setDisplayMode] = useState<DisplayMode>('science');
   const [stretch, setStretch] = useState<StretchMode>('asinh');
   const [colormap, setColormap] = useState<ColormapMode>('diff_diverging');
+  const [contrastFactor, setContrastFactor] = useState<number>(1.0);
 
   // Canvas Viewport Geometry
   const [zoom, setZoom] = useState<number>(1.1);
@@ -100,8 +101,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     val?: number;
   } | null>(null);
 
-  // Candidate Selection
+  // Candidate Selection & Astronomical Reticles
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetection | null>(null);
+  const [hoveredCandidate, setHoveredCandidate] = useState<CandidateDetection | null>(null);
+  const [markerVisibility, setMarkerVisibility] = useState<'reticles' | 'labels' | 'hidden'>('reticles');
   const [showMarkers, setShowMarkers] = useState<boolean>(true);
   const [candidateFilter, setCandidateFilter] = useState<CandidateFilter>('all');
   const [candidatePage, setCandidatePage] = useState<number>(1);
@@ -177,9 +180,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     return () => clearInterval(interval);
   }, [viewMode, isSequencePlaying, sequenceSpeed, currentResult?.epochs]);
 
-  // Render scientific FITS data onto the canvas
-  useEffect(() => {
-    if (!currentResult || !canvasRef.current) return;
+  // Compute active slice array and robust physical data stats
+  const activeDataInfo = useMemo(() => {
+    if (!currentResult) {
+      return {
+        data: [] as number[],
+        isDiff: false,
+        colormap: 'grayscale' as ColormapMode,
+        stats: { min: 0, max: 0, median: 0, robustSigma: 0, absMax: 0 },
+      };
+    }
 
     const isDiff = viewMode === 'difference' || viewMode === 'significance';
     let dataToRender: number[] = [];
@@ -221,19 +231,29 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       if (cm === 'diff_diverging') cm = 'grayscale';
     }
 
+    const stats = AstronomyRenderer.computeDataStats(dataToRender);
+    return { data: dataToRender, isDiff, colormap: cm, stats };
+  }, [currentResult, viewMode, blinkEpoch, activeEpochIdx, colormap, sliderPos]);
+
+  // Render scientific FITS data onto the canvas with displayMode and contrastFactor
+  useEffect(() => {
+    if (!currentResult || !canvasRef.current || activeDataInfo.data.length === 0) return;
+
     AstronomyRenderer.renderToCanvas(
       canvasRef.current,
-      dataToRender,
+      activeDataInfo.data,
       currentResult.epoch1.width,
       currentResult.epoch1.height,
       {
         stretch,
-        colormap: cm,
-        mode: isDiff ? 'signed_difference' : 'unipolar',
+        colormap: activeDataInfo.colormap,
+        mode: activeDataInfo.isDiff ? 'signed_difference' : 'unipolar',
+        displayMode,
+        contrastFactor,
         renderSize: 512,
       }
     );
-  }, [currentResult, viewMode, blinkEpoch, activeEpochIdx, stretch, colormap, sliderPos]);
+  }, [currentResult, activeDataInfo, stretch, displayMode, contrastFactor]);
 
   // Canvas Mouse Tracking
   const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -763,14 +783,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               >
                 <canvas
                   ref={canvasRef}
-                  className="w-[320px] h-[320px] sm:w-[480px] sm:h-[480px] rounded-xl shadow-2xl block image-rendering-pixelated"
+                  className={`w-[320px] h-[320px] sm:w-[480px] sm:h-[480px] rounded-xl shadow-2xl block ${
+                    displayMode === 'science' ? 'image-rendering-pixelated' : 'image-rendering-auto'
+                  }`}
                 />
 
-                {/* Candidate Highlight Markers - positioned responsive to canvas bounds using percentage */}
-                {showMarkers &&
+                {/* Subtle Astronomical Candidate Reticle Markers */}
+                {markerVisibility !== 'hidden' &&
                   currentResult &&
                   filteredCandidates.map((cand) => {
                     const isSelected = selectedCandidate?.id === cand.id;
+                    const isHovered = hoveredCandidate?.id === cand.id;
                     const isMoving =
                       cand.scientificClassification === 'POSSIBLE_MOVING_OBJECT' ||
                       cand.motion?.isMoving === true ||
@@ -785,37 +808,70 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     const pctX = (((cand.centroidX ?? cand.x) + 0.5) / origW) * 100;
                     const pctY = (((cand.centroidY ?? cand.y) + 0.5) / origH) * 100;
 
+                    const colorClass = isMoving
+                      ? 'stroke-cyan-400 text-cyan-300'
+                      : isArtifact
+                      ? 'stroke-rose-400 text-rose-300'
+                      : 'stroke-amber-400 text-amber-300';
+
                     return (
-                      <button
+                      <div
                         key={cand.id}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCandidate(cand);
-                        }}
                         style={{
                           left: `${pctX}%`,
                           top: `${pctY}%`,
                         }}
-                        className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full flex items-center justify-center transition-all ${
-                          isSelected
-                            ? 'ring-2 ring-amber-400 bg-amber-500/30 scale-125'
-                            : 'hover:scale-110'
-                        }`}
-                        title={`Candidate #${cand.id} (${cand.peakSignificance.toFixed(1)}σ)`}
+                        className="absolute z-20 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+                        onMouseEnter={() => setHoveredCandidate(cand)}
+                        onMouseLeave={() => setHoveredCandidate(null)}
                       >
-                        <span
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center text-[9px] font-mono font-bold ${
-                            isMoving
-                              ? 'border-cyan-400 text-cyan-300 bg-cyan-950/80 shadow-[0_0_8px_rgba(6,182,212,0.6)]'
-                              : isArtifact
-                              ? 'border-rose-400 text-rose-300 bg-rose-950/80'
-                              : 'border-amber-400 text-amber-300 bg-amber-950/80 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
-                          }`}
+                        {/* Interactive Clickable Reticle Target */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCandidate(cand);
+                          }}
+                          className="relative flex items-center justify-center w-6 h-6 -m-1 focus:outline-none cursor-pointer group"
+                          aria-label={`Select candidate ${cand.id}`}
                         >
-                          {cand.id}
-                        </span>
-                      </button>
+                          {/* Subtle Astronomical Reticle Ring with Crosshair Notches */}
+                          <svg
+                            viewBox="0 0 24 24"
+                            className={`w-4 h-4 fill-none transition-transform duration-150 ${colorClass} ${
+                              isSelected ? 'scale-125 stroke-[2.5]' : 'group-hover:scale-110 stroke-[1.5]'
+                            }`}
+                          >
+                            <circle cx="12" cy="12" r="5" />
+                            <line x1="12" y1="2" x2="12" y2="5" />
+                            <line x1="12" y1="19" x2="12" y2="22" />
+                            <line x1="2" y1="12" x2="5" y2="12" />
+                            <line x1="19" y1="12" x2="22" y2="12" />
+                          </svg>
+
+                          {/* Selected High-Contrast Targeting Bracket */}
+                          {isSelected && (
+                            <div className="absolute inset-[-4px] rounded-xs pointer-events-none border border-amber-400/90 shadow-[0_0_12px_rgba(245,158,11,0.7)] animate-pulse" />
+                          )}
+                        </button>
+
+                        {/* Floating Tooltip / Permanent Label Mode */}
+                        {(isHovered || markerVisibility === 'labels' || isSelected) && (
+                          <div
+                            className={`absolute left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-30 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shadow-lg backdrop-blur-md transition-all ${
+                              isSelected
+                                ? 'bottom-full mb-2 bg-amber-500 text-slate-950 ring-1 ring-white/50'
+                                : 'top-full mt-1.5 bg-slate-950/90 text-slate-200 border border-white/20'
+                            }`}
+                          >
+                            <span>#{cand.id}</span>
+                            <span className="mx-1 opacity-60">·</span>
+                            <span className={isMoving ? 'text-cyan-300' : isArtifact ? 'text-rose-300' : 'text-amber-400'}>
+                              {cand.peakSignificance >= 0 ? `+${cand.peakSignificance.toFixed(1)}σ` : `${cand.peakSignificance.toFixed(1)}σ`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
               </div>
@@ -896,12 +952,19 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <div className="absolute bottom-3 right-3 z-30 flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowMarkers(!showMarkers)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-mono bg-black/80 backdrop-blur-md border border-white/10 transition-colors cursor-pointer ${
-                    showMarkers ? 'text-amber-400' : 'text-slate-500'
-                  }`}
+                  onClick={() => {
+                    setMarkerVisibility((prev) =>
+                      prev === 'reticles' ? 'labels' : prev === 'labels' ? 'hidden' : 'reticles'
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-black/80 backdrop-blur-md border border-white/10 transition-colors cursor-pointer text-amber-400 hover:text-amber-300 font-semibold"
+                  title="Cycle marker display: subtle reticles -> all labels -> hide markers"
                 >
-                  {showMarkers ? t.btnHideMarkers : t.btnShowMarkers}
+                  {markerVisibility === 'reticles'
+                    ? t.markerModeReticle
+                    : markerVisibility === 'labels'
+                    ? t.markerModeLabels
+                    : t.markerModeHidden}
                 </button>
 
                 <button
@@ -916,7 +979,59 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
           </div>
 
-          {/* Astronomical Contrast & Mathematical Stretch Fine-Tuning */}
+          {/* Physical Intensity Colorbar & Authentic Sampling Legend */}
+          <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-3 text-xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-mono">
+              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <span>{t.labelIntensityScale}</span>
+                <span className="text-slate-500 font-normal hidden sm:inline">
+                  ({viewMode === 'significance' ? 'Signal Significance' : 'Infrared Surface Brightness'})
+                </span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">
+                Native sampling: 6.15″/px · {displayMode === 'science' ? 'Raw Detector Grid' : 'DS9 Bilinear'}
+              </span>
+            </div>
+
+            {/* Gradient Bar */}
+            <div className="relative">
+              <div
+                style={{
+                  background:
+                    activeDataInfo.colormap === 'diff_diverging'
+                      ? 'linear-gradient(to right, #00e5ff 0%, #0077b6 25%, #050a14 50%, #d97706 75%, #fbbf24 100%)'
+                      : activeDataInfo.colormap === 'grayscale'
+                      ? 'linear-gradient(to right, #000000 0%, #888888 50%, #ffffff 100%)'
+                      : activeDataInfo.colormap === 'heat'
+                      ? 'linear-gradient(to right, #000000 0%, #800020 30%, #e65100 65%, #ffea00 90%, #ffffff 100%)'
+                      : activeDataInfo.colormap === 'inferno'
+                      ? 'linear-gradient(to right, #000004 0%, #57106e 35%, #bb3754 65%, #f98e09 85%, #fcffa4 100%)'
+                      : 'linear-gradient(to right, #440154 0%, #3b528b 33%, #21918c 66%, #5ec962 85%, #fde725 100%)',
+                }}
+                className="h-3 w-full rounded-md shadow-inner border border-white/10"
+              />
+              {/* Center Reference Mark for Difference Maps */}
+              {activeDataInfo.isDiff && (
+                <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-white/80 shadow-[0_0_4px_black]" />
+              )}
+            </div>
+
+            {/* Intensity Tick Numbers */}
+            <div className="flex items-center justify-between text-[10px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                {activeDataInfo.stats.min.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}
+              </span>
+              <span className="text-slate-500 font-bold">
+                {activeDataInfo.isDiff ? `0.00 (Null)` : `${activeDataInfo.stats.median.toFixed(2)} (Median)`}
+              </span>
+              <span className="font-semibold text-amber-600 dark:text-amber-400">
+                +{activeDataInfo.stats.max.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}
+              </span>
+            </div>
+          </div>
+
+          {/* Astronomical Contrast, Stretch & Display Mode Settings */}
           <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-3 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-medium text-slate-700 dark:text-slate-300">
@@ -932,48 +1047,108 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
 
             {showAdvancedSettings && (
-              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.06] grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
-                    {t.labelStretch}
-                  </label>
-                  <div className="flex gap-1">
-                    {(['asinh', 'linear', 'sqrt', 'log'] as StretchMode[]).map((st) => (
+              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-white/[0.06] space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Display Interpolation Toggle */}
+                  <div>
+                    <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                      {t.labelDisplayMode}
+                    </label>
+                    <div className="flex gap-1">
                       <button
-                        key={st}
                         type="button"
-                        onClick={() => setStretch(st)}
-                        className={`px-2 py-1 rounded-lg text-xs font-mono uppercase cursor-pointer ${
-                          stretch === st
+                        onClick={() => setDisplayMode('science')}
+                        className={`flex-1 px-2 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                          displayMode === 'science'
                             ? 'bg-amber-500 text-slate-950 font-bold'
                             : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
                         }`}
+                        title="Display raw detector pixels honestly without artificial sub-pixel smoothing"
                       >
-                        {st}
+                        {t.modeNative}
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMode('presentation')}
+                        className={`flex-1 px-2 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                          displayMode === 'presentation'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
+                        }`}
+                        title="Astronomical bilinear interpolation (DS9 publication display)"
+                      >
+                        {t.modeBilinear}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Contrast Multiplier */}
+                  <div>
+                    <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                      {t.labelContrast} ({contrastFactor.toFixed(1)}x)
+                    </label>
+                    <div className="flex gap-1">
+                      {[0.5, 1.0, 1.5, 2.0].map((cf) => (
+                        <button
+                          key={cf}
+                          type="button"
+                          onClick={() => setContrastFactor(cf)}
+                          className={`flex-1 px-2 py-1 rounded-lg text-xs font-mono cursor-pointer ${
+                            Math.abs(contrastFactor - cf) < 0.05
+                              ? 'bg-amber-500 text-slate-950 font-bold'
+                              : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {cf === 1.0 ? '1.0x (Norm)' : `${cf}x`}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                <div>
-                  <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
-                    {t.labelColormap}
-                  </label>
-                  <div className="flex gap-1">
-                    {(['diff_diverging', 'grayscale', 'heat'] as ColormapMode[]).map((cm) => (
-                      <button
-                        key={cm}
-                        type="button"
-                        onClick={() => setColormap(cm)}
-                        className={`px-2 py-1 rounded-lg text-xs font-mono cursor-pointer ${
-                          colormap === cm
-                            ? 'bg-amber-500 text-slate-950 font-bold'
-                            : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
-                        }`}
-                      >
-                        {cm === 'diff_diverging' ? 'Diverging' : cm}
-                      </button>
-                    ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                      {t.labelStretch}
+                    </label>
+                    <div className="flex gap-1">
+                      {(['asinh', 'linear', 'sqrt', 'log'] as StretchMode[]).map((st) => (
+                        <button
+                          key={st}
+                          type="button"
+                          onClick={() => setStretch(st)}
+                          className={`flex-1 px-2 py-1 rounded-lg text-xs font-mono uppercase cursor-pointer ${
+                            stretch === st
+                              ? 'bg-amber-500 text-slate-950 font-bold'
+                              : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {st}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                      {t.labelColormap}
+                    </label>
+                    <div className="flex gap-1">
+                      {(['diff_diverging', 'grayscale', 'heat', 'inferno', 'viridis'] as ColormapMode[]).map((cm) => (
+                        <button
+                          key={cm}
+                          type="button"
+                          onClick={() => setColormap(cm)}
+                          className={`flex-1 px-1.5 py-1 rounded-lg text-xs font-mono capitalize cursor-pointer truncate ${
+                            colormap === cm
+                              ? 'bg-amber-500 text-slate-950 font-bold'
+                              : 'bg-slate-100 dark:bg-white/[0.05] text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {cm === 'diff_diverging' ? 'Diverging' : cm}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>

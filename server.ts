@@ -859,45 +859,59 @@ ${JSON.stringify(structuredContext, null, 2)}
 QUESTION: "${userMessage || defaultQuestion}"
 Answer in 1-2 concise sentences with mood tag.`;
 
-    try {
-      const ai = getGenAIClient();
-      if (ai) {
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.1-flash-lite',
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
-            },
-          ],
-        });
+    const primaryModel = process.env.PRIMARY_MODEL || 'gemini-3.1-flash-lite';
+    const secondaryModel = process.env.SECONDARY_MODEL || 'gemini-2.5-flash';
+    const candidateModels = [primaryModel, secondaryModel];
 
-        const replyText = response.text || '';
-        if (replyText) {
-          let mood: SPEXMood = 'explaining';
-          const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
-          let cleanReply = replyText;
+    const ai = getGenAIClient();
+    if (ai) {
+      for (const modelToTry of candidateModels) {
+        try {
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('AI request timed out after 8000ms')), 8000)
+          );
 
-          if (moodMatch) {
-            try {
-              const moodObj = JSON.parse(moodMatch[1]);
-              if (moodObj.mood) mood = moodObj.mood as SPEXMood;
-            } catch (e) {
-              // fallback mood
+          const generatePromise = ai.models.generateContent({
+            model: modelToTry,
+            contents: [
+              {
+                role: 'user',
+                parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+              },
+            ],
+          });
+
+          const response: any = await Promise.race([generatePromise, timeoutPromise]);
+          const replyText = response?.text || '';
+          if (replyText) {
+            let mood: SPEXMood = 'explaining';
+            const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+            let cleanReply = replyText;
+
+            if (moodMatch) {
+              try {
+                const moodObj = JSON.parse(moodMatch[1]);
+                if (moodObj.mood) mood = moodObj.mood as SPEXMood;
+              } catch (e) {
+                // fallback mood
+              }
+              cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
+            } else {
+              if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
+              else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
+              else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
+              else mood = 'explaining';
             }
-            cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
-          } else {
-            if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
-            else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
-            else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
-            else mood = 'explaining';
-          }
 
-          return res.json({ reply: cleanReply, mood });
+            return res.json({ reply: cleanReply, mood, engine: 'gemini', model: modelToTry });
+          }
+        } catch (modelErr: any) {
+          console.warn(`[SPEX AI] Attempt with model ${modelToTry} failed:`, modelErr.message);
+          if (modelErr.message?.includes('401') || modelErr.message?.includes('403') || modelErr.message?.includes('API_KEY_INVALID')) {
+            break;
+          }
         }
       }
-    } catch (genAiError: any) {
-      console.warn('[SPEX AI] Gemini call unavailable, falling back to grounded response:', genAiError.message);
     }
 
     // Fully grounded scientific fallback in 1-2 punchy sentences
@@ -949,7 +963,12 @@ Answer in 1-2 concise sentences with mood tag.`;
       }
     }
 
-    return res.json({ reply: fallbackReply, mood: fallbackMood });
+    return res.json({
+      reply: fallbackReply,
+      mood: fallbackMood,
+      engine: 'offline_grounded',
+      model: 'deterministic-astronomy-v1',
+    });
   } catch (err: any) {
     console.error('SPEX AI chat error:', err);
     return res.json({
@@ -959,10 +978,13 @@ Answer in 1-2 concise sentences with mood tag.`;
   }
 });
 
-// Serve public assets explicitly with image header support
+// Serve public assets explicitly with correct image MIME types
 app.use('/assets', express.static(path.join(process.cwd(), 'public', 'assets'), {
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.png') || filePath.endsWith('.svg')) {
+    if (filePath.endsWith('.png')) {
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    } else if (filePath.endsWith('.svg')) {
       res.setHeader('Content-Type', 'image/svg+xml');
       res.setHeader('Cache-Control', 'public, max-age=86400');
     }
