@@ -502,14 +502,14 @@ export class StationBuilder {
       });
     };
 
-    // Terminal 1: Mission Control Briefing Console (Mission 1)
+    // Terminal 1: Mission Briefing Console (Mission 1: A New Explorer Arrives)
     buildTerminal(
       'terminal_briefing_01',
       1,
       'Mission Briefing',
-      'إحاطة المهمة الأولى',
+      'إحاطة المهمة الأولى: وصول المستكشف',
       'Telemetry & Station Systems Initialization',
-      'تهيئة أنظمة المحطة الفلكية',
+      'تهيئة أنظمة المحطة وتوجيهات الحارس SPEX',
       0,
       7.5,
       Math.PI,
@@ -517,14 +517,14 @@ export class StationBuilder {
       0x06b6d4
     );
 
-    // Terminal 2: Spectral & Infrared Analysis Console (Mission 2)
+    // Terminal 2: Mission History Gallery (Mission 2: The Journey of SPHEREx)
     buildTerminal(
-      'terminal_spectral_02',
+      'terminal_history_02',
       2,
-      'Infrared & Spectral Lab',
-      'مختبر الأشعة تحت الحمراء والأطياف',
-      '102 Wavelength Channels & Molecular Ice Troughs',
-      '102 قناة طيفية واستكشاف جليد الماء وثاني أكسيد الكربون',
+      'Journey of SPHEREx',
+      'رحلة وتاريخ مرصد SPHEREx',
+      '2025 All-Sky Survey Timeline & 102 Spectral Bands',
+      'الجدول الزمني لمسح السماء الكامل وأطياف الأشعة تحت الحمراء',
       -8.5,
       -4.5,
       0.35,
@@ -532,14 +532,14 @@ export class StationBuilder {
       0xa855f7
     );
 
-    // Terminal 3: Temporal Observation Comparison Console (Mission 3)
+    // Terminal 3: Infrared Science Lab (Mission 3: The Invisible Universe)
     buildTerminal(
-      'terminal_temporal_03',
+      'terminal_infrared_03',
       3,
-      'Temporal Aligner',
-      'منصة المقارنة الزمنية',
-      'Multi-Epoch Subtraction D = I2 - I1 & Fast Blink',
-      'طرح الرصدات المتعاقبة والوميض السريع',
+      'The Invisible Universe',
+      'مختبر الكون غير المرئي بالأشعة تحت الحمراء',
+      'Visible vs Infrared Light & Thermal Penetration',
+      'مقارنة الضوء المرئي بالأشعة تحت الحمراء واختراق الغبار',
       8.5,
       -4.5,
       -0.35,
@@ -547,14 +547,14 @@ export class StationBuilder {
       0xf59e0b
     );
 
-    // Terminal 4: Signal Diagnostic & PSF Analyzer (Mission 4)
+    // Terminal 4: Observation Analysis Center (Mission 4: The Moving Sky Mystery)
     buildTerminal(
-      'terminal_psf_04',
+      'terminal_moving_04',
       4,
-      'Artifact Discriminator',
-      'محلل الإشارات والعيوب',
-      'Point Spread Function vs Cosmic Ray Glitches',
-      'التمييز بين دالة انتشار النقطة وعيوب الحساس',
+      'Moving Sky Mystery',
+      'لغز السماء المتحركة ومقارنة الرصدات',
+      'Proper Motion, Blink Comparison & Difference Imaging',
+      'الحركة الخاصة، الوميض البصري، وطرح الصورتين D = I2 - I1',
       32,
       5.5,
       Math.PI,
@@ -562,19 +562,34 @@ export class StationBuilder {
       0x10b981
     );
 
-    // Terminal 5: Deep Space Forensic Terminal (Mission 5)
+    // Terminal 5: Spectral Analysis Lab (Mission 5: The 102-Band Secret)
     buildTerminal(
-      'terminal_forensic_05',
+      'terminal_spectral_05',
       5,
-      'Deep Space Forensic Case',
-      'التحقيق الجنائي الكوني النهائي',
-      'Final Case: FU Orionis Accretion Outburst Dossier',
-      'القضية النهائية: ثوران التراكم النجمي الأولي',
+      'The 102-Band Secret',
+      'سر النطاقات الطيفية الـ 102',
+      'Molecular Signatures: Water Ice & CO2 Fingerprints',
+      'بصمات الجزيئات: جليد الماء وثاني أكسيد الكربون',
       -32,
       -4.5,
       0,
       '#ec4899',
       0xec4899
+    );
+
+    // Terminal 6: Main Mission Control Center (Mission 6: The Investigation Report)
+    buildTerminal(
+      'terminal_report_06',
+      6,
+      'The Investigation Report',
+      'تقرير التحقيق النهائي والاعتماد العلمي',
+      'Synthesis of Evidence, Artifact Rejection & NASA Report',
+      'تجميع الأدلة، فرز العيوب، وإصدار تقرير الاكتشاف المعتمد',
+      0,
+      -9.5,
+      0,
+      '#3b82f6',
+      0x3b82f6
     );
 
     return { terminals, colliders, animatedObjects };

@@ -34,6 +34,10 @@ import {
   Filter,
   BarChart3,
   Check,
+  Database,
+  Share2,
+  Download,
+  History,
 } from 'lucide-react';
 import {
   CandidateDetection,
@@ -53,6 +57,12 @@ import { DiscoveryReportModal } from './DiscoveryReportModal';
 import { CandidateComparisonModal } from './CandidateComparisonModal';
 import { DataReleaseModal } from './DataReleaseModal';
 import { VisualScienceExplainer } from './VisualScienceExplainer';
+import { ExploreWelcomeCard } from './ExploreWelcomeCard';
+import { InteractiveConceptExplainerModal } from './InteractiveConceptExplainerModal';
+import { ChallengeTargetsBar } from './ChallengeTargetsBar';
+import { QuickHelpQuestions } from './QuickHelpQuestions';
+import { SpexInteractiveGuide } from './SpexInteractiveGuide';
+import { EvidenceExportModal } from './EvidenceExportModal';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 import { Language, translations } from '../utils/translations';
 
@@ -85,7 +95,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // Primary Observation Perspective & Sequencer
   const [viewMode, setViewMode] = useState<ViewMode>('difference');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('science');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('presentation');
   const [stretch, setStretch] = useState<StretchMode>('asinh');
   const [colormap, setColormap] = useState<ColormapMode>('diff_diverging');
   const [contrastFactor, setContrastFactor] = useState<number>(1.0);
@@ -100,13 +110,28 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [sliderPos, setSliderPos] = useState<number>(0.5);
   const [blinkEpoch, setBlinkEpoch] = useState<'epoch1' | 'epoch2'>('epoch1');
   const [isBlinking, setIsBlinking] = useState<boolean>(true);
+  const [blinkSpeed, setBlinkSpeed] = useState<number>(1);
 
-  // Multi-Epoch Sequencer
+  // Multi-Epoch Sequencer & Observation Selection
   const [activeEpochIdx, setActiveEpochIdx] = useState<number>(0);
   const [isSequencePlaying, setIsSequencePlaying] = useState<boolean>(false);
   const [sequenceSpeed, setSequenceSpeed] = useState<number>(1);
   const [selectedEpochPair, setSelectedEpochPair] = useState<string>('1-3');
   const [selectedFovSize, setSelectedFovSize] = useState<number>(64);
+  const [epoch1Idx, setEpoch1Idx] = useState<number>(0);
+  const [epoch2Idx, setEpoch2Idx] = useState<number>(1);
+
+  // Sharing, History & Export
+  const [shareToast, setShareToast] = useState<boolean>(false);
+  const [showEvidenceExport, setShowEvidenceExport] = useState<boolean>(false);
+  const [searchHistory, setSearchHistory] = useState<Array<{ ra: number; dec: number; label: string }>>(() => {
+    try {
+      const s = localStorage.getItem('spex_history');
+      return s ? JSON.parse(s) : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Inspector Cursor Readout
   const [cursorPos, setCursorPos] = useState<{
@@ -137,6 +162,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showDiscoveryReport, setShowDiscoveryReport] = useState<boolean>(false);
   const [showCandidateComparison, setShowCandidateComparison] = useState<boolean>(false);
   const [showDataRelease, setShowDataRelease] = useState<boolean>(false);
+  const [isExplainerOpen, setIsExplainerOpen] = useState<boolean>(false);
+  const viewerSectionRef = useRef<HTMLDivElement | null>(null);
 
   useModalBehavior(isSearchOpen, () => setIsSearchOpen(false));
 
@@ -172,6 +199,78 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     return 'NO_CLEAR_CHANGE';
   }, [currentResult]);
 
+  // Precise Temporal Baseline & Observation Pair Analysis
+  const timeBaselineInfo = useMemo(() => {
+    if (!currentResult) return null;
+    const allEpochs = currentResult.epochs || [
+      {
+        epochIndex: 1,
+        obsId: currentResult.epoch1.metadata.obs_id,
+        date: currentResult.epoch1.metadata.date_obs || '2025-04-28 13:00:15 UTC',
+        mjd: currentResult.epoch1.metadata.t_min || 60793.5418,
+      },
+      {
+        epochIndex: 2,
+        obsId: currentResult.epoch2.metadata.obs_id,
+        date: currentResult.epoch2.metadata.date_obs || '2025-04-28 13:02:24 UTC',
+        mjd: currentResult.epoch2.metadata.t_min || 60793.5433,
+      },
+    ];
+
+    const visitA = allEpochs[epoch1Idx] || allEpochs[0];
+    const visitB = allEpochs[epoch2Idx] || allEpochs[1];
+    const mjdA = (visitA as any).mjd || currentResult.epoch1.metadata.t_min || 0;
+    const mjdB = (visitB as any).mjd || currentResult.epoch2.metadata.t_min || 0;
+    const diffSec = Math.abs(mjdB - mjdA) * 86400;
+
+    let formattedTime = `${diffSec.toFixed(1)}s`;
+    if (diffSec >= 60 && diffSec < 3600) {
+      formattedTime = `${(diffSec / 60).toFixed(1)} min (${diffSec.toFixed(0)}s)`;
+    } else if (diffSec >= 3600 && diffSec < 86400) {
+      formattedTime = `${(diffSec / 3600).toFixed(1)} hours`;
+    } else if (diffSec >= 86400) {
+      formattedTime = `${(diffSec / 86400).toFixed(1)} days`;
+    }
+
+    return {
+      diffSec,
+      formattedTime,
+      isSame: epoch1Idx === epoch2Idx,
+      dateA: visitA.date || currentResult.epoch1.metadata.date_obs || '',
+      dateB: visitB.date || currentResult.epoch2.metadata.date_obs || '',
+      obsIdA: (visitA as any).obsId || currentResult.epoch1.metadata.obs_id,
+      obsIdB: (visitB as any).obsId || currentResult.epoch2.metadata.obs_id,
+      totalVisits: allEpochs.length,
+      allEpochs,
+    };
+  }, [currentResult, epoch1Idx, epoch2Idx]);
+
+  // Sync URL query params with current investigation coordinates and FoV
+  useEffect(() => {
+    if (typeof window === 'undefined' || !currentResult) return;
+    const curRa = currentResult.targetCoords?.ra;
+    const curDec = currentResult.targetCoords?.dec;
+    if (Number.isFinite(curRa) && Number.isFinite(curDec)) {
+      const params = new URLSearchParams(window.location.search);
+      params.set('ra', curRa.toFixed(4));
+      params.set('dec', curDec.toFixed(4));
+      params.set('fov', String(selectedFovSize));
+      if (currentResult.caseId) params.set('case', currentResult.caseId);
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState({}, '', newUrl);
+
+      // Save to investigation history (deduplicated)
+      setSearchHistory((prev) => {
+        const filtered = prev.filter((h) => Math.abs(h.ra - curRa) > 0.01 || Math.abs(h.dec - curDec) > 0.01);
+        const updated = [{ ra: curRa, dec: curDec, label: currentResult.title || `RA ${curRa.toFixed(3)}°` }, ...filtered].slice(0, 5);
+        try {
+          localStorage.setItem('spex_history', JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }
+  }, [currentResult?.caseId, currentResult?.targetCoords, selectedFovSize]);
+
   // Adapt colormap dynamically when switching perspectives
   const handleSelectViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -197,14 +296,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     }
   }, [currentResult?.caseId]);
 
-  // Fast blink cadence timer
+  // Fast blink cadence timer with adjustable speed (0.5x, 1x, 2x)
   useEffect(() => {
     if (viewMode !== 'blink' || !isBlinking) return;
+    const intervalMs = Math.round(450 / Math.max(0.2, blinkSpeed));
     const interval = setInterval(() => {
       setBlinkEpoch((prev) => (prev === 'epoch1' ? 'epoch2' : 'epoch1'));
-    }, 450);
+    }, intervalMs);
     return () => clearInterval(interval);
-  }, [viewMode, isBlinking]);
+  }, [viewMode, isBlinking, blinkSpeed]);
 
   // Multi-epoch automatic sequence player
   useEffect(() => {
@@ -395,75 +495,654 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     candidatePage * CANDIDATES_PER_PAGE
   );
 
+  const handleSelectEpoch = (which: 'epoch1' | 'epoch2', newIdx: number) => {
+    const next1 = which === 'epoch1' ? newIdx : epoch1Idx;
+    const next2 = which === 'epoch2' ? newIdx : epoch2Idx;
+    if (which === 'epoch1') setEpoch1Idx(newIdx);
+    if (which === 'epoch2') setEpoch2Idx(newIdx);
+
+    if (next1 !== next2 && currentResult?.caseId) {
+      const pairStr = `${next1 + 1}-${next2 + 1}`;
+      setSelectedEpochPair(pairStr);
+      onSelectCase(currentResult.caseId, { sizePix: selectedFovSize, epochPair: pairStr });
+    }
+  };
+
+  const handleSelectFov = (size: number) => {
+    setSelectedFovSize(size);
+    if (currentResult?.targetCoords) {
+      onSearchTarget(currentResult.targetCoords.ra, currentResult.targetCoords.dec, size);
+    }
+  };
+
+  const handleShareLink = () => {
+    if (typeof window === 'undefined') return;
+    navigator.clipboard.writeText(window.location.href);
+    setShareToast(true);
+    setTimeout(() => setShareToast(false), 3000);
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-3 sm:px-6 py-4 sm:py-6 space-y-6 select-none" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* =========================================================================
-          TOP BAR: Presentation Level Switcher (Simple Mode vs Science Details)
+          TOP BAR: Observatory Status, FoV Selector, Actions & Level Switcher
          ========================================================================= */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900/90 via-[#0c1220] to-slate-900/90 border border-cyan-500/30 rounded-3xl p-3.5 sm:p-4 shadow-lg backdrop-blur-md">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h1 className="text-sm sm:text-base font-bold text-white tracking-wide font-['Outfit']">
-              {isRtl ? 'مرصد SPHEREx — سماء الكون المتغيرة' : 'SPHEREx Observatory — The Changing Sky'}
-            </h1>
-            <p className="text-[11px] text-slate-400 font-mono">
-              {presentationLevel === 'simple'
-                ? (isRtl ? 'الوضع المبسط (شرح واضح ومباشر للجمهور)' : 'Simple Mode (Everyday Language & Visual Guides)')
-                : (isRtl ? 'وضع التفاصيل العلمية (بيانات FITS ومصفوفات WCS الكاملة)' : 'Science Details Mode (Full Astronomical FITS & WCS Metadata)')}
-            </p>
+      <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 bg-gradient-to-r from-slate-900/95 via-[#0c1220] to-slate-900/95 border border-cyan-500/30 rounded-3xl p-4 sm:p-5 shadow-xl backdrop-blur-md">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h1 className="text-base sm:text-lg font-bold text-white tracking-wide font-['Outfit']">
+                {isRtl ? 'مرصد SPHEREx — سماء الكون المتغيرة' : 'SPHEREx Observatory — The Changing Sky'}
+              </h1>
+              <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                <span className="text-cyan-400 font-semibold">
+                  RA {currentResult?.targetCoords?.ra?.toFixed(4) ?? '276.2614'}° · Dec {currentResult?.targetCoords?.dec != null && currentResult.targetCoords.dec >= 0 ? '+' : ''}{currentResult?.targetCoords?.dec?.toFixed(4) ?? '+64.8258'}°
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-amber-300">
+                  FOV {selectedFovSize}px (~{(selectedFovSize * 6.15 / 60).toFixed(1)}′)
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Level Switcher Pill */}
-        <div className="flex items-center p-1 bg-slate-950/80 rounded-2xl border border-slate-800 self-end sm:self-auto">
+        {/* Center/Right Controls: FoV Pills, Guide Me, Share, Export & Simple/Science Toggle */}
+        <div className="flex flex-wrap items-center gap-2.5 self-end lg:self-auto">
+          {/* FoV Selection Pills */}
+          <div className="flex items-center p-1 bg-slate-950/80 rounded-2xl border border-slate-800 text-[11px] font-mono">
+            <span className="px-2 text-slate-500 hidden sm:inline">FOV:</span>
+            {[
+              { size: 32, label: '32px (3.3′)' },
+              { size: 64, label: '64px (6.6′)' },
+              { size: 112, label: '112px (11.6′)' },
+              { size: 160, label: '160px (16.5′)' },
+            ].map(({ size, label }) => (
+              <button
+                key={size}
+                type="button"
+                onClick={() => handleSelectFov(size)}
+                className={`px-2.5 py-1 rounded-xl font-bold transition cursor-pointer ${
+                  selectedFovSize === size
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Quick Guide Trigger */}
           <button
             type="button"
-            onClick={() => setPresentationLevel('simple')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-              presentationLevel === 'simple'
-                ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={() => window.dispatchEvent(new CustomEvent('spex:replay-tour'))}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 transition cursor-pointer shadow-sm active:scale-95"
+            title={isRtl ? 'إعادة تشغيل الجولة الإرشادية' : 'Replay Guided Tour'}
           >
-            <span>{isRtl ? 'الوضع المبسط' : 'Simple View (Default)'}</span>
+            <Compass className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'دليل الجولة' : 'Guide Me'}</span>
           </button>
 
+          {/* Share Link Button */}
           <button
             type="button"
-            onClick={() => setPresentationLevel('science')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
-              presentationLevel === 'science'
-                ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
-                : 'text-slate-400 hover:text-white'
-            }`}
+            onClick={handleShareLink}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer active:scale-95"
+            title={isRtl ? 'نسخ رابط الموقع الحالي للمشاركة' : 'Copy link to this exact sky view'}
           >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>{isRtl ? 'التفاصيل العلمية' : 'Science Details'}</span>
+            <Share2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{isRtl ? 'مشاركة' : 'Share'}</span>
           </button>
+
+          {/* Export Dossier Button */}
+          <button
+            type="button"
+            onClick={() => setShowEvidenceExport(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition cursor-pointer active:scale-95"
+            title={isRtl ? 'تصدير ملف التحقيق الفلكي' : 'Export Discovery Dossier (Markdown)'}
+          >
+            <Download className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{isRtl ? 'تقرير التحقيق' : 'Export'}</span>
+          </button>
+
+          {/* Presentation Switcher Pill */}
+          <div className="flex items-center p-1 bg-slate-950/80 rounded-2xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setPresentationLevel('simple')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                presentationLevel === 'simple'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <span>{isRtl ? 'مبسط' : 'Simple'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPresentationLevel('science')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer ${
+                presentationLevel === 'science'
+                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.4)]'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'علمي' : 'Science'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Share Toast Banner */}
+      {shareToast && (
+        <div className="p-3 rounded-2xl bg-cyan-500/15 border border-cyan-500/40 text-cyan-200 text-xs font-mono flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <span>
+              {isRtl
+                ? 'تم نسخ رابط التحقيق إلى الحافظة! يمكن لأي شخص فتحه لرؤية هذا الموقع السماوي بدقة.'
+                : 'Investigation URL copied to clipboard! Anyone opening this link will see this exact sky location.'}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShareToast(false)}
+            className="text-cyan-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* SPEX Interactive 7-Step Guide & Welcome Card */}
+      <SpexInteractiveGuide
+        language={language}
+        onOpenExplainerModal={() => setIsExplainerOpen(true)}
+      />
+
+      {/* Welcome Card for First-Time Explorers */}
+      <ExploreWelcomeCard
+        onStartExploring={() => viewerSectionRef.current?.scrollIntoView({ behavior: 'smooth' })}
+        onOpenExplainer={() => setIsExplainerOpen(true)}
+        language={language}
+      />
+
       {/* =========================================================================
-          SECTION 01 — EXPLORE THE SKY
+          HERO ASTRONOMICAL VIEWER: SECTION 03 & 04 (The Sky is the Center of Attention)
          ========================================================================= */}
-      <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
+      <div ref={viewerSectionRef} className="space-y-4">
+        {/* SECTION 04 PERSPECTIVE TOOLBAR */}
+        <section id="explore-compare-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
+                {isRtl ? 'الخطوة 4 — المقارنة الفلكية' : 'STEP 4 — COMPARE WHAT CHANGED'}
+              </span>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                {isRtl ? 'اختر طريقة العرض والمقارنة' : 'Observation Comparison Perspectives'}
+              </h3>
+            </div>
+            <div className="text-[11px] font-mono text-slate-500">
+              Formula: D(x,y) = I₂(x,y) - I₁(x,y)
+            </div>
+          </div>
+
+          {/* Perspective Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('epoch1')}
+              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'epoch1'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              {isRtl ? '1. الرصدة الأولى (سابقاً)' : '1. Earlier Snapshot'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('epoch2')}
+              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'epoch2'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              {isRtl ? '2. الرصدة الثانية (لاحقاً)' : '2. Later Snapshot'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('difference')}
+              className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-bold transition cursor-pointer border flex items-center justify-center gap-1.5 ${
+                viewMode === 'difference'
+                  ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 text-slate-950 border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] scale-[1.02]'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{isRtl ? '3. ما الذي تغير؟ (الطرح الفلكي)' : '3. What Changed (D = I₂ - I₁)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('significance')}
+              className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'significance'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              {isRtl ? '4. قوة الإشارة (خريطة σ)' : '4. Signal Strength (σ)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('split')}
+              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'split'
+                  ? 'bg-indigo-500 text-white border-indigo-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'المقارنة بالشريط المقسم' : 'Split Slider'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('blink')}
+              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'blink'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'الوميض السريع (Blink)' : 'Fast Blink'}</span>
+            </button>
+          </div>
+
+          {/* Split Slider Control */}
+          {viewMode === 'split' && (
+            <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-3 text-xs font-mono animate-in fade-in">
+              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
+                {isRtl ? 'الرصدة 1 (يسار)' : 'Visit 1 (Left)'}
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={sliderPos}
+                onChange={(e) => setSliderPos(parseFloat(e.target.value))}
+                className="w-full accent-indigo-500 cursor-ew-resize"
+              />
+              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
+                {isRtl ? 'الرصدة 2 (يمين)' : 'Visit 2 (Right)'}
+              </span>
+            </div>
+          )}
+
+          {/* Fast Blink Cadence Control */}
+          {viewMode === 'blink' && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 text-xs font-mono animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 font-bold">
+                  {blinkEpoch === 'epoch1' ? 'Showing: Visit 1 (Earlier)' : 'Showing: Visit 2 (Later)'}
+                </span>
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBlinking(!isBlinking)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold cursor-pointer"
+                >
+                  {isBlinking ? 'Pause' : 'Play'}
+                </button>
+                <span className="text-slate-400">Cadence Speed:</span>
+                {[0.5, 1, 2].map((spd) => (
+                  <button
+                    key={spd}
+                    type="button"
+                    onClick={() => setBlinkSpeed(spd)}
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      blinkSpeed === spd
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-white/10 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* SECTION 03 — ASTRONOMICAL SKY VIEWER */}
+        <section id="explore-viewer-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-slate-950 p-4 sm:p-5 shadow-2xl space-y-4">
+          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
+                {isRtl ? 'الخطوة 3 — شاشة الرصد' : 'STEP 3 — THE SKY VIEWER'}
+              </span>
+              <h3 className="text-sm font-bold text-white font-['Outfit']">
+                {isRtl ? 'نافذة الرصد الفلكي المباشر' : 'Deep Space Infrared Viewport'}
+              </h3>
+            </div>
+
+            {/* Detector Pixels vs Presentation Smooth View Toggle */}
+            <div className="flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setDisplayMode('presentation')}
+                className={`px-3 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
+                  displayMode === 'presentation'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Smooth Gaussian PSF presentation resampling"
+              >
+                {isRtl ? 'عرض فلكي ناعم (DS9)' : 'Smooth View (Default)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayMode('science')}
+                className={`px-3 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
+                  displayMode === 'science'
+                    ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Raw un-interpolated detector pixels"
+              >
+                {isRtl ? 'بكسلات الحساس الحقيقية' : 'Raw Detector Pixels'}
+              </button>
+            </div>
+          </div>
+
+          {/* Canvas Viewport */}
+          <div className="relative rounded-2xl border border-white/10 bg-black overflow-hidden aspect-[4/3] max-h-[560px] flex items-center justify-center select-none group">
+            {isLoading && (
+              <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 text-slate-300">
+                <div className="w-9 h-9 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                <span className="text-xs font-mono tracking-wider">
+                  {isRtl ? 'جارٍ معالجة بيانات FITS الحقيقية بدقة...' : 'Processing Real SPHEREx Level-2B FITS...'}
+                </span>
+              </div>
+            )}
+
+            {/* Viewport Pan/Zoom container */}
+            <div
+              onMouseDown={handleMouseDown}
+              onMouseMove={(e) => {
+                handleMouseMovePan(e);
+                handleCanvasMouseMove(e);
+              }}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={() => {
+                handleMouseUp();
+                handleCanvasMouseLeave();
+              }}
+              className={`w-full h-full flex items-center justify-center overflow-hidden ${
+                isDragging ? 'cursor-grabbing' : 'cursor-crosshair'
+              }`}
+            >
+              <div
+                style={{
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
+                  transition: isDragging ? 'none' : 'transform 0.15s ease-out',
+                }}
+                className="relative inline-block select-none"
+              >
+                <canvas
+                  ref={canvasRef}
+                  className={`w-[360px] h-[360px] sm:w-[500px] sm:h-[500px] rounded-xl shadow-2xl block ${
+                    displayMode === 'science' ? 'image-rendering-pixelated' : 'image-rendering-auto'
+                  }`}
+                />
+
+                {/* Subtle Astronomical Candidate Reticle Markers */}
+                {markerVisibility !== 'hidden' &&
+                  currentResult &&
+                  filteredCandidates.map((cand) => {
+                    const isSelected = selectedCandidate?.id === cand.id;
+                    const isHovered = hoveredCandidate?.id === cand.id;
+                    const isMoving =
+                      cand.scientificClassification === 'POSSIBLE_MOVING_OBJECT' ||
+                      cand.motion?.isMoving === true ||
+                      cand.status === 'Moving object candidate';
+                    const isArtifact =
+                      cand.scientificClassification === 'REGISTRATION_OR_PSF_ARTIFACT' ||
+                      cand.status === 'Possible artifact' ||
+                      (cand.artifactScore ?? 0) >= 0.5;
+
+                    const origW = currentResult.epoch1.width || 64;
+                    const origH = currentResult.epoch1.height || 64;
+                    const pctX = (((cand.centroidX ?? cand.x) + 0.5) / origW) * 100;
+                    const pctY = (((cand.centroidY ?? cand.y) + 0.5) / origH) * 100;
+
+                    const colorClass = isMoving
+                      ? 'stroke-cyan-400 text-cyan-300'
+                      : isArtifact
+                      ? 'stroke-rose-400 text-rose-300'
+                      : 'stroke-amber-400 text-amber-300';
+
+                    return (
+                      <div
+                        key={cand.id}
+                        style={{
+                          left: `${pctX}%`,
+                          top: `${pctY}%`,
+                        }}
+                        className="absolute z-20 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
+                        onMouseEnter={() => setHoveredCandidate(cand)}
+                        onMouseLeave={() => setHoveredCandidate(null)}
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCandidate(cand);
+                          }}
+                          className="relative flex items-center justify-center w-6 h-6 -m-1 focus:outline-none cursor-pointer group"
+                          aria-label={`Select candidate ${cand.id}`}
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            className={`w-4 h-4 fill-none transition-transform duration-150 ${colorClass} ${
+                              isSelected ? 'scale-125 stroke-[2.5]' : 'group-hover:scale-110 stroke-[1.5]'
+                            }`}
+                          >
+                            <circle cx="12" cy="12" r="5" />
+                            <line x1="12" y1="2" x2="12" y2="5" />
+                            <line x1="12" y1="19" x2="12" y2="22" />
+                            <line x1="2" y1="12" x2="5" y2="12" />
+                            <line x1="19" y1="12" x2="22" y2="12" />
+                          </svg>
+
+                          {isSelected && (
+                            <div className="absolute inset-[-4px] rounded-xs pointer-events-none border border-amber-400/90 shadow-[0_0_12px_rgba(245,158,11,0.7)] animate-pulse" />
+                          )}
+                        </button>
+
+                        {(isHovered || markerVisibility === 'labels' || isSelected) && (
+                          <div
+                            className={`absolute left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-30 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shadow-lg backdrop-blur-md transition-all ${
+                              isSelected
+                                ? 'bottom-full mb-2 bg-amber-500 text-slate-950 ring-1 ring-white/50'
+                                : 'top-full mt-1.5 bg-slate-950/90 text-slate-200 border border-white/20'
+                            }`}
+                          >
+                            <span>#{cand.id}</span>
+                            <span className="mx-1 opacity-60">·</span>
+                            <span className={isMoving ? 'text-cyan-300' : isArtifact ? 'text-rose-300' : 'text-amber-400'}>
+                              {cand.peakSignificance >= 0 ? `+${cand.peakSignificance.toFixed(1)}σ` : `${cand.peakSignificance.toFixed(1)}σ`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+
+              {/* Top-Right Viewport Tools (Zoom & Reset) */}
+              <div className="absolute top-3 right-3 z-30 flex items-center gap-1 bg-black/80 backdrop-blur-md p-1 rounded-xl border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.min(z + 0.25, 4.0))}
+                  title="Zoom in"
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoom((z) => Math.max(z - 0.25, 0.75))}
+                  title="Zoom out"
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setZoom(1.1);
+                    setPan({ x: 0, y: 0 });
+                  }}
+                  title="Reset view"
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Top-Left Viewport Mode Badge */}
+              <div className="absolute top-3 left-3 z-30 pointer-events-none">
+                <span className="px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-amber-400 font-semibold">
+                  {viewMode === 'epoch1' && `${t.statusVisit1}: ${currentResult?.epoch1.metadata.date_obs || '2025-04-28'}`}
+                  {viewMode === 'epoch2' && `${t.statusVisit2}: ${currentResult?.epoch2.metadata.date_obs || '2025-04-28'}`}
+                  {viewMode === 'difference' && (isRtl ? 'صورة الفروقات (ما الذي تغير؟)' : 'Difference Image (What Changed)')}
+                  {viewMode === 'significance' && (isRtl ? 'خريطة قوة الإشارة الإحصائية' : 'Signal Significance Map (σ)')}
+                  {viewMode === 'split' && (isRtl ? 'المقارنة بالشريط المقسم' : 'Split Swipe Comparison')}
+                  {viewMode === 'blink' && (isRtl ? 'الوميض السريع بين الرصدتين' : 'Fast Cadence Blink')}
+                </span>
+              </div>
+
+              {/* Bottom-Left Cursor Readout */}
+              <div className="absolute bottom-3 left-3 z-30 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[11px] font-mono text-slate-300 flex items-center gap-3">
+                {cursorPos ? (
+                  <>
+                    <span>Pixel ({cursorPos.x}, {cursorPos.y})</span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-amber-300">
+                      RA {cursorPos.ra?.toFixed(4)}° Dec {cursorPos.dec != null && cursorPos.dec >= 0 ? '+' : ''}{cursorPos.dec?.toFixed(4)}°
+                    </span>
+                    {cursorPos.val != null && (
+                      <>
+                        <span className="text-slate-600">·</span>
+                        <span className="font-semibold text-emerald-400">
+                          {cursorPos.val.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}
+                        </span>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-slate-500">
+                    {isRtl ? 'حرك الفأرة لقراءة السطوع والإحداثيات' : 'Hover over image to inspect pixel brightness'}
+                  </span>
+                )}
+              </div>
+
+              {/* Bottom-Right Markers Toggle */}
+              <div className="absolute bottom-3 right-3 z-30">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMarkerVisibility((prev) =>
+                      prev === 'reticles' ? 'labels' : prev === 'labels' ? 'hidden' : 'reticles'
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-black/80 backdrop-blur-md border border-white/10 text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
+                >
+                  {markerVisibility === 'reticles' ? 'Markers: Reticles' : markerVisibility === 'labels' ? 'Markers: Labels' : 'Markers: Hidden'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Physical Brightness Colorbar */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+              <span className="font-semibold text-slate-200">
+                {isRtl ? 'مقياس السطوع الإشعاعي:' : 'Image Brightness Scale:'}
+              </span>
+              <span>
+                {activeDataInfo.isDiff
+                  ? (isRtl ? 'أزرق = خافت/اختفى | داكن = ثابت | ذهبي = ازداد سطوعاً' : 'Cyan = Dimmed | Dark = Unchanged | Amber = Brightened')
+                  : (isRtl ? 'داكن = سماء هادئة | ساطع = نجوم وغاز' : 'Dark = Empty Sky | Bright = Stars & Dust')}
+              </span>
+            </div>
+
+            <div className="relative">
+              <div
+                style={{
+                  background:
+                    activeDataInfo.colormap === 'diff_diverging'
+                      ? 'linear-gradient(to right, #00e5ff 0%, #0077b6 25%, #050a14 50%, #d97706 75%, #fbbf24 100%)'
+                      : 'linear-gradient(to right, #000000 0%, #888888 50%, #ffffff 100%)',
+                }}
+                className="h-2.5 w-full rounded-md shadow-inner border border-white/10"
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span>{activeDataInfo.stats.min.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}</span>
+              <span>{activeDataInfo.isDiff ? '0.00 (No change)' : `${activeDataInfo.stats.median.toFixed(2)} (Median)`}</span>
+              <span>+{activeDataInfo.stats.max.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}</span>
+            </div>
+          </div>
+
+          {/* Visual 1-2 sentence explanation */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
+            <p>
+              {isRtl
+                ? 'أنت تشاهد ضوء الأشعة تحت الحمراء المعاير من مرصد SPHEREx. تشير المناطق الأكثر سطوعاً إلى تدفق إشعاعي أكبر صادر عن غبار النجوم وسحب الغاز الكوني.'
+                : 'You are viewing calibrated SPHEREx infrared light. Brighter areas indicate higher infrared photon flux emitted by stars, gas, and cosmic dust clouds.'}
+            </p>
+          </div>
+        </section>
+      </div>
+
+      {/* =========================================================================
+          SECTION 01: STEP 1 — CHOOSE WHERE TO LOOK
+         ========================================================================= */}
+      <section id="explore-search-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-white/[0.06] pb-3">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                SECTION 01
+                {isRtl ? 'الخطوة 1' : 'STEP 1'}
               </span>
               <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                {isRtl ? 'استكشف السماء (Explore the Sky)' : 'Explore the Sky'}
+                {isRtl ? 'اختر موقع التحقيق في السماء' : 'Choose Where to Look in the Sky'}
               </h2>
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
               {isRtl
-                ? 'اختر منطقة في قبة السماء للتحقيق فيها. يقاس موقع السماء بإحداثيين بسيطين: المطلع المستقيم (الموقع على خط الاستواء السماوي) والميل (المسافة شمالاً أو جنوباً).'
-                : 'Select or search a sky position. Coordinates work like GPS for space: Right Ascension (RA) is the position along the celestial equator, and Declination (Dec) is the distance north or south.'}
+                ? 'اختر منطقة في قبة السماء للتحقيق فيها. يقاس موقع السماء بإحداثيين بسيطين: المطلع المستقيم (RA) والميل (Dec).'
+                : 'Select or search a sky position. Coordinates work like GPS for space: Right Ascension (RA) is the position along the celestial equator, and Declination (Dec) is north or south.'}
             </p>
           </div>
 
@@ -491,10 +1170,34 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         </div>
 
+        {/* Lightweight Search History Chips */}
+        {searchHistory.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            <span className="text-slate-400 flex items-center gap-1 text-[11px]">
+              <History className="w-3 h-3 text-slate-500" />
+              {isRtl ? 'المواقع الأخيرة:' : 'Recent:'}
+            </span>
+            {searchHistory.map((item, idx) => (
+              <button
+                key={`${item.ra}-${item.dec}-${idx}`}
+                type="button"
+                onClick={() => {
+                  setCustomRa(item.ra.toString());
+                  setCustomDec(item.dec.toString());
+                  onSearchTarget(item.ra, item.dec, selectedFovSize);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/40 text-slate-700 dark:text-slate-300 text-[11px] transition cursor-pointer"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Guided Target Presets Cards */}
         <div>
           <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-2 font-medium">
-            {isRtl ? 'أمثلة ومناطق مقترحة للبدء السريع:' : 'Quick Starting Suggestions (Authentic SPHEREx Regions):'}
+            {isRtl ? 'أمثلة ومناطق مقترحة للبدء السريع (حقول SPHEREx الحقيقية):' : 'Quick Starting Suggestions (Authentic SPHEREx Regions):'}
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             {[
@@ -549,536 +1252,149 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   {tgt.sub}
                 </div>
                 <div className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono mt-1">
-                  RA {tgt.ra}° · Dec {tgt.dec}°
+                  RA {tgt.ra}° · Dec +{tgt.dec}°
                 </div>
               </button>
             ))}
           </div>
         </div>
+
+        {/* 5 Official NASA Challenge Targets with Honest Footprint & Test Query */}
+        <ChallengeTargetsBar
+          onSelectTarget={(ra: number, dec: number) => {
+            setCustomRa(ra.toString());
+            setCustomDec(dec.toString());
+            onSearchTarget(ra, dec, selectedFovSize);
+          }}
+          onLoadBenchmarkAnalogue={(benchId: string) => {
+            onSelectCase(benchId, { sizePix: selectedFovSize, epochPair: selectedEpochPair });
+          }}
+          language={language}
+        />
       </section>
 
       {/* =========================================================================
-          SECTION 02 — YOUR OBSERVATIONS
+          SECTION 02: STEP 2 — SELECT OBSERVATION DATES & BASELINE
          ========================================================================= */}
-      <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
+      <section id="explore-timeline-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-3">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-              SECTION 02
+              {isRtl ? 'الخطوة 2' : 'STEP 2'}
             </span>
             <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-              {isRtl ? 'أرصادك الفلكية (Your Observations)' : 'Your Observations'}
+              {isRtl ? 'اختر مواعيد الرصدات الفلكية والفارق الزمني' : 'Select Observation Dates & Temporal Baseline'}
             </h2>
           </div>
 
           <div className="flex items-center gap-2 text-xs font-mono">
             <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
             <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-              {currentResult?.epochs && currentResult.epochs.length >= 3
-                ? (isRtl ? '3 رصدات متوفرة (تسلسل زمني كامل)' : '3 Survey Visits Available (Multi-Epoch)')
-                : (isRtl ? 'رصدتان مستقلتان متوفرتان (زوج رصد زمني)' : '2 Independent Visits Available (Epoch Pair)')}
+              {timeBaselineInfo ? `Δt = ${timeBaselineInfo.formattedTime}` : 'Pair Selected'}
             </span>
           </div>
         </div>
 
-        {/* Observation definition in plain language */}
-        <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-          {isRtl
-            ? 'ما هي الرصدة؟ الرصدة هي لقطة تحت حمراء معايرة التقطها تلسكوب SPHEREx الفضائي في لحظة محددة. لاكتشاف التغيرات الكونية، نحتاج إلى رصدتين على الأقل لنفس الموقع في أوقات مختلفة لمقارنتهما ومعرفة ما حدث!'
-            : 'What is an observation? An observation is a calibrated infrared snapshot captured by NASA’s SPHEREx space telescope at a specific time. To detect cosmic changes, we need at least two distinct visits of the same region separated in time: comparing them reveals what changed.'}
-        </p>
-
-        {/* Visual Multi-Epoch Timeline */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Visit 1 */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-1.5">
+        {/* Interactive Observation Pickers */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Visit A Selector */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase font-bold text-cyan-600 dark:text-cyan-400">
-                {isRtl ? 'الرصدة 1 (الزيارة الأولى)' : 'Visit 1 (Earlier Snapshot)'}
+              <span className="text-xs font-mono uppercase font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
+                <Calendar className="w-4 h-4" />
+                {isRtl ? 'الرصدة الأولى (Visit A - البداية)' : 'Observation 1 (Visit A - Earlier Baseline)'}
               </span>
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[10px] font-mono text-slate-500">I₁(x,y)</span>
             </div>
-            <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
-              {currentResult?.epoch1.metadata.date_obs || '2025-04-28 13:00:15 UTC'}
-            </div>
-            <div className="text-[10px] text-slate-500 font-mono">
-              Band: SPHEREx 0.75–5.0 µm · Array 1-6
+
+            <select
+              value={epoch1Idx}
+              onChange={(e) => handleSelectEpoch('epoch1', parseInt(e.target.value, 10))}
+              className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+            >
+              {timeBaselineInfo?.allEpochs.map((ep, idx) => (
+                <option key={`ep1-${idx}`} value={idx}>
+                  Epoch {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
+                </option>
+              ))}
+            </select>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Timestamp: {timeBaselineInfo?.dateA || '2025-04-28 13:00:15 UTC'}
             </div>
           </div>
 
-          {/* Visit 2 */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-1.5">
+          {/* Visit B Selector */}
+          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase font-bold text-cyan-600 dark:text-cyan-400">
-                {isRtl ? 'الرصدة 2 (الزيارة الثانية)' : 'Visit 2 (Later Snapshot)'}
+              <span className="text-xs font-mono uppercase font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                <Clock className="w-4 h-4" />
+                {isRtl ? 'الرصدة الثانية (Visit B - المقارنة)' : 'Observation 2 (Visit B - Comparison)'}
               </span>
-              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-[10px] font-mono text-slate-500">I₂(x,y)</span>
             </div>
-            <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
-              {currentResult?.epoch2.metadata.date_obs || '2025-04-28 13:02:24 UTC'}
-            </div>
-            <div className="text-[10px] text-slate-500 font-mono">
-              Delta: +128.9s baseline separation
-            </div>
-          </div>
 
-          {/* Visit 3 (or Multi-epoch indicator) */}
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase font-bold text-indigo-600 dark:text-indigo-400">
-                {currentResult?.epochs && currentResult.epochs.length >= 3
-                  ? (isRtl ? 'الرصدة 3 (تأكيد زمني)' : 'Visit 3 (Temporal Confirmation)')
-                  : (isRtl ? 'المحاذاة الفلكية WCS' : 'WCS Spatial Alignment')}
-              </span>
-              <Clock className="w-3.5 h-3.5 text-slate-400" />
-            </div>
-            <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
-              {currentResult?.epochs?.[2]?.date || 'Sub-pixel WCS Resampled'}
-            </div>
-            <div className="text-[10px] text-slate-500 font-mono">
-              Status: Verified level-2B FITS pairing
+            <select
+              value={epoch2Idx}
+              onChange={(e) => handleSelectEpoch('epoch2', parseInt(e.target.value, 10))}
+              className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+            >
+              {timeBaselineInfo?.allEpochs.map((ep, idx) => (
+                <option key={`ep2-${idx}`} value={idx}>
+                  Epoch {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
+                </option>
+              ))}
+            </select>
+
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Timestamp: {timeBaselineInfo?.dateB || '2025-04-28 13:02:24 UTC'}
             </div>
           </div>
+        </div>
+
+        {/* Warning if Identical Dates Selected */}
+        {timeBaselineInfo?.isSame && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center gap-2 animate-in fade-in">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>
+              {isRtl
+                ? 'تحذير: لقد اخترت نفس الرصدة في الزيارتين! سيكون ناتج الطرح صفراً (D = 0). يرجى اختيار رصدتين بموعدين مختلفين.'
+                : 'Identical observations selected: subtraction will be zero (D = 0). Please select two different observation dates to compare changes.'}
+            </span>
+          </div>
+        )}
+
+        {/* Why the Time Difference Matters (Astronomical Context) */}
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] text-xs text-slate-600 dark:text-slate-300 leading-relaxed space-y-1.5">
+          <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{isRtl ? 'لماذا يعد الفارق الزمني حاسماً في علم الفلك؟' : 'Why the Time Separation (Δt) Matters:'}</span>
+          </div>
+          <p>
+            {isRtl
+              ? '• الفواصل الزمنية القصيرة (دقائق إلى ساعات): تكشف التوهجات النجمية المفاجئة، والكويكبات السريعة، وتغيرات السطوع السريعة.'
+              : '• Short time baselines (minutes to hours): Detect rapid stellar flares, passing asteroids, and variable star pulsations.'}
+          </p>
+          <p>
+            {isRtl
+              ? '• الفواصل الزمنية الطويلة (أشهر إلى سنوات): تكشف الحركة الخاصة للنجوم القريبة (مثل نجم برنارد) حيث يظهر النجم متحركاً بالنسبة للنجوم البعيدة.'
+              : '• Long time baselines (months to years): Detect proper motion (stellar shift across the sky) for nearby cold stars like Barnard’s Star and brown dwarf WISE 0855.'}
+          </p>
         </div>
       </section>
 
       {/* =========================================================================
-          SECTION 03 & 04: SEE THE IMAGE & COMPARE OBSERVATIONS
+          SECTION 05 & 06 & 07: RESULTS, CANDIDATE EVIDENCE & SPEX COMPANION
          ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column (8 cols): Canvas Viewport & Section 03/04 Controls */}
-        <div className="lg:col-span-7 xl:col-span-8 space-y-4">
-          {/* SECTION 04 PERSPECTIVE SELECTOR */}
-          <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 shadow-sm space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
+        {/* Left Column (7 cols): Section 05 & Finding Cards */}
+        <div className="lg:col-span-7 xl:col-span-7 space-y-4">
+          {/* SECTION 05 — WHAT DID WE FIND? */}
+          <section id="explore-results-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/[0.06] pb-3">
               <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                  SECTION 04
-                </span>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                  {isRtl ? 'قارن بين الرصدات (Compare Observations)' : 'Compare Observations'}
-                </h3>
-              </div>
-              <div className="text-[11px] font-mono text-slate-500">
-                Formula: D(x,y) = I₂(x,y) - I₁(x,y)
-              </div>
-            </div>
-
-            {/* Explanation of difference image */}
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              {isRtl
-                ? 'كيف يعمل الطرح الفلكي؟ نطرح صورة الرصدة الأولى من صورة الرصدة الثانية. كل الأجرام الثابتة تختفي لتصبح صفراً (لون داكن/محايد)، وما يتغير فقط يبرز كنقاط مضيئة أو داكنة!'
-                : 'How difference imaging works: We subtract the earlier image from the later image. Anything that stayed the same cancels out completely to zero. Anything that changed stands out!'}
-            </p>
-
-            {/* 4 Mode Buttons */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('epoch1')}
-                className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                  viewMode === 'epoch1'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                    : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                {isRtl ? '1. الرصدة الأولى' : '1. Earlier Snapshot'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('epoch2')}
-                className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                  viewMode === 'epoch2'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                    : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                {isRtl ? '2. الرصدة الثانية' : '2. Later Snapshot'}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('difference')}
-                className={`flex-1 min-w-[130px] py-2 px-3 rounded-xl text-xs font-bold transition cursor-pointer border flex items-center justify-center gap-1.5 ${
-                  viewMode === 'difference'
-                    ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-slate-950 border-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.4)]'
-                    : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{isRtl ? '3. ما الذي تغير؟' : '3. What Changed (Diff)'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('significance')}
-                className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                  viewMode === 'significance'
-                    ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-sm'
-                    : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300'
-                }`}
-              >
-                {isRtl ? '4. قوة الإشارة (σ)' : '4. Signal Strength'}
-              </button>
-            </div>
-
-            {/* Split Swipe Slider & Fast Blink cadence tools */}
-            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-white/[0.06]">
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('split')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition cursor-pointer ${
-                  viewMode === 'split'
-                    ? 'bg-indigo-500 text-white border-indigo-400'
-                    : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08]'
-                }`}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>{isRtl ? 'شريط التمرير المقارن' : 'Split Slider Comparison'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleSelectViewMode('blink')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition cursor-pointer ${
-                  viewMode === 'blink'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400'
-                    : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08]'
-                }`}
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>{isRtl ? 'الوميض السريع التلقائي' : 'Fast Blink Cadence'}</span>
-              </button>
-            </div>
-
-            {/* Split Slider Bar UI */}
-            {viewMode === 'split' && (
-              <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-3 text-xs font-mono animate-in fade-in">
-                <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
-                  Visit 1 (Left)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={sliderPos}
-                  onChange={(e) => setSliderPos(parseFloat(e.target.value))}
-                  className="w-full accent-indigo-500 cursor-ew-resize"
-                />
-                <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
-                  Visit 2 (Right)
-                </span>
-              </div>
-            )}
-          </section>
-
-          {/* SECTION 03 — SEE THE IMAGE */}
-          <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-slate-950 p-4 shadow-xl space-y-3">
-            <div className="flex items-center justify-between border-b border-white/[0.08] pb-2.5 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                  SECTION 03
-                </span>
-                <h3 className="text-sm font-bold text-white font-['Outfit']">
-                  {isRtl ? 'شاهد الصورة الفلكية (See the Image)' : 'See the Image'}
-                </h3>
-              </div>
-
-              {/* Detector Pixels vs Smooth Display Toggle */}
-              <div className="flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setDisplayMode('science')}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
-                    displayMode === 'science'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                  title="Show genuine detector pixels"
-                >
-                  {isRtl ? 'بكسلات الحساس الحقيقية' : 'Detector Pixels'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDisplayMode('presentation')}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
-                    displayMode === 'presentation'
-                      ? 'bg-amber-500 text-slate-950 font-bold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                  title="Smooth display"
-                >
-                  {isRtl ? 'عرض ناعم (DS9)' : 'Smooth View'}
-                </button>
-              </div>
-            </div>
-
-            {/* Astronomical Canvas Viewport */}
-            <div className="relative rounded-2xl border border-white/10 bg-black overflow-hidden aspect-square sm:aspect-[4/3] flex items-center justify-center select-none group">
-              {isLoading && (
-                <div className="absolute inset-0 z-40 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 text-slate-300">
-                  <div className="w-8 h-8 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
-                  <span className="text-xs font-mono tracking-wider">
-                    {isRtl ? 'جارٍ معالجة بيانات FITS الحقيقية...' : 'Processing Real SPHEREx Level-2B FITS...'}
-                  </span>
-                </div>
-              )}
-
-              {/* Viewport Pan/Zoom container */}
-              <div
-                onMouseDown={handleMouseDown}
-                onMouseMove={(e) => {
-                  handleMouseMovePan(e);
-                  handleCanvasMouseMove(e);
-                }}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={() => {
-                  handleMouseUp();
-                  handleCanvasMouseLeave();
-                }}
-                className={`w-full h-full flex items-center justify-center overflow-hidden ${
-                  isDragging ? 'cursor-grabbing' : 'cursor-crosshair'
-                }`}
-              >
-                <div
-                  style={{
-                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                    transformOrigin: 'center center',
-                    transition: isDragging ? 'none' : 'transform 0.15s ease-out',
-                  }}
-                  className="relative inline-block select-none"
-                >
-                  <canvas
-                    ref={canvasRef}
-                    className={`w-[320px] h-[320px] sm:w-[480px] sm:h-[480px] rounded-xl shadow-2xl block ${
-                      displayMode === 'science' ? 'image-rendering-pixelated' : 'image-rendering-auto'
-                    }`}
-                  />
-
-                  {/* Subtle Astronomical Candidate Reticle Markers */}
-                  {markerVisibility !== 'hidden' &&
-                    currentResult &&
-                    filteredCandidates.map((cand) => {
-                      const isSelected = selectedCandidate?.id === cand.id;
-                      const isHovered = hoveredCandidate?.id === cand.id;
-                      const isMoving =
-                        cand.scientificClassification === 'POSSIBLE_MOVING_OBJECT' ||
-                        cand.motion?.isMoving === true ||
-                        cand.status === 'Moving object candidate';
-                      const isArtifact =
-                        cand.scientificClassification === 'REGISTRATION_OR_PSF_ARTIFACT' ||
-                        cand.status === 'Possible artifact' ||
-                        (cand.artifactScore ?? 0) >= 0.5;
-
-                      const origW = currentResult.epoch1.width || 64;
-                      const origH = currentResult.epoch1.height || 64;
-                      const pctX = (((cand.centroidX ?? cand.x) + 0.5) / origW) * 100;
-                      const pctY = (((cand.centroidY ?? cand.y) + 0.5) / origH) * 100;
-
-                      const colorClass = isMoving
-                        ? 'stroke-cyan-400 text-cyan-300'
-                        : isArtifact
-                        ? 'stroke-rose-400 text-rose-300'
-                        : 'stroke-amber-400 text-amber-300';
-
-                      return (
-                        <div
-                          key={cand.id}
-                          style={{
-                            left: `${pctX}%`,
-                            top: `${pctY}%`,
-                          }}
-                          className="absolute z-20 -translate-x-1/2 -translate-y-1/2 pointer-events-auto"
-                          onMouseEnter={() => setHoveredCandidate(cand)}
-                          onMouseLeave={() => setHoveredCandidate(null)}
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedCandidate(cand);
-                            }}
-                            className="relative flex items-center justify-center w-6 h-6 -m-1 focus:outline-none cursor-pointer group"
-                            aria-label={`Select candidate ${cand.id}`}
-                          >
-                            <svg
-                              viewBox="0 0 24 24"
-                              className={`w-4 h-4 fill-none transition-transform duration-150 ${colorClass} ${
-                                isSelected ? 'scale-125 stroke-[2.5]' : 'group-hover:scale-110 stroke-[1.5]'
-                              }`}
-                            >
-                              <circle cx="12" cy="12" r="5" />
-                              <line x1="12" y1="2" x2="12" y2="5" />
-                              <line x1="12" y1="19" x2="12" y2="22" />
-                              <line x1="2" y1="12" x2="5" y2="12" />
-                              <line x1="19" y1="12" x2="22" y2="12" />
-                            </svg>
-
-                            {isSelected && (
-                              <div className="absolute inset-[-4px] rounded-xs pointer-events-none border border-amber-400/90 shadow-[0_0_12px_rgba(245,158,11,0.7)] animate-pulse" />
-                            )}
-                          </button>
-
-                          {(isHovered || markerVisibility === 'labels' || isSelected) && (
-                            <div
-                              className={`absolute left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap z-30 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shadow-lg backdrop-blur-md transition-all ${
-                                isSelected
-                                  ? 'bottom-full mb-2 bg-amber-500 text-slate-950 ring-1 ring-white/50'
-                                  : 'top-full mt-1.5 bg-slate-950/90 text-slate-200 border border-white/20'
-                              }`}
-                            >
-                              <span>#{cand.id}</span>
-                              <span className="mx-1 opacity-60">·</span>
-                              <span className={isMoving ? 'text-cyan-300' : isArtifact ? 'text-rose-300' : 'text-amber-400'}>
-                                {cand.peakSignificance >= 0 ? `+${cand.peakSignificance.toFixed(1)}σ` : `${cand.peakSignificance.toFixed(1)}σ`}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-
-                {/* Top-Right Viewport Tools (Zoom & Reset) */}
-                <div className="absolute top-3 right-3 z-30 flex items-center gap-1 bg-black/80 backdrop-blur-md p-1 rounded-xl border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setZoom((z) => Math.min(z + 0.25, 4.0))}
-                    title="Zoom in"
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                  >
-                    <ZoomIn className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setZoom((z) => Math.max(z - 0.25, 0.75))}
-                    title="Zoom out"
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                  >
-                    <ZoomOut className="w-4 h-4" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setZoom(1.1);
-                      setPan({ x: 0, y: 0 });
-                    }}
-                    title="Reset view"
-                    className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Top-Left Viewport Mode Badge */}
-                <div className="absolute top-3 left-3 z-30 pointer-events-none">
-                  <span className="px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-amber-400 font-semibold">
-                    {viewMode === 'epoch1' && `${t.statusVisit1}: ${currentResult?.epoch1.metadata.date_obs || '2025-04-28'}`}
-                    {viewMode === 'epoch2' && `${t.statusVisit2}: ${currentResult?.epoch2.metadata.date_obs || '2025-04-28'}`}
-                    {viewMode === 'difference' && (isRtl ? 'صورة الفروقات (ما الذي تغير؟)' : 'Difference Image (What Changed)')}
-                    {viewMode === 'significance' && (isRtl ? 'خريطة قوة الإشارة الإحصائية' : 'Signal Significance Map (σ)')}
-                    {viewMode === 'split' && (isRtl ? 'المقارنة بالشريط المقسم' : 'Split Swipe Comparison')}
-                    {viewMode === 'blink' && (isRtl ? 'الوميض السريع بين الرصدتين' : 'Fast Cadence Blink')}
-                  </span>
-                </div>
-
-                {/* Bottom-Left Cursor Readout */}
-                <div className="absolute bottom-3 left-3 z-30 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[11px] font-mono text-slate-300 flex items-center gap-3">
-                  {cursorPos ? (
-                    <>
-                      <span>Pixel ({cursorPos.x}, {cursorPos.y})</span>
-                      <span className="text-slate-600">·</span>
-                      <span className="text-amber-300">
-                        RA {cursorPos.ra?.toFixed(4)}° Dec {cursorPos.dec?.toFixed(4)}°
-                      </span>
-                      {cursorPos.val != null && (
-                        <>
-                          <span className="text-slate-600">·</span>
-                          <span className="font-semibold text-emerald-400">
-                            {cursorPos.val.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}
-                          </span>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <span className="text-slate-500">
-                      {isRtl ? 'حرك الفأرة لقراءة السطوع والإحداثيات' : 'Hover over image to inspect pixel brightness'}
-                    </span>
-                  )}
-                </div>
-
-                {/* Bottom-Right Markers Toggle */}
-                <div className="absolute bottom-3 right-3 z-30">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMarkerVisibility((prev) =>
-                        prev === 'reticles' ? 'labels' : prev === 'labels' ? 'hidden' : 'reticles'
-                      );
-                    }}
-                    className="px-2.5 py-1 rounded-lg text-[11px] font-mono bg-black/80 backdrop-blur-md border border-white/10 text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
-                  >
-                    {markerVisibility === 'reticles' ? 'Markers: Reticles' : markerVisibility === 'labels' ? 'Markers: Labels' : 'Markers: Hidden'}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Brightness Scale / Physical Colorbar */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                <span className="font-semibold text-slate-200">
-                  {isRtl ? 'مقياس السطوع الإشعاعي:' : 'Image Brightness Scale:'}
-                </span>
-                <span>
-                  {activeDataInfo.isDiff
-                    ? (isRtl ? 'أزرق = خافت/اختفى | داكن = ثابت | ذهبي = ازداد سطوعاً' : 'Cyan = Dimmed | Dark = Unchanged | Amber = Brightened')
-                    : (isRtl ? 'داكن = سماء هادئة | ساطع = نجوم وغاز' : 'Dark = Empty Sky | Bright = Stars & Dust')}
-                </span>
-              </div>
-
-              <div className="relative">
-                <div
-                  style={{
-                    background:
-                      activeDataInfo.colormap === 'diff_diverging'
-                        ? 'linear-gradient(to right, #00e5ff 0%, #0077b6 25%, #050a14 50%, #d97706 75%, #fbbf24 100%)'
-                        : 'linear-gradient(to right, #000000 0%, #888888 50%, #ffffff 100%)',
-                  }}
-                  className="h-2.5 w-full rounded-md shadow-inner border border-white/10"
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
-                <span>{activeDataInfo.stats.min.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}</span>
-                <span>{activeDataInfo.isDiff ? '0.00 (No change)' : `${activeDataInfo.stats.median.toFixed(2)} (Median)`}</span>
-                <span>+{activeDataInfo.stats.max.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}</span>
-              </div>
-            </div>
-
-            {/* Required 1-2 sentence visual explanation directly beneath the viewer */}
-            <div className="p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-              <p>
-                {isRtl
-                  ? 'أنت تشاهد ضوء الأشعة تحت الحمراء المعاير من مرصد SPHEREx. تشير المناطق الأكثر سطوعاً إلى تدفق إشعاعي أكبر صادر عن غبار النجوم وسحب الغاز الكوني.'
-                  : 'You are viewing calibrated SPHEREx infrared light. Brighter areas indicate higher infrared photon flux emitted by stars, gas, and cosmic dust clouds.'}
-              </p>
-            </div>
-          </section>
-        </div>
-
-        {/* Right Column (4 cols): Section 05 & 06 and SPEX Companion */}
-        <div className="lg:col-span-5 xl:col-span-4 flex flex-col gap-5">
-          {/* =========================================================================
-              SECTION 05 — WHAT DID WE FIND?
-             ========================================================================= */}
-          <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                  SECTION 05
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-[10px] tracking-wider uppercase">
+                  {isRtl ? 'الخطوة 5' : 'STEP 5'}
                 </span>
                 <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
                   {isRtl ? 'ما هي النتائج؟ (What Did We Find?)' : 'What Did We Find?'}
@@ -1088,26 +1404,26 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
             {/* Exact 3-Status Prominent Banner */}
             {detectionStatus === 'NO_CLEAR_CHANGE' && (
-              <div className="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-200 space-y-1">
+              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-800 dark:text-emerald-200 space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
                   <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                   <span>NO CLEAR CHANGE DETECTED</span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isRtl
                     ? 'لم يتم رصد أي تغيرات تفوق مستوى ضوضاء الكاميرا. تبدي هذه الرقعة استقراراً ضوئياً نموذجياً بين الزيارتين.'
-                    : 'All pixels remain within normal background camera noise. This field shows remarkable photometric stability.'}
+                    : 'All pixels remain within normal background camera noise. This field shows remarkable photometric stability between visits.'}
                 </p>
               </div>
             )}
 
             {detectionStatus === 'POSSIBLE_CHANGE' && (
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-1">
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-amber-700 dark:text-amber-400">
                   <Sparkles className="w-4 h-4 text-amber-500 animate-pulse" />
                   <span>POSSIBLE CHANGE DETECTED</span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isRtl
                     ? `تم اكتشاف ${filteredCandidates.length} تغيرات ضوئية تفوق عتبة 5σ. انقر على بطاقات المرشحين أدناه لفحص أدلة الرصد.`
                     : `Found ${filteredCandidates.length} candidate changes exceeding the 5σ threshold. Review the evidence cards below.`}
@@ -1116,12 +1432,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             )}
 
             {detectionStatus === 'INSUFFICIENT_DATA' && (
-              <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-900 dark:text-rose-200 space-y-1">
+              <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-900 dark:text-rose-200 space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider text-rose-700 dark:text-rose-400">
                   <AlertTriangle className="w-4 h-4 text-rose-500" />
                   <span>INSUFFICIENT DATA</span>
                 </div>
-                <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                   {isRtl
                     ? 'تتطلب مقارنة الفروقات رصدتين على الأقل لنفس الموقع في أوقات مختلفة.'
                     : 'Difference imaging requires at least two distinct visits of this coordinate at different times.'}
@@ -1134,7 +1450,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowSkyCoverage(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-amber-500 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-amber-500 cursor-pointer"
               >
                 <Globe2 className="w-3.5 h-3.5 text-amber-500" />
                 <span>Sky Coverage</span>
@@ -1143,7 +1459,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowSpectralExplorer(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-cyan-500 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-cyan-500 cursor-pointer"
               >
                 <Layers className="w-3.5 h-3.5 text-cyan-500" />
                 <span>102 Bands</span>
@@ -1152,7 +1468,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowCandidateComparison(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-indigo-500 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-indigo-500 cursor-pointer"
               >
                 <Table className="w-3.5 h-3.5 text-indigo-500" />
                 <span>Compare Table</span>
@@ -1161,15 +1477,132 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowDataRelease(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-500 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-500 cursor-pointer"
               >
                 <Database className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Data Ingestion</span>
               </button>
             </div>
+
+            {/* Candidate Filter & Findings List */}
+            <div className="pt-2 border-t border-slate-100 dark:border-white/[0.06] space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">
+                  {isRtl ? 'قائمة المرشحين والأدلة:' : 'Candidate Findings List:'}
+                </span>
+
+                <div className="flex items-center gap-1 text-[11px] font-mono">
+                  {(['all', 'candidates', 'known', 'artifacts'] as CandidateFilter[]).map((f) => (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => {
+                        setCandidateFilter(f);
+                        setCandidatePage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg capitalize transition cursor-pointer ${
+                        candidateFilter === f
+                          ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Candidate Cards List */}
+              <div className="space-y-3">
+                {paginatedCandidates.length > 0 ? (
+                  paginatedCandidates.map((cand) => (
+                    <FindingCard
+                      key={cand.id}
+                      candidate={cand}
+                      isSelected={selectedCandidate?.id === cand.id}
+                      onSelect={(c) => setSelectedCandidate(c)}
+                      onLocate={(c) => centerOnCandidate(c)}
+                      onAskSpex={(prompt) => setExternalSpexPrompt(prompt)}
+                      onOpenPassport={(c) => {
+                        setSelectedCandidate(c);
+                        setShowDiscoveryReport(true);
+                      }}
+                      language={language}
+                    />
+                  ))
+                ) : (
+                  <div className="p-6 text-center rounded-2xl border border-dashed border-slate-200 dark:border-white/[0.08] text-xs text-slate-500 font-mono">
+                    {isRtl ? 'لا توجد مرشحات مطابقة للمرشح المحدد' : 'No candidates matching current filter'}
+                  </div>
+                )}
+              </div>
+            </div>
           </section>
 
-          {/* SPEX COMPANION AI */}
+          {/* STEP 6 — RAW SCIENCE & FITS DETAILS */}
+          <section id="explore-science-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-3">
+            <button
+              type="button"
+              onClick={() => setShowScientificEvidenceDrawer(!showScientificEvidenceDrawer)}
+              className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2 font-bold">
+                <ShieldCheck className="w-4 h-4 text-cyan-500" />
+                <span>{isRtl ? 'الخطوة 6 — عرض التفاصيل العلمية وبيانات FITS' : 'STEP 6 — Raw Science & FITS Metadata'}</span>
+              </div>
+              {showScientificEvidenceDrawer ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+
+            {(showScientificEvidenceDrawer || presentationLevel === 'science') && currentResult && (
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-cyan-500/30 text-[11px] font-mono text-slate-300 space-y-3 animate-in fade-in">
+                <div className="grid grid-cols-2 gap-3 pb-2 border-b border-slate-800">
+                  <div>
+                    <span className="text-slate-500 block">WCS Projection:</span>
+                    <span className="text-cyan-400 font-bold">TAN-SIP Gnomonic (Order 2)</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Pixel Scale:</span>
+                    <span className="text-slate-200">6.15″ / pixel</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Variance Propagation:</span>
+                    <span className="text-slate-200">σ_D = √(σ₁² + σ₂²)</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Detection Cutoff:</span>
+                    <span className="text-amber-400 font-bold">&gt; 5.0σ MAD-clipped</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-[10px] text-slate-500">
+                    FITS provenance: NASA/IPAC IRSA QR2 Level-2B Calibrated
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowProvenance(true)}
+                    className="text-xs text-cyan-400 hover:underline cursor-pointer"
+                  >
+                    Audit Record &rarr;
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+
+        {/* Right Column (5 cols): STEP 7 — ASK SPEX & Quick Help */}
+        <div id="explore-spex-step" className="lg:col-span-5 xl:col-span-5 flex flex-col gap-5">
+          {/* Quick Help Questions */}
+          <QuickHelpQuestions
+            currentResult={currentResult}
+            selectedCandidate={selectedCandidate}
+            viewMode={viewMode}
+            onAskSpex={(prompt) => setExternalSpexPrompt(prompt)}
+            language={language}
+          />
+
+          {/* SPEX Cat Companion */}
           <SpexCompanion
             currentResult={currentResult}
             selectedCandidate={selectedCandidate}
@@ -1177,119 +1610,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             onClearExternalPrompt={() => setExternalSpexPrompt(null)}
             language={language}
           />
-
-          {/* =========================================================================
-              SECTION 06 — UNDERSTAND THE RESULT
-             ========================================================================= */}
-          <section className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                  SECTION 06
-                </span>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                  {isRtl ? 'افهم النتيجة والأدلة' : 'Understand the Result'}
-                </h3>
-              </div>
-
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-1 text-[11px] font-mono">
-                {(['all', 'candidates', 'known', 'artifacts'] as CandidateFilter[]).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => {
-                      setCandidateFilter(f);
-                      setCandidatePage(1);
-                    }}
-                    className={`px-2 py-0.5 rounded-md capitalize transition cursor-pointer ${
-                      candidateFilter === f
-                        ? 'bg-amber-500 text-slate-950 font-bold'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Candidate Cards List */}
-            <div className="space-y-3">
-              {paginatedCandidates.length > 0 ? (
-                paginatedCandidates.map((cand) => (
-                  <FindingCard
-                    key={cand.id}
-                    candidate={cand}
-                    isSelected={selectedCandidate?.id === cand.id}
-                    onSelect={(c) => setSelectedCandidate(c)}
-                    onLocate={(c) => centerOnCandidate(c)}
-                    onAskSpex={(prompt) => setExternalSpexPrompt(prompt)}
-                    onOpenPassport={(c) => {
-                      setSelectedCandidate(c);
-                      setShowDiscoveryReport(true);
-                    }}
-                    language={language}
-                  />
-                ))
-              ) : (
-                <div className="p-6 text-center rounded-2xl border border-dashed border-slate-200 dark:border-white/[0.08] text-xs text-slate-500 font-mono">
-                  {isRtl ? 'لا توجد مرشحات مطابقة للمرشح المحدد' : 'No candidates matching current filter'}
-                </div>
-              )}
-            </div>
-
-            {/* Expandable "Show scientific details" Panel for Scientists & Judges */}
-            <div className="pt-2 border-t border-slate-100 dark:border-white/[0.06]">
-              <button
-                type="button"
-                onClick={() => setShowScientificEvidenceDrawer(!showScientificEvidenceDrawer)}
-                className="w-full flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 transition cursor-pointer"
-              >
-                <div className="flex items-center gap-2 font-bold">
-                  <ShieldCheck className="w-4 h-4 text-cyan-500" />
-                  <span>{isRtl ? 'عرض التفاصيل العلمية والبيانات الدقيقة' : 'Show Scientific Details (FITS & WCS)'}</span>
-                </div>
-                {showScientificEvidenceDrawer ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-              </button>
-
-              {(showScientificEvidenceDrawer || presentationLevel === 'science') && currentResult && (
-                <div className="mt-3 p-3.5 rounded-2xl bg-slate-950/80 border border-cyan-500/30 text-[11px] font-mono text-slate-300 space-y-2 animate-in fade-in">
-                  <div className="grid grid-cols-2 gap-2 pb-2 border-b border-slate-800">
-                    <div>
-                      <span className="text-slate-500 block">WCS Projection:</span>
-                      <span className="text-cyan-400 font-bold">TAN-SIP Gnomonic</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Pixel Scale:</span>
-                      <span className="text-slate-200">6.15″ / pixel</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Variance Propagation:</span>
-                      <span className="text-slate-200">σ_D = √(σ₁² + σ₂²)</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block">Detection Cutoff:</span>
-                      <span className="text-amber-400 font-bold">&gt; 5.0σ MAD-clipped</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[10px] text-slate-500">
-                      FITS provenance: NASA/IPAC IRSA QR2 Level-2B
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setShowProvenance(true)}
-                      className="text-xs text-cyan-400 hover:underline cursor-pointer"
-                    >
-                      Audit Record &rarr;
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
         </div>
       </div>
 
@@ -1444,6 +1764,23 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           evidence={currentResult.evidence}
           onClose={() => setShowProvenance(false)}
           language={language}
+        />
+      )}
+
+      {/* Interactive 4-Step Visual Concept Explainer Modal */}
+      <InteractiveConceptExplainerModal
+        isOpen={isExplainerOpen}
+        onClose={() => setIsExplainerOpen(false)}
+        language={language}
+      />
+
+      {/* Evidence Export Dossier Modal */}
+      {showEvidenceExport && (
+        <EvidenceExportModal
+          investigation={currentResult}
+          selectedCandidate={selectedCandidate}
+          language={language}
+          onClose={() => setShowEvidenceExport(false)}
         />
       )}
     </div>

@@ -254,13 +254,25 @@ export class AstronomyRenderer {
     destCtx.scale(dpr, dpr);
 
     if (displayMode === 'presentation') {
+      // Two-stage high-order resampling (64 -> 256 -> targetSize) for smooth Gaussian PSF display
+      const interCanvas = document.createElement('canvas');
+      interCanvas.width = Math.min(256, targetSize);
+      interCanvas.height = Math.min(256, targetSize);
+      const interCtx = interCanvas.getContext('2d');
+      if (interCtx) {
+        interCtx.imageSmoothingEnabled = true;
+        interCtx.imageSmoothingQuality = 'high';
+        interCtx.drawImage(offscreen, 0, 0, interCanvas.width, interCanvas.height);
+      }
+
       destCtx.imageSmoothingEnabled = true;
       destCtx.imageSmoothingQuality = 'high';
+      destCtx.drawImage(interCanvas, 0, 0, targetSize, targetSize);
     } else {
-      // Science mode: Native detector pixels without synthetic blurring
+      // Science mode: Native uninterpolated detector pixels
       destCtx.imageSmoothingEnabled = false;
+      destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     }
-    destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     destCtx.restore();
   }
 
