@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { SPEX_ASSETS, SPEXMood } from '../spex/spexAssets';
+import { SpexPortrait } from '../spex/SpexPortrait';
 import { CandidateDetection, InvestigationResult } from '../science/types';
 import { Language } from '../utils/translations';
 import { ScienceTerm } from './ScienceTerm';
@@ -322,10 +323,11 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
             className="group relative w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-2xl bg-gradient-to-b from-amber-500/10 to-amber-500/5 dark:from-amber-500/20 dark:to-transparent border border-amber-500/30 p-1 flex items-center justify-center transition-transform hover:scale-105 active:scale-95 focus:outline-none focus:ring-2 focus:ring-amber-400"
             title={isRtl ? 'اضغط للدردشة مع SPEX' : 'Click to chat with SPEX'}
           >
-            <img
-              src={asset.imagePath}
+            <SpexPortrait
+              mood={currentMood}
+              size={80}
               alt={isRtl ? asset.labelAr : asset.labelEn}
-              className="w-full h-full object-contain filter drop-shadow-[0_4px_8px_rgba(245,158,11,0.25)] transition-all"
+              className="w-full h-full object-contain"
             />
             {isThinking && (
               <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center">
@@ -399,8 +401,9 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
             <div className="p-4 border-b border-slate-100 dark:border-white/[0.08] flex items-center justify-between bg-slate-50 dark:bg-[#080d16]">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 p-1 flex-shrink-0 flex items-center justify-center">
-                  <img
-                    src={asset.imagePath}
+                  <SpexPortrait
+                    mood={currentMood}
+                    size={36}
                     alt="SPEX"
                     className="w-full h-full object-contain"
                   />

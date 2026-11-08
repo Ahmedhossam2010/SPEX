@@ -7,6 +7,8 @@ export interface GameEngineCallbacks {
   onTerminalNear: (terminal: InteractiveTerminal | null) => void;
   onTerminalInteract: (terminal: InteractiveTerminal) => void;
   onPlayerPositionChange?: (pos: { x: number; y: number; z: number }) => void;
+  onTutorialMetrics?: (distanceMoved: number, yawRotatedDeg: number) => void;
+  onPointerLockChange?: (isLocked: boolean) => void;
 }
 
 export class GameEngine3D {
@@ -15,17 +17,19 @@ export class GameEngine3D {
   private camera: THREE.PerspectiveCamera;
   private renderer: THREE.WebGLRenderer;
   private player: PlayerAvatar;
-  private playerPos: THREE.Vector3 = new THREE.Vector3(0, 0, 8);
+  private playerPos: THREE.Vector3 = new THREE.Vector3(0, 0, 3.5); // Open floor facing North toward Terminal 1
   private playerRot: number = Math.PI; // Face north initially
 
   // Camera settings
   private cameraPitch: number = 0.35; // radians
   private cameraYaw: number = 0; // relative to player rotation
-  private cameraDistance: number = 5.5;
+  private cameraDistance: number = 5.2;
   private cameraTarget: THREE.Vector3 = new THREE.Vector3();
   private isPointerDown: boolean = false;
+  private isPointerLocked: boolean = false;
   private prevPointerX: number = 0;
   private prevPointerY: number = 0;
+  private pendingYawDeltaDeg: number = 0;
 
   // Station elements
   private terminals: InteractiveTerminal[] = [];
@@ -52,14 +56,20 @@ export class GameEngine3D {
   // Mobile virtual joystick overrides
   private mobileMoveVector: { x: number; y: number } | null = null;
 
+  // Objective Waypoint Guide
+  private waypointGroup: THREE.Group = new THREE.Group();
+  private waypointRing: THREE.Mesh | null = null;
+  private waypointBeam: THREE.Mesh | null = null;
+
   constructor(container: HTMLElement, callbacks: GameEngineCallbacks) {
     this.container = container;
     this.callbacks = callbacks;
 
-    // 1. Scene setup
+    // 1. Scene setup: Clean, high-visibility space station environment
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x070a12);
-    this.scene.fog = new THREE.FogExp2(0x070a12, 0.015);
+    this.scene.background = new THREE.Color(0x0a101d);
+    // Subtle distance fog only; does NOT turn interior rooms black
+    this.scene.fog = new THREE.FogExp2(0x0a101d, 0.001);
 
     // 2. Camera setup
     const aspect = container.clientWidth / (container.clientHeight || 1);
@@ -74,7 +84,7 @@ export class GameEngine3D {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.25;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -86,17 +96,84 @@ export class GameEngine3D {
     this.colliders = stationData.colliders;
     this.animatedObjects = stationData.animatedObjects;
 
-    // 5. Build Procedural Player Avatar
+    // 5. Waypoint Objective Beacon
+    this.initWaypointBeacon();
+
+    // 6. Build Procedural Player Avatar
     this.player = new PlayerAvatar();
     this.scene.add(this.player.group);
     this.player.group.position.copy(this.playerPos);
 
-    // 6. Setup event listeners
+    // 7. Setup event listeners
     this.initEventListeners();
 
-    // 7. Start render loop
+    // 8. Start render loop
     this.clock.start();
     this.render();
+  }
+
+  private initWaypointBeacon() {
+    this.waypointGroup = new THREE.Group();
+    // Concentric pulsing floor rings
+    const ringGeo = new THREE.RingGeometry(1.4, 1.6, 32);
+    ringGeo.rotateX(-Math.PI / 2);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x06b6d4,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85,
+    });
+    this.waypointRing = new THREE.Mesh(ringGeo, ringMat);
+    this.waypointGroup.add(this.waypointRing);
+
+    // Inner target disc
+    const innerGeo = new THREE.RingGeometry(0.2, 0.4, 24);
+    innerGeo.rotateX(-Math.PI / 2);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const innerMesh = new THREE.Mesh(innerGeo, innerMat);
+    this.waypointGroup.add(innerMesh);
+
+    // Vertical holographic beacon cylinder reaching upward
+    const beamGeo = new THREE.CylinderGeometry(0.3, 1.2, 5.0, 16, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x22d3ee,
+      transparent: true,
+      opacity: 0.25,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    this.waypointBeam = new THREE.Mesh(beamGeo, beamMat);
+    this.waypointBeam.position.y = 2.5;
+    this.waypointGroup.add(this.waypointBeam);
+
+    // Floating diamond at top of waypoint
+    const diamondGeo = new THREE.OctahedronGeometry(0.35, 0);
+    const diamondMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true });
+    const diamond = new THREE.Mesh(diamondGeo, diamondMat);
+    diamond.position.y = 5.2;
+    this.waypointGroup.add(diamond);
+
+    // Initially position at Terminal 1
+    const t1 = this.terminals.find((t) => t.missionNumber === 1);
+    if (t1) {
+      this.waypointGroup.position.set(t1.position.x, 0.05, t1.position.z);
+    }
+    this.scene.add(this.waypointGroup);
+  }
+
+  public setActiveMission(missionNumber: number) {
+    const target = this.terminals.find((t) => t.missionNumber === missionNumber);
+    if (target) {
+      this.waypointGroup.position.set(target.position.x, 0.05, target.position.z);
+      this.waypointGroup.visible = true;
+    } else {
+      this.waypointGroup.visible = false;
+    }
   }
 
   private initEventListeners() {
@@ -106,10 +183,30 @@ export class GameEngine3D {
 
     const el = this.renderer.domElement;
     el.addEventListener('pointerdown', this.onPointerDown);
+    el.addEventListener('click', this.onClickCanvas);
     window.addEventListener('pointermove', this.onPointerMove);
     window.addEventListener('pointerup', this.onPointerUp);
     el.addEventListener('wheel', this.onWheel, { passive: false });
+    document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
+
+  private onClickCanvas = () => {
+    if (!this.isPointerLocked && !this.isPaused) {
+      try {
+        const promise = this.renderer.domElement.requestPointerLock?.();
+        if (promise && typeof (promise as Promise<void>).catch === 'function') {
+          (promise as Promise<void>).catch(() => {});
+        }
+      } catch {
+        // Fallback gracefully without throwing
+      }
+    }
+  };
+
+  private onPointerLockChange = () => {
+    this.isPointerLocked = document.pointerLockElement === this.renderer.domElement;
+    this.callbacks.onPointerLockChange?.(this.isPointerLocked);
+  };
 
   private onResize = () => {
     if (!this.container) return;
@@ -196,15 +293,29 @@ export class GameEngine3D {
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (!this.isPointerDown) return;
-    const dx = e.clientX - this.prevPointerX;
-    const dy = e.clientY - this.prevPointerY;
-    this.prevPointerX = e.clientX;
-    this.prevPointerY = e.clientY;
+    let dx = 0;
+    let dy = 0;
 
-    const rotSpeed = 0.005;
-    this.cameraYaw -= dx * rotSpeed;
-    this.cameraPitch = Math.max(0.05, Math.min(1.2, this.cameraPitch + dy * rotSpeed));
+    if (this.isPointerLocked) {
+      dx = e.movementX || 0;
+      dy = e.movementY || 0;
+    } else if (this.isPointerDown) {
+      dx = e.clientX - this.prevPointerX;
+      dy = e.clientY - this.prevPointerY;
+      this.prevPointerX = e.clientX;
+      this.prevPointerY = e.clientY;
+    } else {
+      return;
+    }
+
+    const rotSpeed = 0.0035;
+    const yawDelta = dx * rotSpeed;
+    this.cameraYaw -= yawDelta;
+    this.cameraPitch = Math.max(0.06, Math.min(1.22, this.cameraPitch + dy * rotSpeed));
+
+    // Convert yaw delta to degrees for tutorial tracking
+    const degDelta = Math.abs(yawDelta) * (180 / Math.PI);
+    this.pendingYawDeltaDeg += degDelta;
   };
 
   private onPointerUp = () => {
@@ -372,6 +483,13 @@ export class GameEngine3D {
         z: this.playerPos.z,
       });
     }
+
+    // Report tutorial movement and rotation metrics
+    const horizontalDist = horizontalSpeed * delta;
+    if (this.callbacks.onTutorialMetrics && (horizontalDist > 0.0001 || this.pendingYawDeltaDeg > 0.001)) {
+      this.callbacks.onTutorialMetrics(horizontalDist, this.pendingYawDeltaDeg);
+    }
+    this.pendingYawDeltaDeg = 0;
   }
 
   // --- CAMERA FOLLOW & DAMPING ---
@@ -396,9 +514,18 @@ export class GameEngine3D {
       this.cameraTarget.z - offsetZ
     );
 
-    // Keep camera above floor
+    // Keep camera above floor and below ceiling
     if (desiredCamPos.y < 0.6) {
       desiredCamPos.y = 0.6;
+    }
+    if (desiredCamPos.y > 5.8) {
+      desiredCamPos.y = 5.8;
+    }
+
+    // Clamping inside room walls to prevent camera clipping into void
+    if (Math.abs(this.playerPos.x) <= 14.5 && Math.abs(this.playerPos.z) <= 11.5) {
+      desiredCamPos.x = THREE.MathUtils.clamp(desiredCamPos.x, -14.2, 14.2);
+      desiredCamPos.z = THREE.MathUtils.clamp(desiredCamPos.z, -11.2, 11.2);
     }
 
     this.camera.position.lerp(desiredCamPos, 1 - Math.exp(-10 * delta));
@@ -424,6 +551,32 @@ export class GameEngine3D {
     }
   }
 
+  // Public helpers
+  public getDistanceToTerminal(missionNumber: number): number {
+    const t = this.terminals.find((term) => term.missionNumber === missionNumber);
+    if (!t) return 0;
+    return this.playerPos.distanceTo(t.position);
+  }
+
+  public getPlayerPosition(): { x: number; y: number; z: number } {
+    return { x: this.playerPos.x, y: this.playerPos.y, z: this.playerPos.z };
+  }
+
+  public unlockPointer() {
+    if (document.pointerLockElement) {
+      try {
+        document.exitPointerLock?.();
+      } catch {
+        // Safe fallback
+      }
+    }
+    this.isPointerLocked = false;
+  }
+
+  public isLocked(): boolean {
+    return this.isPointerLocked;
+  }
+
   // --- MAIN ANIMATION LOOP ---
   private render = () => {
     this.animationFrameId = requestAnimationFrame(this.render);
@@ -438,6 +591,15 @@ export class GameEngine3D {
     for (const obj of this.animatedObjects) {
       if (obj.userData.spinAxis) {
         obj.rotateOnAxis(obj.userData.spinAxis, (obj.userData.spinSpeed || 0.5) * delta);
+      }
+    }
+
+    // 1b. Animate objective waypoint beacon
+    if (this.waypointGroup && this.waypointGroup.visible) {
+      this.waypointGroup.rotation.y += 1.0 * delta;
+      if (this.waypointBeam) {
+        const pulse = 0.2 + Math.sin(this.clock.elapsedTime * 3) * 0.1;
+        (this.waypointBeam.material as THREE.MeshBasicMaterial).opacity = pulse;
       }
     }
 
@@ -460,6 +622,8 @@ export class GameEngine3D {
       cancelAnimationFrame(this.animationFrameId);
     }
 
+    this.unlockPointer();
+
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -467,10 +631,12 @@ export class GameEngine3D {
     const el = this.renderer.domElement;
     if (el) {
       el.removeEventListener('pointerdown', this.onPointerDown);
+      el.removeEventListener('click', this.onClickCanvas);
       el.removeEventListener('wheel', this.onWheel);
     }
     window.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerUp);
+    document.removeEventListener('pointerlockchange', this.onPointerLockChange);
 
     this.renderer.dispose();
     if (this.container && this.renderer.domElement.parentElement === this.container) {

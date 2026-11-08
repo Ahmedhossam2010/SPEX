@@ -89,6 +89,7 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
         <Spex3DGame
           language={language}
           onBackToExplore={() => onExitToExplore()}
+          onBackToHome={onBackToHome}
         />
       ) : (
         <CosmicDetectiveGame

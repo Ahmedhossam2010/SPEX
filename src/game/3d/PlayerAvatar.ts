@@ -9,6 +9,7 @@ export class PlayerAvatar {
   public isRunning: boolean = false;
 
   // Sub-part references for procedural kinematics
+  private torsoGroup: THREE.Group;
   private leftLeg: THREE.Group;
   private rightLeg: THREE.Group;
   private leftArm: THREE.Group;
@@ -22,29 +23,29 @@ export class PlayerAvatar {
   constructor() {
     this.group = new THREE.Group();
 
-    // Palette: Navy suit (#0f172a), Graphite armour (#1e293b), Egyptian Gold (#f59e0b), Cyan visor (#22d3ee)
+    // Palette: Visible Sleek Navy suit (#1e293b), Bright Graphite armor (#334155), Radiant Egyptian Gold (#f59e0b), Luminous Cyan visor (#22d3ee)
     const suitMaterial = new THREE.MeshStandardMaterial({
-      color: 0x0f172a,
-      roughness: 0.6,
-      metalness: 0.2,
+      color: 0x1e293b,
+      roughness: 0.4,
+      metalness: 0.3,
     });
 
     const armorMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
-      roughness: 0.35,
-      metalness: 0.5,
+      color: 0x334155,
+      roughness: 0.25,
+      metalness: 0.65,
     });
 
     const goldMaterial = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
-      roughness: 0.25,
-      metalness: 0.85,
+      roughness: 0.2,
+      metalness: 0.9,
     });
 
     const visorMaterial = new THREE.MeshStandardMaterial({
       color: 0x06b6d4,
       emissive: 0x22d3ee,
-      emissiveIntensity: 0.7,
+      emissiveIntensity: 1.6,
       roughness: 0.1,
       metalness: 0.9,
     });
@@ -52,40 +53,40 @@ export class PlayerAvatar {
     const thrusterGlowMat = new THREE.MeshStandardMaterial({
       color: 0x38bdf8,
       emissive: 0x38bdf8,
-      emissiveIntensity: 1.2,
+      emissiveIntensity: 1.8,
       roughness: 0.2,
     });
 
     // --- 1. TORSO & CHESTPIECE ---
-    const torsoGroup = new THREE.Group();
-    torsoGroup.position.y = 1.0;
+    this.torsoGroup = new THREE.Group();
+    this.torsoGroup.position.y = 1.0;
 
     const chestGeo = new THREE.CylinderGeometry(0.28, 0.22, 0.65, 8);
     const chestMesh = new THREE.Mesh(chestGeo, suitMaterial);
     chestMesh.castShadow = true;
-    torsoGroup.add(chestMesh);
+    this.torsoGroup.add(chestMesh);
 
     // Armor breastplate
     const plateGeo = new THREE.BoxGeometry(0.36, 0.4, 0.22);
     const plateMesh = new THREE.Mesh(plateGeo, armorMaterial);
     plateMesh.position.set(0, 0.05, 0.08);
     plateMesh.castShadow = true;
-    torsoGroup.add(plateMesh);
+    this.torsoGroup.add(plateMesh);
 
     // Egyptian Mech Cat Golden Collar (Nemys/Aegis trim)
     const collarGeo = new THREE.TorusGeometry(0.24, 0.045, 6, 12);
     collarGeo.rotateX(Math.PI / 2);
     const collarMesh = new THREE.Mesh(collarGeo, goldMaterial);
     collarMesh.position.set(0, 0.32, 0);
-    torsoGroup.add(collarMesh);
+    this.torsoGroup.add(collarMesh);
 
     // Belt and buckle
     const beltGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.08, 8);
     const beltMesh = new THREE.Mesh(beltGeo, goldMaterial);
     beltMesh.position.set(0, -0.3, 0);
-    torsoGroup.add(beltMesh);
+    this.torsoGroup.add(beltMesh);
 
-    this.group.add(torsoGroup);
+    this.group.add(this.torsoGroup);
 
     // --- 2. HEAD & HELMET ---
     this.head = new THREE.Group();
@@ -226,6 +227,7 @@ export class PlayerAvatar {
       // Pulse jet thrusters
       const thrusterScale = 1.0 + Math.sin(this.animTime * 20) * 0.3;
       this.jetThrusters.forEach((t) => t.scale.set(thrusterScale, thrusterScale * 1.5, thrusterScale));
+      this.torsoGroup.position.y = 1.0;
     } else if (isMoving && speed > 0.1) {
       // Walking / running stride
       const strideAmp = this.isRunning ? 0.75 : 0.5;
@@ -238,8 +240,8 @@ export class PlayerAvatar {
       this.leftArm.rotation.x = -legAngle * 0.8;
       this.rightArm.rotation.x = legAngle * 0.8;
 
-      // Subtle torso bob
-      this.group.position.y = Math.abs(Math.sin(this.animTime * 2)) * 0.06;
+      // Subtle torso bobbing (applied to torsoGroup, NOT this.group.position)
+      this.torsoGroup.position.y = 1.0 + Math.abs(Math.sin(this.animTime * 2)) * 0.06;
 
       this.jetThrusters.forEach((t) => t.scale.set(1, 1, 1));
     } else {
@@ -250,7 +252,7 @@ export class PlayerAvatar {
       this.leftArm.rotation.x = THREE.MathUtils.damp(this.leftArm.rotation.x, breath, 6, delta);
       this.rightArm.rotation.x = THREE.MathUtils.damp(this.rightArm.rotation.x, -breath, 6, delta);
       this.head.rotation.y = Math.sin(this.animTime * 0.2) * 0.08;
-      this.group.position.y = THREE.MathUtils.damp(this.group.position.y, 0, 6, delta);
+      this.torsoGroup.position.y = 1.0 + breath * 0.5;
 
       this.jetThrusters.forEach((t) => t.scale.set(0.6, 0.6, 0.6));
     }

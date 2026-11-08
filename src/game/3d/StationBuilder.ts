@@ -33,7 +33,66 @@ export class StationBuilder {
     const colliders: StationCollisionBox[] = [];
     const animatedObjects: THREE.Object3D[] = [];
 
-    // --- 0. COSMIC SKYDOME ---
+    // --- 0. LIGHTING RIG (Balanced, High-Visibility Studio Lighting) ---
+    // Soft cool-white ambient base fill ensuring zero pure-black shadows
+    const ambientLight = new THREE.AmbientLight(0xe2e8f0, 1.5);
+    scene.add(ambientLight);
+
+    // Sky cyan to floor graphite hemisphere illumination
+    const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x1e293b, 1.2);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    // Key directional light: Celestial sunlight pouring in through the north panoramic window
+    const sunLight = new THREE.DirectionalLight(0xfff7ed, 2.2);
+    sunLight.position.set(0, 16, -18);
+    sunLight.target.position.set(0, 0, 0);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 1024;
+    sunLight.shadow.mapSize.height = 1024;
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 60;
+    sunLight.shadow.camera.left = -25;
+    sunLight.shadow.camera.right = 25;
+    sunLight.shadow.camera.top = 25;
+    sunLight.shadow.camera.bottom = -25;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    // Fill light from south ceiling
+    const fillLight = new THREE.DirectionalLight(0x93c5fd, 1.2);
+    fillLight.position.set(0, 14, 16);
+    fillLight.target.position.set(0, 0, 0);
+    scene.add(fillLight);
+    scene.add(fillLight.target);
+
+    // Hub center ceiling chandelier downlight
+    const hubCenterLight = new THREE.PointLight(0xffffff, 2.6, 24);
+    hubCenterLight.position.set(0, 5.5, 0);
+    scene.add(hubCenterLight);
+
+    // North window observation bay light
+    const windowBayLight = new THREE.PointLight(0x38bdf8, 2.8, 20);
+    windowBayLight.position.set(0, 4.5, -9);
+    scene.add(windowBayLight);
+
+    // South entrance bay light
+    const southBayLight = new THREE.PointLight(0xfbbf24, 2.2, 18);
+    southBayLight.position.set(0, 4.5, 9);
+    scene.add(southBayLight);
+
+    // East wing laboratory light
+    const eastLabLight = new THREE.PointLight(0x10b981, 2.4, 20);
+    eastLabLight.position.set(20, 4.5, 0);
+    scene.add(eastLabLight);
+
+    // West wing laboratory light
+    const westLabLight = new THREE.PointLight(0xa855f7, 2.4, 20);
+    westLabLight.position.set(-20, 4.5, 0);
+    scene.add(westLabLight);
+
+    // --- 0b. COSMIC SKYDOME ---
     const skyGeo = new THREE.SphereGeometry(180, 24, 16);
     const skyMat = new THREE.MeshBasicMaterial({
       map: skyTexture,
@@ -44,38 +103,38 @@ export class StationBuilder {
     scene.add(skyMesh);
     animatedObjects.push(skyMesh);
 
-    // Standard materials
+    // Standard materials with readable lightness
     const floorMat = new THREE.MeshStandardMaterial({
       map: floorTexture,
-      roughness: 0.35,
-      metalness: 0.4,
+      roughness: 0.25,
+      metalness: 0.35,
     });
     floorTexture.repeat.set(8, 8);
 
     const wallMat = new THREE.MeshStandardMaterial({
       map: wallTexture,
-      roughness: 0.5,
-      metalness: 0.3,
+      roughness: 0.45,
+      metalness: 0.25,
     });
     wallTexture.repeat.set(4, 2);
 
     const metalFrameMat = new THREE.MeshStandardMaterial({
-      color: 0x1e293b,
+      color: 0x334155,
       roughness: 0.25,
-      metalness: 0.8,
+      metalness: 0.75,
     });
 
     const cyanGlowMat = new THREE.MeshStandardMaterial({
       color: 0x06b6d4,
       emissive: 0x22d3ee,
-      emissiveIntensity: 0.9,
+      emissiveIntensity: 1.4,
       roughness: 0.2,
     });
 
     const amberGlowMat = new THREE.MeshStandardMaterial({
       color: 0xf59e0b,
       emissive: 0xfbbf24,
-      emissiveIntensity: 0.9,
+      emissiveIntensity: 1.4,
       roughness: 0.2,
     });
 
@@ -412,10 +471,10 @@ export class StationBuilder {
 
       scene.add(termGroup);
 
-      // Terminal collider box
+      // Terminal collider box (snug around pedestal)
       colliders.push({
-        min: new THREE.Vector3(x - 1.0, 0, z - 1.0),
-        max: new THREE.Vector3(x + 1.0, 2.5, z + 1.0),
+        min: new THREE.Vector3(x - 0.55, 0, z - 0.55),
+        max: new THREE.Vector3(x + 0.55, 2.0, z + 0.55),
       });
 
       terminals.push({

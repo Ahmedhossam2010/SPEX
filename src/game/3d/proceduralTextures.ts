@@ -14,22 +14,30 @@ export class ProceduralTextures {
   // Sci-fi station floor metal plating with subtle grid grooves
   public static createFloorTexture(): THREE.Texture {
     if (typeof document === 'undefined') {
-      return this.createFallbackDataTexture(12, 16, 29);
+      return this.createFallbackDataTexture(32, 42, 60);
     }
 
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return this.createFallbackDataTexture(12, 16, 29);
+    if (!ctx) return this.createFallbackDataTexture(32, 42, 60);
 
-    // Base dark graphite floor
-    ctx.fillStyle = '#0c101d';
+    // Visible, brushed research station metal floor plating
+    ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Subtle plate grid panels
-    ctx.strokeStyle = '#1e293b';
-    ctx.lineWidth = 4;
+    // Subtle brushed metal noise/texture
+    ctx.fillStyle = '#263449';
+    for (let x = 0; x < 512; x += 128) {
+      for (let y = 0; y < 512; y += 128) {
+        ctx.fillRect(x + 4, y + 4, 120, 120);
+      }
+    }
+
+    // Plate grid seams with metallic bevel
+    ctx.strokeStyle = '#475569';
+    ctx.lineWidth = 3;
     for (let x = 0; x <= 512; x += 128) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
@@ -43,26 +51,40 @@ export class ProceduralTextures {
       ctx.stroke();
     }
 
-    // Corner rivets and sci-fi accent lines
-    ctx.fillStyle = '#334155';
+    // High-contrast corner rivets
+    ctx.fillStyle = '#94a3b8';
     for (let x = 64; x < 512; x += 128) {
       for (let y = 64; y < 512; y += 128) {
         ctx.beginPath();
-        ctx.arc(x - 50, y - 50, 2, 0, Math.PI * 2);
-        ctx.arc(x + 50, y - 50, 2, 0, Math.PI * 2);
-        ctx.arc(x - 50, y + 50, 2, 0, Math.PI * 2);
-        ctx.arc(x + 50, y + 50, 2, 0, Math.PI * 2);
+        ctx.arc(x - 52, y - 52, 2.5, 0, Math.PI * 2);
+        ctx.arc(x + 52, y - 52, 2.5, 0, Math.PI * 2);
+        ctx.arc(x - 52, y + 52, 2.5, 0, Math.PI * 2);
+        ctx.arc(x + 52, y + 52, 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
-    // Subtle cyan pathway guide line
-    ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
-    ctx.lineWidth = 2;
+    // Bright illuminated walking guide pathway (Center Neon Strip)
+    ctx.strokeStyle = '#06b6d4';
+    ctx.lineWidth = 6;
     ctx.beginPath();
     ctx.moveTo(256, 0);
     ctx.lineTo(256, 512);
     ctx.stroke();
+
+    // Directional chevron markings on guide path
+    ctx.fillStyle = '#38bdf8';
+    for (let y = 32; y < 512; y += 96) {
+      ctx.beginPath();
+      ctx.moveTo(256, y - 12);
+      ctx.lineTo(268, y);
+      ctx.lineTo(262, y);
+      ctx.lineTo(256, y - 6);
+      ctx.lineTo(250, y);
+      ctx.lineTo(244, y);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
@@ -71,48 +93,62 @@ export class ProceduralTextures {
     return texture;
   }
 
-  // Station wall panel texture with high-tech carbon framing
+  // Station wall panel texture with high-tech carbon framing & illuminated light strips
   public static createWallTexture(): THREE.Texture {
     if (typeof document === 'undefined') {
-      return this.createFallbackDataTexture(9, 13, 22);
+      return this.createFallbackDataTexture(30, 41, 59);
     }
 
     const canvas = document.createElement('canvas');
     canvas.width = 512;
     canvas.height = 512;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return this.createFallbackDataTexture(9, 13, 22);
+    if (!ctx) return this.createFallbackDataTexture(30, 41, 59);
 
-    // Dark slate background
-    ctx.fillStyle = '#090d16';
+    // Visible architectural slate base
+    ctx.fillStyle = '#1e293b';
     ctx.fillRect(0, 0, 512, 512);
 
-    // Panel borders
-    ctx.strokeStyle = '#1e2638';
-    ctx.lineWidth = 6;
-    ctx.strokeRect(8, 8, 496, 496);
+    // Inner panel plate with lighter contrast
+    ctx.fillStyle = '#293548';
+    ctx.fillRect(16, 16, 480, 480);
 
-    // Inner bevel
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(24, 24, 464, 464);
+    // Panel outer borders with metallic bevel
+    ctx.strokeStyle = '#64748b';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(10, 10, 492, 492);
+
+    // Inner architectural recessed border
+    ctx.strokeStyle = '#334155';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(28, 28, 456, 456);
+
+    // Eye-level neon accent light strip (Cyan & Gold)
+    ctx.fillStyle = '#06b6d4';
+    ctx.fillRect(28, 240, 456, 8);
+    ctx.fillStyle = '#f59e0b';
+    ctx.fillRect(28, 252, 456, 4);
 
     // Diagonal hazard warning stripes at bottom
-    ctx.fillStyle = 'rgba(245, 158, 11, 0.15)';
-    for (let i = 0; i < 512; i += 32) {
+    ctx.fillStyle = '#f59e0b';
+    for (let i = 28; i < 484; i += 28) {
       ctx.beginPath();
-      ctx.moveTo(i, 490);
-      ctx.lineTo(i + 16, 490);
-      ctx.lineTo(i + 32, 512);
-      ctx.lineTo(i + 16, 512);
+      ctx.moveTo(i, 460);
+      ctx.lineTo(i + 14, 460);
+      ctx.lineTo(i + 28, 484);
+      ctx.lineTo(i + 14, 484);
       ctx.closePath();
       ctx.fill();
     }
 
     // Technical nomenclature text
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
-    ctx.font = 'bold 12px monospace';
-    ctx.fillText('SPHEREx ORBITAL LAB // SECTOR-7B', 36, 48);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 15px monospace';
+    ctx.fillText('SPHEREx ORBITAL PLATFORM // SECTOR-01 MAIN CONTROL', 36, 52);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '11px monospace';
+    ctx.fillText('NASA IPAC INFRARED MISSION RESEARCH STATION', 36, 72);
 
     const texture = new THREE.CanvasTexture(canvas);
     texture.wrapS = THREE.RepeatWrapping;
