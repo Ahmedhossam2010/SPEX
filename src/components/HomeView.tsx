@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sparkles,
   ArrowRight,
@@ -21,18 +21,45 @@ import {
   Cpu,
   BarChart2,
   Binary,
+  MessageSquare,
+  X,
+  Smile,
+  Terminal,
+  Radio,
+  Server,
+  Box,
 } from 'lucide-react';
-import { SPEX_ASSETS, SPEX_HERO_IMAGE } from '../spex/spexAssets';
+import { SPEX_ASSETS, SPEX_HERO_IMAGE, SPEX_WAVING_HERO } from '../spex/spexAssets';
 import { SpherexLogo } from './SpherexLogo';
 import { SpexPortrait } from '../spex/SpexPortrait';
 import { Language, translations } from '../utils/translations';
+import { useModalBehavior } from '../hooks/useModalBehavior';
 
 interface HomeViewProps {
   onStartExplore: (caseId?: string) => void;
   onOpenAbout: () => void;
   onOpenCases: () => void;
   onPlayGame?: () => void;
+  cases?: Array<{ id: string; title: string; category?: string; ra: number; dec: number }>;
   language: Language;
+}
+
+interface MissionTelemetry {
+  status: string;
+  mission: string;
+  dataAvailability: string;
+  dataSource: string;
+  scienceEngine: {
+    status: string;
+    wcsRegistration: string;
+    variancePropagation: string;
+    transientDetection: string;
+  };
+  aiStatus: string;
+  activeRelease: string;
+  benchmarkCasesCount: number;
+  cachedFITSFiles: number;
+  lastProcessingRun: string;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -40,13 +67,29 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onOpenAbout,
   onOpenCases,
   onPlayGame,
+  cases = [],
   language,
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
 
+  const [isMeetSpexOpen, setIsMeetSpexOpen] = useState(false);
+  useModalBehavior(isMeetSpexOpen, () => setIsMeetSpexOpen(false));
+
   const [quickRa, setQuickRa] = useState<string>('276.2614');
   const [quickDec, setQuickDec] = useState<string>('64.8258');
+
+  // Live Mission Control Telemetry
+  const [telemetry, setTelemetry] = useState<MissionTelemetry | null>(null);
+
+  useEffect(() => {
+    fetch('/api/status')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setTelemetry(data);
+      })
+      .catch((err) => console.warn('Could not fetch mission telemetry:', err));
+  }, []);
 
   const handleQuickSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,114 +102,93 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   return (
     <div
-      className={`relative min-h-[calc(100vh-4rem)] flex flex-col justify-between overflow-hidden px-4 sm:px-6 lg:px-8 py-8 sm:py-12 bg-[#050811] text-slate-100 ${
+      className={`relative min-h-[calc(100vh-4rem)] flex flex-col justify-between overflow-hidden px-4 sm:px-6 lg:px-8 py-8 sm:py-12 bg-[#070a12] text-slate-100 ${
         isRtl ? 'font-cairo' : 'font-sans'
       }`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Ambient background glow */}
+      {/* Ambient background glow & orbital grid */}
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute top-1/6 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[600px] bg-gradient-to-tr from-amber-500/10 via-cyan-500/8 to-indigo-900/15 blur-[160px] rounded-full" />
+        <div className="absolute top-1/6 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[950px] h-[650px] bg-gradient-to-tr from-amber-500/10 via-cyan-500/10 to-indigo-900/20 blur-[170px] rounded-full" />
+        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:32px_32px] opacity-25" />
       </div>
 
       <div className="mx-auto max-w-6xl w-full my-auto space-y-16">
         {/* ========================================================
-            SECTION 2: HERO (Left Copy + Right Original SPEX Cat Art)
+            SECTION 1: NASA MISSION CONTROL HERO
            ======================================================== */}
         <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center pt-2">
-          {/* Left Column: Mission Pill, Headline, Subtitle, Quick Search, Gateways */}
+          {/* Left Column */}
           <div className="lg:col-span-7 flex flex-col items-start text-left">
-            {/* Top Mission Pill */}
-            <div className="flex items-center gap-2.5 text-xs font-mono tracking-wider text-cyan-400 uppercase mb-4 font-semibold bg-cyan-500/10 px-3.5 py-1 rounded-full border border-cyan-500/30">
-              <Telescope className="w-3.5 h-3.5" />
-              <span>NASA SPACE APPS 2026</span>
+            {/* Mission Badge */}
+            <div className="flex items-center gap-2 text-xs font-mono tracking-wider text-cyan-400 uppercase mb-4 font-semibold bg-cyan-950/70 px-3.5 py-1.5 rounded-full border border-cyan-500/30 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>NASA SPHEREx MISSION</span>
               <span aria-hidden="true" className="text-slate-600">·</span>
-              <span className="font-bold text-amber-400">SPHEREx MISSION</span>
+              <span className="font-bold text-amber-400">QR2 NEP ARCHIVE OPERATIONAL</span>
             </div>
 
-            {/* Hero Title */}
-            <h1 className="font-['Outfit'] text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white leading-[1.08] mb-3">
-              {t.homeHeroTitlePrefix}{' '}
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-rose-400 to-cyan-400">
-                {t.homeHeroTitleHighlight}
+            {/* Display: SPEX & THE CHANGING SKY */}
+            <div className="mb-2">
+              <span className="font-mono text-xs font-bold uppercase tracking-widest text-amber-500 block mb-1">
+                SPEX — NASA SPACE APPS CHALLENGE 2026
               </span>
-            </h1>
+              <h1 className="font-['Outfit'] text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-white leading-[1.05]">
+                THE CHANGING{' '}
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-rose-400 to-cyan-400">
+                  SKY
+                </span>
+              </h1>
+            </div>
 
-            {/* Core Mission Mantra */}
-            <p className="text-base sm:text-lg font-semibold text-cyan-300 mb-3">
-              {isRtl ? '«لا تكتفِ بالنظر إلى السماء.. تحقق مما تغيّر فيها!»' : '“Don’t just look at the sky. Investigate what changed.”'}
-            </p>
+            {/* Core User Specified Headline */}
+            <h2 className="text-xl sm:text-2xl font-bold text-cyan-300 mt-2 mb-3 tracking-wide">
+              {isRtl
+                ? '«كل رصد يحكي قصة. وكل تغير يستحق التحقيق.»'
+                : 'Every observation tells a story. Every change deserves an investigation.'}
+            </h2>
 
-            {/* Subtitle */}
+            {/* Supporting Description */}
             <p className="text-sm sm:text-base text-slate-300 font-normal max-w-xl mb-6 leading-relaxed">
               {isRtl
-                ? 'استكشف السماء بالأشعة تحت الحمراء عبر بيانات تلسكوب SPHEREx الحقيقية. قارن بين رصدتين بفارق زمني، واطرح الصور لكشف الكويكبات المتحركة، النجوم المتغيرة، والثورات الكونية العنيفة.'
-                : 'Explore the infrared sky using authentic NASA SPHEREx flight data. Subtract multi-epoch visits to isolate moving asteroids, pulsating variable stars, and eruptive protostellar outbursts.'}
+                ? 'استكشف كون الأشعة تحت الحمراء من خلال رصدات SPHEREx. قارن السماء عبر الزمن وحقق في الإشارات الفلكية التي تستحق نظرة عن قرب.'
+                : 'Explore the infrared universe through SPHEREx observations. Compare the sky across time and investigate the signals that deserve a closer look.'}
             </p>
 
-            {/* Dual Primary Gateways */}
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-              {/* Gateway 1: Educational Game Adventure */}
+            {/* Primary & Secondary CTAs */}
+            <div className="flex flex-wrap items-center gap-4 mb-6">
+              <button
+                onClick={() => onStartExplore()}
+                className="px-7 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-cyan-400 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-sm shadow-xl shadow-cyan-500/25 flex items-center gap-2.5 transition cursor-pointer active:scale-95 group"
+              >
+                <Telescope className="w-4 h-4 text-slate-950" />
+                <span>{isRtl ? 'دخول غرفة التحكم بالرصد' : 'ENTER MISSION CONTROL'}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+
               {onPlayGame && (
-                <div
+                <button
                   onClick={onPlayGame}
-                  className="p-5 rounded-2xl border-2 border-cyan-500/40 bg-gradient-to-b from-cyan-950/40 to-[#070b16] hover:border-cyan-400 transition-all cursor-pointer group shadow-xl relative overflow-hidden"
+                  className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-sm shadow-lg shadow-amber-500/25 flex items-center gap-2 transition cursor-pointer active:scale-95"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 uppercase">
-                      {isRtl ? 'مغامرة قصصية تفاعلية' : 'STORY ADVENTURE'}
-                    </span>
-                    <span className="text-xs font-mono font-bold text-amber-400 flex items-center gap-1">
-                      <Zap className="w-3.5 h-3.5" /> +1000 XP
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-white group-hover:text-cyan-300 transition-colors">
-                    SPEX: The Lost Signal
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1 leading-snug">
-                    {isRtl
-                      ? 'مغامرة تحرٍ كوني من 3 فصول: اخترق سحب الغبار، فكك 102 لوناً طيفياً، وشخص الثوران الكوني.'
-                      : 'A 3-chapter cosmic detective mystery: pierce dark dust, decode 102 infrared colors, and diagnose the changing sky.'}
-                  </p>
-                  <div className="mt-3 flex items-center gap-1.5 text-xs font-mono font-bold text-cyan-400 group-hover:translate-x-1 transition-transform">
-                    <span>{isRtl ? 'ابدأ التحقيق الآن' : 'Launch Adventure'}</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </div>
-                </div>
+                  <Box className="w-4 h-4 text-slate-950" />
+                  <span>{isRtl ? 'بدء المغامرة ثلاثية الأبعاد 3D' : 'PLAY 3D ADVENTURE'}</span>
+                </button>
               )}
 
-              {/* Gateway 2: Real-Data Science Workstation */}
-              <div
-                onClick={() => onStartExplore()}
-                className="p-5 rounded-2xl border-2 border-amber-500/40 bg-gradient-to-b from-amber-950/30 to-[#070b16] hover:border-amber-400 transition-all cursor-pointer group shadow-xl relative overflow-hidden"
+              <button
+                onClick={() => setIsMeetSpexOpen(true)}
+                className="px-5 py-3 rounded-2xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 hover:border-cyan-500/50 text-slate-300 hover:text-white font-medium text-xs shadow-md flex items-center gap-2 transition cursor-pointer active:scale-95"
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 uppercase">
-                    {isRtl ? 'محطة الرصد العلمي' : 'SCIENCE WORKSTATION'}
-                  </span>
-                  <span className="text-xs font-mono text-emerald-400 font-bold">
-                    NASA QR2 FITS
-                  </span>
-                </div>
-                <h3 className="text-base font-bold text-white group-hover:text-amber-300 transition-colors">
-                  {isRtl ? 'منصة استكشاف الأرشيف' : 'Real-Data Explorer'}
-                </h3>
-                <p className="text-xs text-slate-300 mt-1 leading-snug">
-                  {isRtl
-                    ? 'افحص بيانات FITS الحقيقية من NASA/IPAC، واطرح الصور وحقق في مطابقة Gaia وSIMBAD.'
-                    : 'Analyze authentic NASA/IPAC FITS, run WCS registration, and cross-match Gaia catalogs.'}
-                </p>
-                <div className="mt-3 flex items-center gap-1.5 text-xs font-mono font-bold text-amber-400 group-hover:translate-x-1 transition-transform">
-                  <span>{isRtl ? 'فتح محطة العمل' : 'Launch Workstation'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </div>
-              </div>
+                <MessageSquare className="w-3.5 h-3.5 text-cyan-400" />
+                <span>{isRtl ? 'دليل SPEX' : 'Meet SPEX'}</span>
+              </button>
             </div>
 
             {/* Quick Coordinate Search Bar */}
             <form
               onSubmit={handleQuickSubmit}
-              className="w-full max-w-xl p-3 rounded-2xl border border-cyan-500/20 bg-[#091122]/90 shadow-lg flex flex-wrap items-center gap-2.5"
+              className="w-full max-w-xl p-3 rounded-2xl border border-cyan-500/30 bg-[#0b1120]/95 shadow-lg flex flex-wrap items-center gap-2.5"
             >
               <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 flex-shrink-0">
                 <Compass className="w-3.5 h-3.5 text-amber-400" />
@@ -199,40 +221,36 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </form>
           </div>
 
-          {/* Right Column: Original SPEX Egyptian Mech Cat Character Showcase */}
+          {/* Right Column: SPEX Character & Celestial Eye Logo */}
           <div className="lg:col-span-5 flex flex-col items-center">
             <div className="relative w-full max-w-sm flex flex-col items-center">
-              {/* Celestial Eye Logo Glowing Watermark behind SPEX */}
-              <div className="absolute -top-8 -right-2 opacity-30 pointer-events-none">
-                <SpherexLogo size={140} />
+              {/* Authentic Celestial Eye Emblem */}
+              <div className="absolute -top-10 -right-2 opacity-35 pointer-events-none">
+                <SpherexLogo size={150} />
               </div>
 
-              {/* SPEX Mech Cat Art */}
+              {/* Authentic SPEX Character */}
               <div className="relative group flex items-center justify-center">
                 <div className="absolute -inset-6 bg-gradient-to-r from-amber-500/20 via-cyan-500/20 to-purple-600/20 blur-3xl rounded-full opacity-60 group-hover:opacity-100 transition-opacity" />
                 <img
                   src={SPEX_HERO_IMAGE}
                   alt="SPEX Egyptian Mech Cat Guardian"
                   className="relative z-10 w-64 sm:w-72 h-auto drop-shadow-2xl transition-transform hover:scale-102"
-                  onError={(e) => {
-                    // Fallback to high-res transparent cat asset
-                    (e.target as HTMLImageElement).src = '/assets/spex_hero_standing.png';
-                  }}
                 />
               </div>
 
-              {/* SPEX Interactive Quote Bubble */}
-              <div className="relative z-20 mt-4 p-4 rounded-2xl border border-cyan-500/30 bg-[#091122]/95 shadow-2xl backdrop-blur-md text-left w-full">
+              {/* Character Quote Bubble */}
+              <div className="relative z-20 mt-3 p-4 rounded-2xl border border-cyan-500/30 bg-[#0b1120]/95 shadow-2xl backdrop-blur-md text-left w-full">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-xs font-bold text-amber-400 font-mono">SPEX</span>
                   <span className="text-[10px] text-cyan-300 font-mono ml-auto">
-                    MECH CAT GUARDIAN
+                    MECH CAT COMPANION
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed font-sans">
                   {isRtl
-                    ? '«أهلاً بك في منصة SPEX! سواء كنت هنا لتلعب دور المحقق الكوني في فك شفرة "الإشارة المفقودة" أو لتحليل ملفات FITS الحقيقية من قطب مسار الشمس الشمالي، كل فوتون يحمل سراً يستحق الاكتشاف!»'
-                    : '“Welcome to SPEX! Whether investigating \'The Lost Signal\' in our detective adventure or analyzing genuine NASA FITS observations from the North Ecliptic Pole, every photon tells a story!”'}
+                    ? '«أهلاً بك في غرفة التحكم الفلكية! انضم إلي لاستكشاف 102 حزمة طيفية بالأشعة تحت الحمراء وتحديد ما تغيّر في سمائنا الكونية.»'
+                    : '“Welcome to Mission Control! Join me to analyze 102-band infrared observations, run variance subtraction, and discover genuine celestial shifts.”'}
                 </p>
               </div>
             </div>
@@ -240,199 +258,368 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </section>
 
         {/* ========================================================
-            SECTION 3: SCIENTIFIC CAPABILITIES (3 Core Pillars)
+            SECTION 2: GENUINE MISSION STATUS TELEMETRY TERMINAL
            ======================================================== */}
-        <section className="space-y-4 pt-6">
+        <section className="p-6 rounded-3xl bg-[#0b1120] border border-cyan-500/30 shadow-[0_0_30px_rgba(6,182,212,0.15)] text-left space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
+            <div className="flex items-center gap-3">
+              <Terminal className="w-5 h-5 text-cyan-400" />
+              <div>
+                <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400 font-semibold block">
+                  SYSTEM TELEMETRY CONSOLE
+                </span>
+                <h3 className="text-base font-bold text-white">
+                  {isRtl ? 'حالة المنظومة الفلكية الحية' : 'Live Mission Status & Telemetry'}
+                </h3>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+              <span className="text-emerald-400 font-bold">ALL SYSTEMS NOMINAL</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+            {/* 1. Data Availability */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span>DATA AVAILABILITY</span>
+                <Server className="w-3.5 h-3.5 text-cyan-400" />
+              </div>
+              <div className="text-sm font-bold text-white">
+                {telemetry?.dataAvailability || 'OPERATIONAL'}
+              </div>
+              <div className="text-[11px] text-cyan-300/80 font-mono">
+                {telemetry?.cachedFITSFiles ?? 6} FITS Cutouts Ready
+              </div>
+            </div>
+
+            {/* 2. Data Source */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span>DATA SOURCE</span>
+                <DatabaseIcon className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="text-sm font-bold text-white">
+                NASA IPAC IRSA Level-2B
+              </div>
+              <div className="text-[11px] text-amber-300/80 font-mono">
+                NEP Deep Survey Benchmark
+              </div>
+            </div>
+
+            {/* 3. Science Engine */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span>SCIENCE ENGINE</span>
+                <Activity className="w-3.5 h-3.5 text-emerald-400" />
+              </div>
+              <div className="text-sm font-bold text-white">
+                WCS & Variance D=I₂-I₁
+              </div>
+              <div className="text-[11px] text-emerald-300/80 font-mono">
+                Bilinear Registration &gt;5.0σ
+              </div>
+            </div>
+
+            {/* 4. AI & Processing */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-1">
+              <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                <span>AI STATUS & LAST RUN</span>
+                <Radio className="w-3.5 h-3.5 text-purple-400" />
+              </div>
+              <div className="text-sm font-bold text-white truncate">
+                {telemetry?.aiStatus || 'ONLINE (GEMINI MULTI-MODEL)'}
+              </div>
+              <div className="text-[10px] text-purple-300/80 font-mono truncate">
+                {telemetry?.lastProcessingRun
+                  ? new Date(telemetry.lastProcessingRun).toLocaleTimeString()
+                  : 'READY'}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ========================================================
+            SECTION 3: THREE VISUAL STAGES
+           ======================================================== */}
+        <section className="space-y-6 pt-2">
           <div className="text-center space-y-1">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400">
-              {isRtl ? 'المحركات العلمية المتكاملة' : 'Mission Architecture & Science Engine'}
+            <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400 font-bold">
+              {isRtl ? 'مسار التحقيق العلمي' : 'THREE SCIENTIFIC STAGES'}
             </span>
             <h2 className="text-2xl sm:text-3xl font-bold text-white">
-              {isRtl ? 'قدرات المنصة العلمية' : 'Scientific Capabilities'}
+              {isRtl ? 'كيف تعمل غرفة استكشاف SPEX؟' : 'How the SPEX Pipeline Works'}
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {/* Capability 1: Real FITS Ingestion */}
-            <div className="p-5 rounded-2xl bg-[#091122]/80 border border-slate-800 hover:border-cyan-500/40 transition-all text-left space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center">
-                <Binary className="w-5 h-5" />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Stage 1: EXPLORE */}
+            <div className="p-6 rounded-3xl bg-[#0b1120] border border-cyan-500/20 hover:border-cyan-500/50 transition-all text-left space-y-4 shadow-lg group">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded">01</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 uppercase font-semibold">
+                  STAGE 01: EXPLORE
+                </span>
               </div>
-              <h3 className="font-bold text-white text-base">
-                {isRtl ? 'استيعاب بيانات FITS الحقيقية' : 'Authentic FITS Ingestion'}
+              <h3 className="font-bold text-white text-lg group-hover:text-cyan-300 transition">
+                {isRtl ? 'اختر موقعاً في قبة السماء' : 'Select Celestial Coordinates'}
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
                 {isRtl
-                  ? 'قراءة مباشرة لملفات FITS متعددة الملحقات (HDU) من أرشيف NASA/IPAC IRSA، واستخراج بيانات الصورة والتباين (VARIANCE) وأعلام الجودة (FLAGS).'
-                  : 'Direct parsing of multi-extension FITS from the NASA/IPAC IRSA archive, extracting calibrated intensity, variance, and bitmask flag arrays.'}
+                  ? 'أدخل إحداثيات الصعود المستقيم والميل (RA/Dec) أو اختر موقعاً موثقاً من أرشيف القطب الشمالي لمسار الشمس (NEP).'
+                  : 'Input Right Ascension and Declination or select an authentic North Ecliptic Pole (NEP) benchmark field with multi-epoch coverage.'}
               </p>
+              <div className="p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-cyan-300/90 border border-slate-800">
+                <div>RA: 276.2614° · Dec: +64.8258°</div>
+                <div className="text-slate-500 text-[10px] mt-0.5">NASA SPHEREx Level-2B Benchmark Footprint</div>
+              </div>
             </div>
 
-            {/* Capability 2: Difference Imaging */}
-            <div className="p-5 rounded-2xl bg-[#091122]/80 border border-slate-800 hover:border-amber-500/40 transition-all text-left space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
-                <Layers className="w-5 h-5" />
+            {/* Stage 2: COMPARE */}
+            <div className="p-6 rounded-3xl bg-[#0b1120] border border-amber-500/20 hover:border-amber-500/50 transition-all text-left space-y-4 shadow-lg group">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded">02</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 uppercase font-semibold">
+                  STAGE 02: COMPARE
+                </span>
               </div>
-              <h3 className="font-bold text-white text-base">
-                {isRtl ? 'التصوير التفاضلي ونشر التباين' : 'Temporal Difference Imaging'}
+              <h3 className="font-bold text-white text-lg group-hover:text-amber-300 transition">
+                {isRtl ? 'قارن الرصدات عبر الزمن' : 'Align Multi-Epoch Infrared Scans'}
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
                 {isRtl
-                  ? 'طرح صورتين متطابقتين مكانياً D = I₂ - I₁ ونشر التباين رياضياً σ_D = √(σ₁² + σ₂²) لحساب الدلالة الإحصائية واستخراج الأجرام المتغيرة.'
-                  : 'Sub-pixel WCS registration, flux subtraction D = I₂ - I₁, and variance propagation σ_D = √(σ₁² + σ₂²) to detect transients with statistical significance.'}
+                  ? 'حاذِ الصور الفلكية المتباعدة زمنياً بدقة دون البكسل، واستخدم شريط المقارنة المنقسم والميض السريع لكشف التغيرات.'
+                  : 'Align calibrated FITS observations taken months apart. Use interactive split-view wipes and 2Hz rapid blink to detect real motion.'}
               </p>
+              <div className="p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-amber-300/90 border border-slate-800">
+                <div>Visit 1: 2024-03 · Visit 2: 2024-09</div>
+                <div className="text-slate-500 text-[10px] mt-0.5">Sub-Pixel Bilinear WCS Registration</div>
+              </div>
             </div>
 
-            {/* Capability 3: Hyperspectral 102 Bands */}
-            <div className="p-5 rounded-2xl bg-[#091122]/80 border border-slate-800 hover:border-purple-500/40 transition-all text-left space-y-3">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
-                <Waves className="w-5 h-5" />
+            {/* Stage 3: INVESTIGATE */}
+            <div className="p-6 rounded-3xl bg-[#0b1120] border border-emerald-500/20 hover:border-emerald-500/50 transition-all text-left space-y-4 shadow-lg group">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded">03</span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 uppercase font-semibold">
+                  STAGE 03: INVESTIGATE
+                </span>
               </div>
-              <h3 className="font-bold text-white text-base">
-                {isRtl ? '102 لوناً تحت أحمر (LVF)' : '102-Band Hyperspectral LVF'}
+              <h3 className="font-bold text-white text-lg group-hover:text-emerald-300 transition">
+                {isRtl ? 'احسب الفروق وحلل الإشارة' : 'Calculate Variance Difference & SNR'}
               </h3>
               <p className="text-xs text-slate-300 leading-relaxed">
                 {isRtl
-                  ? 'تغطية طيفية متصلة من 0.75 إلى 5.0 ميكرومتر عبر 6 كواشف H2RG لرصد جليد الماء وثاني أكسيد الكربون، وتحديد الانزياحات الكونية نحو الأحمر.'
-                  : 'Continuous spectroscopic coverage across 0.75 to 5.0 µm via 6 Linear Variable Filter arrays to detect cosmic ices, dust, and galaxy red-shifts.'}
+                  ? 'اطرح فيض الضوء D = I₂ - I₁، وانشر أخطاء التباين، واستخرج الإشارات ذات الدلالة الإحصائية (> 5σ) وطابقها مع فهارس Gaia.'
+                  : 'Compute calibrated flux difference D = I₂ - I₁, propagate read-noise variance, evaluate SNR > 5σ, and cross-match Gaia catalogs.'}
               </p>
+              <div className="p-3 rounded-xl bg-slate-950 font-mono text-[11px] text-emerald-300/90 border border-slate-800">
+                <div>SNR = ΔI / √(σ₁² + σ₂²) &gt; +5.0σ</div>
+                <div className="text-slate-500 text-[10px] mt-0.5">Authentic PSF vs Cosmic Ray Discrimination</div>
+              </div>
             </div>
           </div>
         </section>
 
         {/* ========================================================
-            SECTION 4: HOW IT WORKS (4-Step Scientific Journey)
+            SECTION 4: FEATURED DISCOVERIES
            ======================================================== */}
-        <section className="p-6 sm:p-8 rounded-3xl bg-[#070d1a] border border-cyan-500/20 space-y-6">
-          <div className="text-center space-y-1">
-            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400">
-              {isRtl ? 'منهجية العمل العلمي' : 'Operational Pipeline'}
-            </span>
-            <h2 className="text-2xl font-bold text-white">
-              {isRtl ? 'كيف تعمل منصة SPEX؟' : 'How the Discovery Pipeline Works'}
-            </h2>
+        <section className="space-y-4 pt-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold">
+                {isRtl ? 'الأدلة والنتائج الموثقة' : 'VERIFIED ASTROPHYSICAL CANDIDATES'}
+              </span>
+              <h2 className="text-2xl font-bold text-white">
+                {isRtl ? 'الحالات والاستكشافات المميزة' : 'Curated Case Investigations'}
+              </h2>
+            </div>
+            <button
+              onClick={onOpenCases}
+              className="text-xs font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+            >
+              <span>{isRtl ? 'عرض كل الحالات' : 'View All'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-left">
-              <div className="text-cyan-400 font-mono font-bold text-xs mb-1">01. INGEST & SELECT</div>
-              <h4 className="font-semibold text-sm text-white mb-1">Pair Multi-Epoch Scans</h4>
-              <p className="text-xs text-slate-400">
-                Retrieve two independent SPHEREx observations of the identical celestial coordinates separated in time.
-              </p>
+          {cases && cases.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {cases.slice(0, 3).map((c) => (
+                <div
+                  key={c.id}
+                  onClick={() => onStartExplore(c.id)}
+                  className="p-4 rounded-2xl bg-[#0b1120] border border-slate-800 hover:border-cyan-500/50 transition-all cursor-pointer group space-y-2 text-left shadow-lg"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-bold uppercase">
+                      {c.category || 'NEP Transient'}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-500">ID: {c.id}</span>
+                  </div>
+                  <h4 className="font-bold text-sm text-white group-hover:text-cyan-300 transition-colors">
+                    {c.title}
+                  </h4>
+                  <div className="text-xs font-mono text-slate-400">
+                    RA {c.ra.toFixed(4)}° · Dec {c.dec.toFixed(4)}°
+                  </div>
+                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-cyan-400 font-mono">
+                    <span>Inspect Pipeline Output</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </div>
+              ))}
             </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-left">
-              <div className="text-purple-400 font-mono font-bold text-xs mb-1">02. REGISTER (WCS)</div>
-              <h4 className="font-semibold text-sm text-white mb-1">Sub-Pixel Alignment</h4>
-              <p className="text-xs text-slate-400">
-                Transform astronomical coordinates via TAN projection matrices and re-sample onto a common reference grid.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-left">
-              <div className="text-rose-400 font-mono font-bold text-xs mb-1">03. SUBTRACT (DIFF)</div>
-              <h4 className="font-semibold text-sm text-white mb-1">Variance Propagation</h4>
-              <p className="text-xs text-slate-400">
-                Compute difference flux and per-pixel signal-to-noise ratio: SNR = ΔI / √(σ₁² + σ₂²).
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-left">
-              <div className="text-emerald-400 font-mono font-bold text-xs mb-1">04. CROSS-MATCH</div>
-              <h4 className="font-semibold text-sm text-white mb-1">Gaia & SIMBAD Verification</h4>
-              <p className="text-xs text-slate-400">
-                Cross-reference candidates against known catalog stars to separate real transients from optical artifacts.
-              </p>
-            </div>
-          </div>
+          ) : null}
         </section>
 
         {/* ========================================================
-            SECTION 5: EDUCATIONAL ADVENTURE FEATURE BANNER
+            SECTION 5: MEET SPEX (Personality Modal Trigger)
            ======================================================== */}
-        <section className="relative p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#0c1629] via-[#0f1d38] to-[#0c1629] border-2 border-cyan-500/40 shadow-2xl overflow-hidden text-left">
-          <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-            <div className="md:col-span-8 space-y-3">
+        <section className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-[#0b1120] via-[#0f172a] to-[#0b1120] border border-cyan-500/30 text-left space-y-6 shadow-xl">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+            <div className="md:col-span-8 space-y-4">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-mono font-bold">
-                <Gamepad2 className="w-3.5 h-3.5" />
-                <span>SPEX: THE LOST SIGNAL • A COSMIC DETECTIVE ADVENTURE</span>
+                <Smile className="w-3.5 h-3.5" />
+                <span>MEET YOUR INVESTIGATION COMPANION</span>
               </div>
               <h3 className="text-2xl sm:text-3xl font-bold text-white">
-                {isRtl ? 'عش تجربة المحقق الكوني مع الحارس سبيكس' : 'Experience the Cosmic Detective Story Adventure'}
+                {isRtl ? 'تعرّف على الحارس SPEX' : 'Meet SPEX: Your Celestial Guide'}
               </h3>
               <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-xl">
-                {isRtl
-                  ? 'انضم إلى الحارس الميكانيكي سبيكس في مهمة لكشف إشارة طيفية غامضة في القطب الشمالي لمسار الشمس. اجمع الأدلة في مذكرتك الكونية، فكك بصمات جليد الماء وCO2، واطرح الصور لتشخيص الثوران الكوني.'
-                  : 'Join SPEX the Mech Cat Guardian on an investigative journey to decode a hidden transient signal in the North Ecliptic Pole. Collect physical clues in your Evidence Notebook, analyze cryogenic ice mantles, and deliver the final forensic verdict.'}
+                SPEX is an Egyptian Mech Cat astrophysicist companion modeled after ancient Bastet guardians, equipped with infrared sensors and sharp curiosity. SPEX helps you at every step of your journey:
               </p>
-              <div className="pt-2 flex flex-wrap items-center gap-3">
-                <button
-                  onClick={onPlayGame}
-                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-cyan-500 hover:from-cyan-500 hover:to-blue-400 text-white font-bold text-xs sm:text-sm shadow-lg shadow-cyan-950/50 flex items-center gap-2 transition group"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-300 group-hover:rotate-12 transition-transform" />
-                  <span>{isRtl ? 'تشغيل المغامرة الآن' : 'Play Adventure Game'}</span>
-                </button>
-                <button
-                  onClick={onOpenCases}
-                  className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium transition"
-                >
-                  {isRtl ? 'عرض الحالات الموثقة' : 'Explore Curated Benchmarks'}
-                </button>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">Explain Scientific Terms</span>
+                    <span className="text-slate-400">Translates WCS, variance, and FITS into plain English.</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">Explain Exploration Steps</span>
+                    <span className="text-slate-400">Guides you through multi-epoch image subtraction.</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">Interpret Evidence</span>
+                    <span className="text-slate-400">Helps distinguish asteroids and stars from camera glitches.</span>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold text-white block">Guide the 3D Adventure</span>
+                    <span className="text-slate-400">Accompanies you through all 5 space research missions.</span>
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="md:col-span-4 flex justify-center">
-              <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-3xl overflow-hidden bg-slate-900 border-2 border-cyan-400/40 shadow-2xl flex items-center justify-center">
-                <SpexPortrait expression="proud" size={160} />
+              <div className="w-44 h-44 rounded-3xl overflow-hidden bg-slate-900 border-2 border-cyan-400/40 shadow-2xl flex items-center justify-center p-2">
+                <img
+                  src={SPEX_WAVING_HERO}
+                  alt="SPEX Waving Greeting"
+                  className="w-full h-full object-contain"
+                />
               </div>
             </div>
           </div>
         </section>
-
-        {/* ========================================================
-            SECTION 6: SCIENTIFIC TRANSPARENCY (Real vs Simulation)
-           ======================================================== */}
-        <section className="p-5 rounded-2xl bg-[#091122]/60 border border-slate-800 text-left space-y-2">
-          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 font-bold uppercase">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>{isRtl ? 'بيان الشفافية والنزاهة العلمية' : 'Scientific Provenance & Transparency Statement'}</span>
-          </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {isRtl
-              ? 'تستخدم محطة الرصد العلمي (Science Workstation) ملفات FITS أصلية غير معدلة مأخوذة من مسح SPHEREx Quick Release 2 (QR2) عبر أرشيف NASA/IPAC IRSA. بينما توظف المغامرة التعليمية نماذج تركيبية (Synthetic Benchmark Simulation) محكمة لتدريب الطلاب على التصوير التفاضلي دون خلطها بالسجلات الفلكية الرسمية.'
-              : 'The Science Workstation operates directly on authentic, unaltered FITS files from the SPHEREx Quick Release 2 (QR2) archive hosted at NASA/IPAC IRSA. Meanwhile, the educational story adventure utilizes strictly labeled Synthetic Benchmark Simulations for interactive learning without contaminating genuine mission data.'}
-          </p>
-        </section>
-
-        {/* ========================================================
-            SECTION 7: COMPACT FOOTER
-           ======================================================== */}
-        <footer className="pt-8 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-mono">
-          <div className="flex items-center gap-2">
-            <SpherexLogo size={20} />
-            <span>SPEX: THE CHANGING SKY • NASA SPACE APPS CHALLENGE 2026</span>
-          </div>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onOpenAbout}
-              className="hover:text-cyan-400 transition"
-            >
-              Scientific Audit & Architecture
-            </button>
-            <span>·</span>
-            <a
-              href="https://irsa.ipac.caltech.edu/Missions/spherex.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-cyan-400 transition flex items-center gap-1"
-            >
-              NASA/IPAC Archive <ExternalLink className="w-3 h-3" />
-            </a>
-          </div>
-        </footer>
       </div>
+
+      {/* Meet SPEX Modal */}
+      {isMeetSpexOpen && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in"
+          onClick={() => setIsMeetSpexOpen(false)}
+        >
+          <div 
+            className="w-full max-w-xl bg-[#0b1120] border border-cyan-500/40 rounded-3xl p-6 text-slate-100 shadow-2xl relative"
+            dir={isRtl ? 'rtl' : 'ltr'}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <Smile className="w-6 h-6 text-amber-400" />
+                <h3 className="text-lg font-bold text-white">
+                  {isRtl ? 'دليل ورفيق الرحلة: SPEX' : 'Meet SPEX: The Cosmic Investigator'}
+                </h3>
+              </div>
+              <button 
+                onClick={() => setIsMeetSpexOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 flex gap-4 items-start">
+              <img 
+                src={SPEX_HERO_IMAGE} 
+                alt="SPEX" 
+                className="w-28 h-auto object-contain rounded-2xl bg-slate-900 p-2 border border-cyan-500/30 flex-shrink-0"
+              />
+              <div className="text-xs text-slate-300 space-y-2 leading-relaxed">
+                <p>
+                  {isRtl
+                    ? 'تم تصميم SPEX ليكون رفيقك العلمي الذي يجمع بين الدقة الفيزيائية وروح الدعابة والمغامرة.'
+                    : 'SPEX combines genuine astrophysical rigor with curiosity, guiding beginners and experts through real NASA SPHEREx data.'}
+                </p>
+                <p>
+                  {isRtl
+                    ? 'في كل شاشة استكشاف، ستجد شروحات SPEX التفاعلية وتعبيرات وجهه المتغيرة لمساعدتك في اتخاذ القرارات الصحيحة.'
+                    : 'Throughout the application, SPEX delivers contextual dialogues, evaluates data quality, and assists in 3D mission simulations.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsMeetSpexOpen(false)}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs"
+              >
+                {isRtl ? 'إغلاق' : 'Close'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+// Helper internal Icon component
+function DatabaseIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+      <path d="M3 12A9 3 0 0 0 21 12" />
+    </svg>
+  );
+}

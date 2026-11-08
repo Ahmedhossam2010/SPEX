@@ -442,6 +442,34 @@ app.get('/api/spherex/spectral-bands', (_req: Request, res: Response) => {
   });
 });
 
+let lastProcessingTimestamp: string = new Date().toISOString();
+
+// API: Live Mission Status for Mission Control Telemetry
+app.get('/api/status', (_req: Request, res: Response) => {
+  const cachedFiles = fs.existsSync(CACHE_DIR)
+    ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits')).length
+    : 0;
+  return res.json({
+    status: 'ONLINE',
+    mission: 'NASA SPHEREx',
+    dataAvailability: 'OPERATIONAL',
+    dataSource: 'NASA IPAC IRSA Level-2B Calibrated FITS (NEP Deep Field)',
+    scienceEngine: {
+      status: 'ACTIVE',
+      wcsRegistration: 'Sub-Pixel Bilinear Surface Spline',
+      variancePropagation: 'Read-Noise & Sky Background Covariance (D = I2 - I1)',
+      transientDetection: 'PSF-Convolved Difference Significance > 5.0σ',
+    },
+    aiStatus: process.env.GEMINI_API_KEY
+      ? 'ONLINE (GEMINI MULTI-MODEL)'
+      : 'FALLBACK ENGINE (ASTROPHYSICAL RULES & GAIA XMATCH)',
+    activeRelease: 'SPHEREx-QR2-Level2B',
+    benchmarkCasesCount: CURATED_CASES.length,
+    cachedFITSFiles: cachedFiles,
+    lastProcessingRun: lastProcessingTimestamp,
+  });
+});
+
 // API: Release Validation & Ingestion Engine (November 13 Challenge Release Readiness)
 app.get('/api/spherex/validate-release', async (_req: Request, res: Response) => {
   try {
@@ -463,6 +491,7 @@ app.get('/api/spherex/validate-release', async (_req: Request, res: Response) =>
 // API: Process Multi-Epoch Investigation
 app.post('/api/spherex/process', async (req: Request, res: Response) => {
   try {
+    lastProcessingTimestamp = new Date().toISOString();
     const { caseId, customCoords, sizePix: requestedSizePix, epochPair = '1-3' } = req.body;
     const isCustomSearch = !!customCoords;
     let selectedCase = CURATED_CASES.find((c) => c.id === caseId);

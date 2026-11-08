@@ -3533,6 +3533,27 @@ app.get("/api/spherex/spectral-bands", (_req, res) => {
     channels: SPHEREX_102_CHANNELS
   });
 });
+var lastProcessingTimestamp = (/* @__PURE__ */ new Date()).toISOString();
+app.get("/api/status", (_req, res) => {
+  const cachedFiles = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".fits")).length : 0;
+  return res.json({
+    status: "ONLINE",
+    mission: "NASA SPHEREx",
+    dataAvailability: "OPERATIONAL",
+    dataSource: "NASA IPAC IRSA Level-2B Calibrated FITS (NEP Deep Field)",
+    scienceEngine: {
+      status: "ACTIVE",
+      wcsRegistration: "Sub-Pixel Bilinear Surface Spline",
+      variancePropagation: "Read-Noise & Sky Background Covariance (D = I2 - I1)",
+      transientDetection: "PSF-Convolved Difference Significance > 5.0\u03C3"
+    },
+    aiStatus: process.env.GEMINI_API_KEY ? "ONLINE (GEMINI MULTI-MODEL)" : "FALLBACK ENGINE (ASTROPHYSICAL RULES & GAIA XMATCH)",
+    activeRelease: "SPHEREx-QR2-Level2B",
+    benchmarkCasesCount: CURATED_CASES.length,
+    cachedFITSFiles: cachedFiles,
+    lastProcessingRun: lastProcessingTimestamp
+  });
+});
 app.get("/api/spherex/validate-release", async (_req, res) => {
   try {
     const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".fits"));
@@ -3550,6 +3571,7 @@ app.get("/api/spherex/validate-release", async (_req, res) => {
 });
 app.post("/api/spherex/process", async (req, res) => {
   try {
+    lastProcessingTimestamp = (/* @__PURE__ */ new Date()).toISOString();
     const { caseId, customCoords, sizePix: requestedSizePix, epochPair = "1-3" } = req.body;
     const isCustomSearch = !!customCoords;
     let selectedCase = CURATED_CASES.find((c) => c.id === caseId);
@@ -3850,43 +3872,55 @@ ${JSON.stringify(structuredContext, null, 2)}
 
 QUESTION: "${userMessage || defaultQuestion}"
 Answer in 1-2 concise sentences with mood tag.`;
-    try {
-      const ai = getGenAIClient();
-      if (ai) {
-        const response = await ai.models.generateContent({
-          model: "gemini-3.1-flash-lite",
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: `${systemPrompt}
+    const primaryModel = process.env.PRIMARY_MODEL || "gemini-3.1-flash-lite";
+    const secondaryModel = process.env.SECONDARY_MODEL || "gemini-2.5-flash";
+    const candidateModels = [primaryModel, secondaryModel];
+    const ai = getGenAIClient();
+    if (ai) {
+      for (const modelToTry of candidateModels) {
+        try {
+          const timeoutPromise = new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("AI request timed out after 8000ms")), 8e3)
+          );
+          const generatePromise = ai.models.generateContent({
+            model: modelToTry,
+            contents: [
+              {
+                role: "user",
+                parts: [{ text: `${systemPrompt}
 
 ${userPrompt}` }]
+              }
+            ]
+          });
+          const response = await Promise.race([generatePromise, timeoutPromise]);
+          const replyText = response?.text || "";
+          if (replyText) {
+            let mood = "explaining";
+            const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+            let cleanReply = replyText;
+            if (moodMatch) {
+              try {
+                const moodObj = JSON.parse(moodMatch[1]);
+                if (moodObj.mood) mood = moodObj.mood;
+              } catch (e) {
+              }
+              cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, "").trim();
+            } else {
+              if (evidence?.classification === "SIGNIFICANT CHANGE DETECTED") mood = "eureka";
+              else if (evidence?.classification === "POSSIBLE ARTIFACT") mood = "sassy";
+              else if (evidence?.classification === "NO SIGNIFICANT CHANGE DETECTED") mood = "serious";
+              else mood = "explaining";
             }
-          ]
-        });
-        const replyText = response.text || "";
-        if (replyText) {
-          let mood = "explaining";
-          const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
-          let cleanReply = replyText;
-          if (moodMatch) {
-            try {
-              const moodObj = JSON.parse(moodMatch[1]);
-              if (moodObj.mood) mood = moodObj.mood;
-            } catch (e) {
-            }
-            cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, "").trim();
-          } else {
-            if (evidence?.classification === "SIGNIFICANT CHANGE DETECTED") mood = "eureka";
-            else if (evidence?.classification === "POSSIBLE ARTIFACT") mood = "sassy";
-            else if (evidence?.classification === "NO SIGNIFICANT CHANGE DETECTED") mood = "serious";
-            else mood = "explaining";
+            return res.json({ reply: cleanReply, mood, engine: "gemini", model: modelToTry });
           }
-          return res.json({ reply: cleanReply, mood });
+        } catch (modelErr) {
+          console.warn(`[SPEX AI] Attempt with model ${modelToTry} failed:`, modelErr.message);
+          if (modelErr.message?.includes("401") || modelErr.message?.includes("403") || modelErr.message?.includes("API_KEY_INVALID")) {
+            break;
+          }
         }
       }
-    } catch (genAiError) {
-      console.warn("[SPEX AI] Gemini call unavailable, falling back to grounded response:", genAiError.message);
     }
     const cls = evidence?.classification ?? "NO SIGNIFICANT CHANGE DETECTED";
     const cadenceSec = structuredContext.startToStartCadenceSec;
@@ -3927,7 +3961,12 @@ ${userPrompt}` }]
         fallbackReply = `Photometric baseline verified stable across ${baselineLabelEn}. Difference residuals are strictly consistent with the Gaussian noise floor.`;
       }
     }
-    return res.json({ reply: fallbackReply, mood: fallbackMood });
+    return res.json({
+      reply: fallbackReply,
+      mood: fallbackMood,
+      engine: "offline_grounded",
+      model: "deterministic-astronomy-v1"
+    });
   } catch (err) {
     console.error("SPEX AI chat error:", err);
     return res.json({
@@ -3936,6 +3975,17 @@ ${userPrompt}` }]
     });
   }
 });
+app.use("/assets", express.static(path.join(process.cwd(), "public", "assets"), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith(".png")) {
+      res.setHeader("Content-Type", "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+    } else if (filePath.endsWith(".svg")) {
+      res.setHeader("Content-Type", "image/svg+xml");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+    }
+  }
+}));
 async function startServer() {
   if (process.env.NODE_ENV === "production") {
     app.use(express.static(path.join(process.cwd(), "dist")));

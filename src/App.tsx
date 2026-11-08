@@ -212,6 +212,7 @@ export function App() {
             onOpenAbout={() => setActiveTab('about')}
             onOpenCases={() => setActiveTab('cases')}
             onPlayGame={() => setActiveTab('game')}
+            cases={cases}
             language={language}
           />
         )}

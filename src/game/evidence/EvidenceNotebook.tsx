@@ -6,7 +6,7 @@ import { SpexPortrait } from '../../spex/SpexPortrait';
 
 export interface ClueItem {
   id: string;
-  chapter: 1 | 2 | 3;
+  chapter: 1 | 2 | 3 | 4 | 5;
   title: string;
   titleAr: string;
   timestamp: string;

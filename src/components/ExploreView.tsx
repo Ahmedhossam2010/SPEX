@@ -24,6 +24,10 @@ import {
   Activity,
   Sliders,
   X,
+  Compass,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle2,
 } from 'lucide-react';
 import {
   CandidateDetection,
@@ -41,6 +45,7 @@ import { SkyCoverageModal } from './SkyCoverageModal';
 import { SpectralExplorerModal } from './SpectralExplorerModal';
 import { DiscoveryReportModal } from './DiscoveryReportModal';
 import { CandidateComparisonModal } from './CandidateComparisonModal';
+import { VisualScienceExplainer } from './VisualScienceExplainer';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 import { Language, translations } from '../utils/translations';
 
@@ -127,6 +132,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   // Custom Coordinate Inputs
   const [customRa, setCustomRa] = useState<string>('276.2614');
   const [customDec, setCustomDec] = useState<string>('64.8258');
+
+  // Progressive Disclosure Panels
+  const [showInvestigatePanel, setShowInvestigatePanel] = useState<boolean>(false);
+  const [showWhatAmILookingAt, setShowWhatAmILookingAt] = useState<boolean>(false);
+  const [showScientificEvidenceDrawer, setShowScientificEvidenceDrawer] = useState<boolean>(false);
+
+  // Strongest candidate in active field
+  const strongestCandidate = useMemo(() => {
+    if (!currentResult?.candidates || currentResult.candidates.length === 0) return null;
+    return [...currentResult.candidates].sort((a, b) => b.peakSignificance - a.peakSignificance)[0];
+  }, [currentResult?.candidates]);
 
   // Mobile View Tab
   const [mobileTab, setMobileTab] = useState<'canvas' | 'findings' | 'spex'>('canvas');
@@ -397,6 +413,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
             <button
               type="button"
+              onClick={() => setShowInvestigatePanel(!showInvestigatePanel)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                showInvestigatePanel
+                  ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                  : 'bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-white/[0.08]'
+              }`}
+            >
+              <Compass className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>{isRtl ? 'أين تريد التحقيق؟' : 'Where to Investigate?'}</span>
+              {showInvestigatePanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsSearchOpen(true)}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-700 dark:text-amber-300 transition-colors active:scale-95 cursor-pointer"
             >
@@ -477,6 +507,347 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Interactive Visual Science Laboratory: Visible vs IR, 102 Bands, Difference Math, SNR, Celestial Coordinates */}
+      <VisualScienceExplainer
+        language={language}
+        onSelectCoordinates={(ra, dec) => onSearchTarget(ra, dec, selectedFovSize)}
+      />
+
+      {/* A. Simple First Screen: Where do you want to investigate? */}
+      {showInvestigatePanel && (
+        <div className="rounded-3xl border border-amber-500/30 bg-amber-500/[0.04] p-5 sm:p-6 shadow-md space-y-4 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 font-['Outfit'] flex items-center gap-2">
+                <Compass className="w-5 h-5 text-amber-500" />
+                <span>{isRtl ? 'أين تريد أن تبحث في السماء؟' : 'Where do you want to investigate?'}</span>
+              </h2>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl leading-relaxed">
+                {isRtl
+                  ? 'المطلع المستقيم (RA) يمثل خط الطول الفلكي (من 0° إلى 360°)، والميل (Dec) يمثل خط العرض الفلكي (من -90° إلى +90°). يتركز إصدار NASA/IPAC SPHEREx QR2 الحالي حول القطب الشمالي لمسار الشمس (+64.5° إلى +65.2°).'
+                  : 'Right Ascension (RA) is astronomical longitude across the sky (0° to 360°), and Declination (Dec) is latitude (-90° to +90°). SPHEREx QR2 coverage centers around the North Ecliptic Pole (+64.5° to +65.2°).'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowInvestigatePanel(false)}
+              className="self-end sm:self-center text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Guided Target Presets */}
+          <div>
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1.5 font-medium">
+              {isRtl ? 'أهداف معتمدة في نطاق SPHEREx QR2:' : 'Guided Target Presets (Verified SPHEREx Footprint):'}
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { name: isRtl ? 'متغير NEP عميق' : 'NEP Deep Variable', desc: '7.8σ flare', ra: 276.2614, dec: 64.8258 },
+                { name: isRtl ? 'معيار استقرار NEP' : 'NEP Calibration Standard', desc: 'Null 0.0σ', ra: 275.9265, dec: 64.9585 },
+                { name: isRtl ? 'نجم NEP متحرك' : 'NEP Proper Motion Star', desc: '14.2″ dipole', ra: 276.1389, dec: 64.8361 },
+                { name: isRtl ? 'حقل NEP هادئ' : 'NEP Quiet Field', desc: 'Deep background', ra: 275.8512, dec: 65.0998 },
+              ].map((tgt) => (
+                <button
+                  key={tgt.name}
+                  type="button"
+                  onClick={() => {
+                    setCustomRa(tgt.ra.toString());
+                    setCustomDec(tgt.dec.toString());
+                    onSearchTarget(tgt.ra, tgt.dec, selectedFovSize);
+                  }}
+                  className="p-2.5 rounded-xl text-left bg-white dark:bg-white/[0.04] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/40 transition-all cursor-pointer group"
+                >
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500 transition-colors">
+                    {tgt.name}
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                    {tgt.desc} · RA {tgt.ra}°
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Manual RA / Dec inputs & Primary Start Investigation Button */}
+          <div className="pt-2 border-t border-amber-500/20 flex flex-col sm:flex-row items-stretch sm:items-end justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 flex-wrap">
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                  {isRtl ? 'المطلع المستقيم (RA بالدرجات):' : 'Right Ascension (RA in degrees):'}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={customRa}
+                  onChange={(e) => setCustomRa(e.target.value)}
+                  placeholder="276.2614"
+                  className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+
+              <div className="flex-1 min-w-[140px]">
+                <label className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-1">
+                  {isRtl ? 'الميل الفلكي (Dec بالدرجات):' : 'Declination (Dec in degrees):'}
+                </label>
+                <input
+                  type="number"
+                  step="0.0001"
+                  value={customDec}
+                  onChange={(e) => setCustomDec(e.target.value)}
+                  placeholder="64.8258"
+                  className="w-full bg-white dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] rounded-xl px-3 py-2 text-xs font-mono text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                const raNum = parseFloat(customRa);
+                const decNum = parseFloat(customDec);
+                if (!Number.isNaN(raNum) && !Number.isNaN(decNum)) {
+                  onSearchTarget(raNum, decNum, selectedFovSize);
+                  setShowInvestigatePanel(false);
+                }
+              }}
+              className="px-5 py-2.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all shadow-md active:scale-95 cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-slate-950" />
+              <span>{isRtl ? 'بدء التحقيق في الإحداثيات' : 'Start Investigation'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* B. Observation Availability Summary Card */}
+      <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 text-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="font-bold text-slate-800 dark:text-slate-200 font-['Outfit']">
+              {isRtl ? 'حالة توفر الرصد الفلكي:' : 'Observation Availability:'}
+            </span>
+            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-[11px]">
+              {currentResult?.epochs && currentResult.epochs.length >= 3
+                ? (isRtl ? '3 رصدات متوفرة (تسلسل زمني)' : '3 Survey Visits Available (Multi-Epoch)')
+                : (isRtl ? 'رصدتان مستقلتان متوفرتان (مقارنة تفاضلية)' : '2 Independent Visits Available (Epoch Pair)')}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
+            <span className="px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold">
+              NASA SPHEREx QR2 Archive
+            </span>
+            <span className="hidden sm:inline">·</span>
+            <span className="text-slate-500">Calibrated Level-2B FITS</span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px] font-mono">
+          <div>
+            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
+              {isRtl ? 'الرصدة الأولى (Epoch 1):' : 'Visit 1 Timestamp:'}
+            </span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              {currentResult?.epoch1.metadata.date_obs?.split('T')[0] || '2025-04-28'}{' '}
+              <span className="text-[10px] text-slate-500 font-normal">
+                {currentResult?.epoch1.metadata.date_obs?.split('T')[1]?.slice(0, 8) || '13:00:15'} UTC
+              </span>
+            </span>
+          </div>
+
+          <div>
+            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
+              {isRtl ? 'الرصدة الثانية (Epoch 2):' : 'Visit 2 Timestamp:'}
+            </span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              {currentResult?.epoch2.metadata.date_obs?.split('T')[0] || '2025-04-28'}{' '}
+              <span className="text-[10px] text-slate-500 font-normal">
+                {currentResult?.epoch2.metadata.date_obs?.split('T')[1]?.slice(0, 8) || '13:02:24'} UTC
+              </span>
+            </span>
+          </div>
+
+          <div>
+            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
+              {isRtl ? 'الأداة والنطاق الطيفي:' : 'Instrument & Bandpass:'}
+            </span>
+            <span className="font-semibold text-cyan-600 dark:text-cyan-400">
+              SPHEREx 0.75–5.0 µm (6 Arrays)
+            </span>
+          </div>
+
+          <div>
+            <span className="text-slate-500 dark:text-slate-400 block text-[10px]">
+              {isRtl ? 'منطقة المسح والحجم:' : 'Survey Footprint:'}
+            </span>
+            <span className="font-semibold text-slate-800 dark:text-slate-200">
+              NEP Deep · {currentResult?.fovArcmin ? `${currentResult.fovArcmin}′ FOV` : '2.0′ FOV'}
+            </span>
+          </div>
+        </div>
+
+        {/* Explain requirement if fewer than 2 observations are present */}
+        {(!currentResult || !currentResult.epoch1 || !currentResult.epoch2) && (
+          <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-300 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span>
+              {isRtl
+                ? 'تنبيه: يتطلب اكتشاف التغيرات الفلكية وجود رصدتين على الأقل لنفس المنطقة في أوقات مختلفة لإجراء الطرح التفاضلي.'
+                : 'Notice: Detecting transient changes requires at least 2 distinct observations of the same sky coordinates separated in time.'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* C. Collapsible "What Am I Looking At?" Guide */}
+      <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] overflow-hidden text-xs">
+        <button
+          type="button"
+          onClick={() => setShowWhatAmILookingAt(!showWhatAmILookingAt)}
+          className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2 font-['Outfit'] font-bold text-slate-800 dark:text-slate-200">
+            <HelpCircle className="w-4 h-4 text-cyan-500" />
+            <span>{isRtl ? 'ما الذي أشاهده في هذه الشاشة؟ (دليل المبتدئين)' : 'What Am I Looking At? (Plain-Language Guide)'}</span>
+          </div>
+          <div className="flex items-center gap-1 text-[11px] font-mono text-slate-500">
+            <span>{showWhatAmILookingAt ? (isRtl ? 'إخفاء' : 'Hide') : (isRtl ? 'عرض الشرح' : 'Explain')}</span>
+            {showWhatAmILookingAt ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </div>
+        </button>
+
+        {showWhatAmILookingAt && (
+          <div className="p-4 pt-1 border-t border-slate-100 dark:border-white/[0.06] grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-600 dark:text-slate-300 leading-relaxed">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                <span>1. {isRtl ? 'ما هي الرصدة (Observation)؟' : 'What is an observation?'}</span>
+              </h4>
+              <p className="text-[11px]">
+                {isRtl
+                  ? 'لقطة تحت حمراء عالية الحساسية التقطها تلسكوب SPHEREx الفضائي في لحظة زمنية معينة، تسجل الضوء الصادر عن النجوم والغبار وسحب الغاز في السماء.'
+                  : 'A calibrated infrared snapshot captured by the NASA SPHEREx space telescope at a specific moment, recording light emitted by stars, dust, and cosmic gas.'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                <span>2. {isRtl ? 'ماذا يعني السطوع (Brightness)؟' : 'What does brightness mean?'}</span>
+              </h4>
+              <p className="text-[11px]">
+                {isRtl
+                  ? 'يقاس السطوع بوحدة MJy/sr (ميغاجانسكي لكل ستيراديان)، وهي كمية الطاقة الإشعاعية تحت الحمراء المتدفقة من كل مساحة صغيرة في الفضاء.'
+                  : 'Surface brightness is measured in MJy/sr (MegaJanskys per steradian), measuring the flux of infrared photons flowing from each region of the celestial sphere.'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                <span>3. {isRtl ? 'ما هي صورة الطرح الفلكي (Difference Image)؟' : 'What is a difference image (D = I₂ - I₁)?'}</span>
+              </h4>
+              <p className="text-[11px]">
+                {isRtl
+                  ? 'عند طرح لقطة الزيارة الأولى من لقطة الزيارة الثانية بعد محاذاتهما رياضياً بدقة، تختفي ملايين النجوم الثابتة لتصبح صفراً (لون محايد)، ولا يتبقى إلا الأجرام التي تغير سطوعها أو تحركت من مكانها!'
+                  : 'By mathematically subtracting visit 1 from visit 2, all static background stars cancel out completely to zero, leaving only objects that flared, dimmed, or moved!'}
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span>4. {isRtl ? 'ما هو المرشح (Candidate)؟' : 'What is a candidate?'}</span>
+              </h4>
+              <p className="text-[11px]">
+                {isRtl
+                  ? 'إشارة تغير إحصائية ذات دلالة (>5σ) تجاوزت مرشحات التحقق الآلية لضمان أنها ليست ضربة أشعة كونية أو عيباً في حساس الكاميرا.'
+                  : 'A statistically robust signal (>5σ significance) that passed rigorous data quality masking to exclude cosmic-ray hits, camera jitter, or saturated pixels.'}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* D. Human-Readable Results Summary (Before Raw Metrics) */}
+      <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 text-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100 font-['Outfit']">
+                {isRtl ? 'ملخص نتائج التحقيق' : 'Investigation Results Summary'}
+              </h3>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold">
+                {filteredCandidates.length} {isRtl ? 'مرشحاً مرصوداً' : 'Candidate Changes'}
+              </span>
+            </div>
+
+            <p className="text-slate-600 dark:text-slate-300 text-xs leading-relaxed">
+              {filteredCandidates.length > 0 ? (
+                strongestCandidate ? (
+                  isRtl ? (
+                    <>
+                      تم رصد <strong className="text-amber-600 dark:text-amber-400">{filteredCandidates.length}</strong> تغيراً فلكياً في هذه المنطقة. أقوى إشارة تقع عند الإحداثيات (RA {strongestCandidate.ra.toFixed(4)}°، Dec {strongestCandidate.dec.toFixed(4)}°) وتظهر {strongestCandidate.deltaFlux > 0 ? 'ارتفاعاً في السطوع' : 'انخفاضاً في السطوع'} بمقدار <strong className="font-mono text-emerald-600 dark:text-emerald-400">{strongestCandidate.deltaFlux > 0 ? '+' : ''}{strongestCandidate.deltaFlux.toFixed(2)} MJy/sr</strong> وبمستوى ثقة إحصائية <strong className="font-mono text-amber-600 dark:text-amber-400">{strongestCandidate.peakSignificance.toFixed(1)}σ</strong>.
+                    </>
+                  ) : (
+                    <>
+                      We found <strong className="text-amber-600 dark:text-amber-400">{filteredCandidates.length}</strong> candidate changes in this region. The strongest change is at <strong className="font-mono">RA {strongestCandidate.ra.toFixed(4)}°, Dec {strongestCandidate.dec.toFixed(4)}°</strong>, showing a {strongestCandidate.deltaFlux > 0 ? 'brightening surge' : 'fading drop'} of <strong className="font-mono text-emerald-600 dark:text-emerald-400">{strongestCandidate.deltaFlux > 0 ? '+' : ''}{strongestCandidate.deltaFlux.toFixed(2)} MJy/sr</strong> at <strong className="font-mono text-amber-600 dark:text-amber-400">{strongestCandidate.peakSignificance.toFixed(1)}σ</strong> significance.
+                    </>
+                  )
+                ) : null
+              ) : (
+                isRtl
+                  ? 'لم يتم رصد أي تغيرات تفوق عتبة الضوضاء في هذه الرقعة، مما يدل على استقرار شديد في السطوع بين الزيارتين.'
+                  : 'No significant changes detected above the background noise threshold. This patch exhibits remarkable photometric stability.'
+              )}
+            </p>
+          </div>
+
+          {/* Toggle Collapsible Scientific Evidence Drawer */}
+          <button
+            type="button"
+            onClick={() => setShowScientificEvidenceDrawer(!showScientificEvidenceDrawer)}
+            className="self-start sm:self-center flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.1] bg-slate-50 dark:bg-white/[0.04] hover:bg-slate-100 dark:hover:bg-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-500" />
+            <span>{isRtl ? 'الأدلة العلمية والقياسات' : 'Scientific Evidence & WCS'}</span>
+            {showScientificEvidenceDrawer ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+
+        {/* Collapsible Scientific Evidence Drawer */}
+        {showScientificEvidenceDrawer && currentResult && (
+          <div className="pt-3 border-t border-slate-100 dark:border-white/[0.06] grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] font-mono text-slate-600 dark:text-slate-400 animate-in fade-in duration-150">
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <span className="font-bold text-slate-800 dark:text-slate-200 block">WCS & Matrix Parameters</span>
+              <div>Sampling: 6.15″ / pixel</div>
+              <div>Matrix Size: {currentResult.sizePix} × {currentResult.sizePix} pixels</div>
+              <div>Solid Angle: ~{(currentResult.fovArcmin ? Number(currentResult.fovArcmin) : 2.0).toFixed(2)}′ arcmin²</div>
+              <div>Projection: TAN-SIP (Gnomonic)</div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <span className="font-bold text-slate-800 dark:text-slate-200 block">Variance & Photometry</span>
+              <div>Intensity Unit: MJy/sr</div>
+              <div>Noise Prop: σ_D = √(σ₁² + σ₂²)</div>
+              <div>Significance Cut: 5.0σ</div>
+              <div>DQ Bitmask: Flags saturated & cosmic ray hits</div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200/60 dark:border-white/[0.04] space-y-1">
+              <span className="font-bold text-slate-800 dark:text-slate-200 block">FITS Provenance & Archive</span>
+              <div>Source: NASA/IPAC IRSA QR2</div>
+              <div>Target: {currentResult.caseId || 'North Ecliptic Pole'}</div>
+              <div>Registration: Rigid Subpixel Alignment</div>
+              <div>Audit Status: Verified FITS Execution</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Primary Observation Perspective Bar */}

@@ -353,6 +353,14 @@ export const EDUCATIONAL_SCENARIOS: InvestigationScenario[] = [
         explanation: 'Incorrect. A cosmic ray hit adds sharp positive charge to a frame, creating a positive spike (+D), not a broad symmetric negative trough.',
         explanationAr: 'غير صحيح. ضربة الأشعة الكونية تضيف شحنة موجبة حادة للصورة فتنتج قمة موجبة (+D)، وليس انخفاضاً سالباً متناسقاً.',
       },
+      {
+        id: 'opt_3',
+        text: 'Pixel Bleeding / Readout Saturation Glitch',
+        textAr: 'عيب تشبع أو تسريب شحنة في الحساس',
+        isCorrect: false,
+        explanation: 'Incorrect. Saturation produces asymmetric non-Gaussian streaks along detector readout columns, not an isolated negative stellar PSF.',
+        explanationAr: 'غير صحيح. التشبع ينتج خطوطاً طولية غير متناظرة على طول أعمدة القراءة، وليس انخفاضاً نقطياً متناظراً.',
+      },
     ],
   },
   {
@@ -439,6 +447,14 @@ export const EDUCATIONAL_SCENARIOS: InvestigationScenario[] = [
         explanation: 'Incorrect. Stellar orbits take months to centuries. Moving 0.3 pixels in 128 seconds would imply a physical speed faster than light!',
         explanationAr: 'غير صحيح. المدارات النجمية تستغرق شهوراً أو قروناً. التحرك بمقدار 0.3 بكسل في 128 ثانية يعني سرعة فيزيائية أسرع من الضوء!',
       },
+      {
+        id: 'opt_3',
+        text: 'Rapid Solar System Asteroid Dipole',
+        textAr: 'حركة كويكب سريع في المجموعة الشمسية',
+        isCorrect: false,
+        explanation: 'Incorrect. An asteroid would have an independent displaced location with no cancelling negative lobe atop an 8th-magnitude background star.',
+        explanationAr: 'غير صحيح. الكويكب يظهر في موقع منفصل ولا ينتج فصاً سالباً متطابقاً يلغي فصاً موجباً فوق نجم ساطع.',
+      },
     ],
   },
   {
@@ -478,6 +494,14 @@ export const EDUCATIONAL_SCENARIOS: InvestigationScenario[] = [
         explanation: 'Exoplanets cannot be detected as single-pixel difference spikes. All genuine astronomical sources obey the optical point spread function.',
         explanationAr: 'الكواكب الخارجية لا تكتشف كإبرة في بكسل واحد. جميع الأجرام الفلكية الحقيقية تخضع بالضرورة لدالة انتشار الضوء البصري للتلسكوب.',
       },
+      {
+        id: 'opt_3',
+        text: 'Supernova Explosion at Peak Light',
+        textAr: 'انفجار مستعر أعظم في ذروة السطوع',
+        isCorrect: false,
+        explanation: 'Incorrect. Supernovae occur in distant host galaxies and their light forms a standard diffraction-limited stellar PSF covering multiple pixels, not a single subpixel spike.',
+        explanationAr: 'غير صحيح. المستعرات العظمى تتبع دالة انتشار الضوء وتغطي عدة بكسلات، وليست إبرة محصورة في بكسل فردي.',
+      },
     ],
   },
 ];
@@ -503,7 +527,9 @@ function pseudoRandom(seed: number): () => number {
   };
 }
 
-export function generateSyntheticScenarioImages(pattern: string): SyntheticImageData {
+export function generateSyntheticScenarioImages(scenarioOrPattern: string): SyntheticImageData {
+  const matchingScenario = EDUCATIONAL_SCENARIOS.find((s) => s.id === scenarioOrPattern);
+  const pattern = matchingScenario ? matchingScenario.syntheticImagePattern : scenarioOrPattern;
   const width = 48;
   const height = 48;
   const size = width * height;

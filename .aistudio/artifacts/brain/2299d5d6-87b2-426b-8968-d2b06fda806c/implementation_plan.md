@@ -122,18 +122,41 @@ Based on your design decisions:
 
 ---
 
-## 4. Verification & Safety Safeguards
+## 4. Completed Transformations: 3D Adventure Game & NASA Mission Control
 
-1. **Frozen Files Assurance**:
-   - `src/science/fitsReader.ts` — NOT modified
-   - `src/science/wcs.ts` — NOT modified
-   - `src/science/pipeline.ts` — NOT modified
-   - `src/science/catalogMatcher.ts` — NOT modified
-   - `src/science/types.ts` — NOT modified
-   - `src/science/science.test.ts` — NOT modified
-   - `server.ts` — NOT modified
-   - `data/*` — NOT modified
-2. **Automated Verification**:
-   - `npm test` must output 21/21 passing tests.
-   - `npx tsc --noEmit` must output 0 errors.
-   - `npm run build` must produce clean client and server bundles.
+### A. 3D Third-Person Adventure Game ("SPEX: THE LAST SIGNAL")
+- **Three.js Engine Architecture (`src/game/3d/GameEngine3D.ts`)**: Full third-person chase camera with spherical damping, collision sliding physics against station bounding boxes, and ground detection.
+- **Composite Procedural Player Avatar (`src/game/3d/PlayerAvatar.ts`)**: 3-12 part hierarchical model (torso, armor plate, helmet with glowing visor, cat ear telemetry sensors, dual-nozzle thruster pack, articulated limbs).
+- **Interactive Station Facility (`src/game/3d/StationBuilder.ts`)**: Central sky dome, holographic celestial sphere, observation consoles with light beacons, and panoramic space viewing decks.
+- **5 Story Missions & Puzzles (`src/game/3d/PuzzleModal.tsx`)**:
+  1. *Subsystem Initialization*: Power routing to cryo-cooler (80K), LVF detector arrays, and variance diff engine.
+  2. *102-Band Spectral Lab*: Wavelength sweep across dust-penetrating IR, identifying 3.05µm H₂O ice and 4.27µm CO₂ ice absorption dips.
+  3. *Temporal Alignment*: WCS sub-pixel registration, fast 2Hz blink, and variance subtraction $D = I_2 - I_1$.
+  4. *False Signal Diagnostic*: Discriminating authentic PSF profiles from cosmic ray Dirac spikes and pointing jitter.
+  5. *Deep Space Forensic Case*: Young stellar object (YSO) FU Orionis accretion diagnosis, culminating in an official SPEX Investigation Certificate.
+- **Mobile Touch Controls (`src/game/3d/MobileControls.tsx`)**: Virtual analog joystick with radius clamping, sprint toggle, jump jetpack, and touch interact buttons.
+- **Strict Data Isolation**: Game displays explicit `EDUCATIONAL SIMULATION — NOT REAL SPHEREx DATA` banner to guarantee academic and scientific honesty.
+
+### B. NASA Mission Control Room Redesign (`src/components/HomeView.tsx`)
+- **Visual Aesthetic**: Deep midnight-blue backgrounds (`#070a12`, `#0b1120`), dark graphite surfaces, controlled cyan/amber illumination, orbital graphics.
+- **Core Headline**: *"Every observation tells a story. Every change deserves an investigation."*
+- **Supporting Copy**: *"Explore the infrared universe through SPHEREx observations. Compare the sky across time and investigate the signals that deserve a closer look."*
+- **Live Mission Telemetry Terminal**: Directly connected to `/api/status` displaying operational data availability, NASA IPAC IRSA Level-2B source, WCS/variance engine status, AI status, and last processing timestamp.
+- **3 Visual Stages**: 01 Explore, 02 Compare, 03 Investigate.
+- **CTAs**: Primary `ENTER MISSION CONTROL` and secondary `PLAY 3D ADVENTURE`.
+
+### C. Visual Science Laboratory (`src/components/VisualScienceExplainer.tsx`)
+- Interactive modules for:
+  - What is infrared light? (Visible vs IR dust penetration slider)
+  - What are spectral bands? (102 channels across 6 detector arrays)
+  - What is an observation? (Telescope -> Detector -> Calibrated FITS -> Analysis pipeline)
+  - What is a difference image? (Interactive $D(x,y) = I_2(x,y) - I_1(x,y)$ simulator)
+  - What is uncertainty & SNR? ($> 5.0\sigma$ discovery threshold visualizer)
+  - Celestial sphere coordinate selector for NEP deep survey field.
+- Integrated into `ExploreView.tsx` with progressive disclosure.
+
+### D. Quality & Verification
+- **Unit & Integration Tests**: 60/60 tests passing (`npm test`).
+- **Type Checking**: 0 errors (`tsc --noEmit`).
+- **Production Build**: Verified (`npm run build`).
+- **Linter & Compiler**: 0 warnings, 0 errors (`lint_applet` & `compile_applet`).

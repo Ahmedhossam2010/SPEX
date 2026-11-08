@@ -184,6 +184,64 @@ export const FindingCard: React.FC<FindingCardProps> = ({
         </div>
       </div>
 
+      {/* 4 Core Scientific Questions (NASA Challenge Requirement) */}
+      <div className="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200/80 dark:border-white/[0.06] text-[11px] space-y-2">
+        <div className="font-mono font-bold text-[10px] tracking-wider text-amber-600 dark:text-amber-400 uppercase flex items-center justify-between">
+          <span>{isRtl ? 'الأسئلة العلمية الأربعة' : '4 Core Scientific Questions'}</span>
+          <span className="text-slate-500 font-normal">NASA SPHEREx Standard</span>
+        </div>
+
+        <div className="space-y-1.5 leading-relaxed text-slate-700 dark:text-slate-300">
+          <div>
+            <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1 font-sans">
+              1. {isRtl ? 'ماذا رصدنا؟' : 'What did we observe?'}
+            </span>
+            <span className="text-slate-600 dark:text-slate-400">
+              {isRtl
+                ? `جرم تحت أحمر عند RA ${candidate.ra.toFixed(4)}°، Dec ${candidate.dec.toFixed(4)}° عبر كاشف SPHEREx.`
+                : `Infrared point source at RA ${candidate.ra.toFixed(4)}°, Dec ${candidate.dec.toFixed(4)}° captured by SPHEREx.`}
+            </span>
+          </div>
+
+          <div>
+            <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1 font-sans">
+              2. {isRtl ? 'ما الذي تغير؟' : 'What changed?'}
+            </span>
+            <span className="text-slate-600 dark:text-slate-400">
+              {candidate.deltaFlux > 0
+                ? (isRtl ? `ارتفع السطوع بمقدار +${candidate.deltaFlux.toFixed(2)} MJy/sr (توهج / زيادة تدفق).` : `Flux surged by +${candidate.deltaFlux.toFixed(2)} MJy/sr between visits (brightness flare).`)
+                : (isRtl ? `انخفض السطوع بمقدار ${candidate.deltaFlux.toFixed(2)} MJy/sr (خفوت / كسوف).` : `Flux dropped by ${candidate.deltaFlux.toFixed(2)} MJy/sr between visits (dimming/eclipse).`)}
+            </span>
+          </div>
+
+          <div>
+            <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1 font-sans">
+              3. {isRtl ? 'ما مدى قوة الأدلة؟' : 'How strong is the evidence?'}
+            </span>
+            <span className="text-slate-600 dark:text-slate-400">
+              {isRtl
+                ? `دلالة إحصائية ${candidate.peakSignificance.toFixed(1)}σ أعلى من التباين المحلي (${candidate.peakSignificance >= 5 ? 'مؤكدة إحصائياً >5σ' : 'إشارة متوسطة'}).`
+                : `${candidate.peakSignificance.toFixed(1)}σ significance above propagated noise variance (${candidate.peakSignificance >= 5 ? 'Statistically robust >5σ' : 'Moderate confidence'}).`}
+            </span>
+          </div>
+
+          <div>
+            <span className="font-semibold text-slate-900 dark:text-slate-100 mr-1 font-sans">
+              4. {isRtl ? 'ما الذي يفسر هذا التغير؟' : 'What could explain this change?'}
+            </span>
+            <span className="text-slate-600 dark:text-slate-400">
+              {isMoving
+                ? (isRtl ? 'حركة كويكب في المجموعة الشمسية أو جرم سريع، أنتجت بصمة ثنائي القطب.' : 'Orbital motion of an asteroid or proper-motion star producing dipole signature.')
+                : isArtifact
+                ? (isRtl ? 'أثر نقطي أو تشبع حساس (تم عزله لضمان دقة البحث العلمي).' : 'Detector glitch or cosmic-ray hit (flagged and isolated for scientific rigor).')
+                : gaiaMatch
+                ? (isRtl ? `تغير لمعان حقيقي لنجم مسجل في فهرس جايا (${gaiaMatch.identifier}).` : `Genuine stellar variability in catalog star ${gaiaMatch.identifier}.`)
+                : (isRtl ? 'تغير ضوئي في جرم تحت أحمر غير مفهرس، مؤهل كمرشح اكتشاف جديد.' : 'Uncataloged infrared transient candidate worthy of archival followup.')}
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Actions Row */}
       <div className="mt-3 flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/[0.06]">
         <div className="flex items-center gap-1.5">
