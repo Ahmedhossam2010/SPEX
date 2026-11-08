@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 60 300 320" width="100%" height="100%">
+  
+<defs>
+  <linearGradient id="suitGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#1e3052" />
+    <stop offset="100%" stop-color="#0f1828" />
+  </linearGradient>
+  <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#fbbf24" />
+    <stop offset="70%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#d97706" />
+  </linearGradient>
+  <linearGradient id="whitePlate" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffffff" />
+    <stop offset="100%" stop-color="#e2e8f0" />
+  </linearGradient>
+  <linearGradient id="eyeAmber" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#fde047" />
+    <stop offset="50%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#b45309" />
+  </linearGradient>
+  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+    <feGaussianBlur stdDeviation="4" result="blur" />
+    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+  </filter>
+</defs>
+
+
+  <!-- Wesekh Collar at bottom -->
+  <g transform="translate(0, 0)">
+    <path d="M 155,305 C 190,345 310,345 345,305 C 310,370 190,370 155,305 Z" fill="#1e3a8a" stroke="#090e17" stroke-width="4" />
+    <path d="M 155,305 C 190,345 310,345 345,305" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <path d="M 160,320 C 195,375 305,375 340,320" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <!-- Center Golden Eye of Horus Emblem -->
+    <g transform="translate(250, 342) scale(0.9)">
+      <path d="M -22,0 C -12,-10 12,-10 22,0 C 12,10 -12,10 -22,0 Z" fill="none" stroke="url(#goldGrad)" stroke-width="3" />
+      <circle cx="0" cy="0" r="5" fill="url(#goldGrad)" />
+      <path d="M -20,-12 C -10,-18 10,-18 20,-12" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" />
+    </g>
+  </g>
+
+  <!-- Neck -->
+  <path d="M 225,260 L 275,260 L 280,310 L 220,310 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+
+  <!-- Head & Ears -->
+  <g id="head">
+    <!-- Left Ear -->
+    <path d="M 180,210 L 130,80 C 145,70 190,100 215,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 175,195 L 145,100 C 160,95 185,120 200,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <line x1="152" y1="125" x2="180" y2="135" stroke="#78350f" stroke-width="2" />
+    <line x1="160" y1="145" x2="190" y2="155" stroke="#78350f" stroke-width="2" />
+    <line x1="168" y1="165" x2="195" y2="175" stroke="#78350f" stroke-width="2" />
+
+    <!-- Right Ear -->
+    <path d="M 320,210 L 370,80 C 355,70 310,100 285,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 325,195 L 355,100 C 340,95 315,120 300,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <line x1="348" y1="125" x2="320" y2="135" stroke="#78350f" stroke-width="2" />
+    <line x1="340" y1="145" x2="310" y2="155" stroke="#78350f" stroke-width="2" />
+    <line x1="332" y1="165" x2="305" y2="175" stroke="#78350f" stroke-width="2" />
+
+    <!-- Head Shape -->
+    <path d="M 180,180 C 180,110 320,110 320,180 C 350,220 330,270 280,275 C 265,280 235,280 220,275 C 170,270 150,220 180,180 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+
+    <!-- Headset Audio Modules -->
+    <ellipse cx="160" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+    <ellipse cx="160" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+
+    <ellipse cx="340" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+    <ellipse cx="340" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+
+    <!-- Golden Forehead Crest -->
+    <polygon points="250,215 265,115 235,115" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+
+    
+    <!-- Left Eye -->
+    <g id="leftEye">
+      <path d="M 180,195 C 190,165 230,165 240,195 C 235,205 185,205 180,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <path d="M 188,193 C 196,172 224,172 232,193 C 224,204 196,204 188,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="210" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <ellipse cx="210" cy="189" rx="7" ry="14" fill="#090e17" />
+      <circle cx="205" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="215" cy="195" r="2" fill="#ffffff" />
+    </g>
+
+    <!-- Right Eye -->
+    <g id="rightEye">
+      <path d="M 260,195 C 270,165 310,165 320,195 C 315,205 265,205 260,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <path d="M 268,193 C 276,172 304,172 312,193 C 304,204 276,204 268,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="290" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <ellipse cx="290" cy="189" rx="7" ry="14" fill="#090e17" />
+      <circle cx="285" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="295" cy="195" r="2" fill="#ffffff" />
+    </g>
+    
+
+    <!-- Nose -->
+    <polygon points="250,225 256,218 244,218" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" />
+    <!-- Mouth -->
+    <path d="M 235,228 Q 250,250 265,228 Z" fill="#b91c1c" stroke="#090e17" stroke-width="3" />
+             <path d="M 240,236 Q 250,246 260,236" fill="#f87171" />
+
+    <!-- Whiskers -->
+    <line x1="175" y1="230" x2="215" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="170" y1="242" x2="215" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="325" y1="230" x2="285" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="330" y1="242" x2="285" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+  </g>
+</svg>

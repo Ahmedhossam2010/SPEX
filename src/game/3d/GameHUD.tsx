@@ -32,6 +32,7 @@ interface GameHUDProps {
   tutorialStep?: number;
   tutorialDistance?: number;
   tutorialRotation?: number;
+  targetBearing?: number;
   onTutorialNext?: () => void;
   onTutorialSkip?: () => void;
   isPointerLocked?: boolean;
@@ -44,6 +45,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   currentMissionNumber,
   nearestTerminal,
   targetDistance,
+  targetBearing = 0,
   onInteract,
   onOpenNotebook,
   onOpenHelp,
@@ -70,36 +72,36 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const missionsMeta = [
     {
       num: 1,
-      title: 'Subsystem Calibration',
-      titleAr: 'معايرة الأنظمة الفرعية',
+      title: 'Welcome to SPEX Station',
+      titleAr: 'الوصول للمحطة وقاعة التحكم',
       room: 'Main Control Hub (Center)',
       roomAr: 'قاعة التحكم الرئيسية (المركز)',
     },
     {
       num: 2,
-      title: '102-Band Spectral Lab',
-      titleAr: 'مختبر الأطياف وحزم الجليد',
+      title: 'Invisible Universe (102 IR Bands)',
+      titleAr: 'فهم الكون غير المرئي بالأشعة تحت الحمراء',
       room: 'Observation Chamber (North)',
       roomAr: 'غرفة الرصد الطيفي (شمالاً)',
     },
     {
       num: 3,
-      title: 'Temporal Alignment',
-      titleAr: 'المحاذاة الزمنية والطرح الفلكي',
+      title: 'Two Moments in the Sky',
+      titleAr: 'لحظتان في السماء ومحاذاة الرصد',
       room: 'East Science Wing',
       roomAr: 'الجناح العلمي الشرقي',
     },
     {
       num: 4,
-      title: 'False Signal Diagnostic',
-      titleAr: 'تشخيص الإشارات الزائفة',
+      title: 'Signal or False Alarm?',
+      titleAr: 'إشارة حقيقية أم إنذار زائف؟',
       room: 'West Analysis Bay',
       roomAr: 'رصيف التحليل الغربي',
     },
     {
       num: 5,
-      title: 'Deep Cosmic Investigation',
-      titleAr: 'التحقيق الكوني النهائي',
+      title: 'The Final Investigation',
+      titleAr: 'تقرير التحقيق النهائي واعتماد ناسا',
       room: 'Central Science Terminal',
       roomAr: 'محطة التحليل المركزية',
     },
@@ -382,6 +384,35 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           {isAr
             ? 'اتبع الشعاع الليزري السماوي إلى المنصة واضغط للتفاعل والبدء.'
             : 'Follow the vertical cyan light beacon to the console and press [E] to engage.'}
+        </div>
+
+        {/* Live Directional Waypoint Tracker */}
+        <div className="mt-2 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-1 text-[11px] font-mono font-bold">
+          {Math.abs(targetBearing) <= 25 ? (
+            <span className="flex items-center gap-1.5 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/30 animate-pulse">
+              <span>▲</span>
+              <span>{isAr ? 'في مجال رؤيتك مباشرة' : 'Directly Ahead'}</span>
+            </span>
+          ) : targetBearing > 25 && targetBearing < 155 ? (
+            <span className="flex items-center gap-1.5 text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/30">
+              <span>▶</span>
+              <span>{isAr ? `انعطف يميناً ${Math.round(targetBearing)}°` : `Turn Right ${Math.round(targetBearing)}°`}</span>
+            </span>
+          ) : targetBearing < -25 && targetBearing > -155 ? (
+            <span className="flex items-center gap-1.5 text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-lg border border-cyan-500/30">
+              <span>◀</span>
+              <span>{isAr ? `انعطف يساراً ${Math.round(-targetBearing)}°` : `Turn Left ${Math.round(-targetBearing)}°`}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/30">
+              <span>▼</span>
+              <span>{isAr ? 'خلفك (استدر 180°)' : 'Behind You (Turn 180°)'}</span>
+            </span>
+          )}
+
+          <span className="text-[10px] text-cyan-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-700">
+            {targetDistance > 0 ? `${targetDistance.toFixed(1)}m` : '0m'}
+          </span>
         </div>
       </div>
 

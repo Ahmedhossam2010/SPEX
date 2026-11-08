@@ -18,11 +18,11 @@ export class GameEngine3D {
   private renderer: THREE.WebGLRenderer;
   private player: PlayerAvatar;
   private playerPos: THREE.Vector3 = new THREE.Vector3(0, 0, 3.5); // Open floor facing North toward Terminal 1
-  private playerRot: number = Math.PI; // Face north initially
+  private playerRot: number = 0; // Face North toward Terminal 1 initially
 
   // Camera settings
-  private cameraPitch: number = 0.35; // radians
-  private cameraYaw: number = 0; // relative to player rotation
+  private cameraPitch: number = 0.28; // radians
+  private cameraYaw: number = 0; // relative to world Z axis
   private cameraDistance: number = 5.2;
   private cameraTarget: THREE.Vector3 = new THREE.Vector3();
   private isPointerDown: boolean = false;
@@ -347,6 +347,10 @@ export class GameEngine3D {
     }
   }
 
+  public updateCallbacks(callbacks: Partial<GameEngineCallbacks>) {
+    this.callbacks = { ...this.callbacks, ...callbacks };
+  }
+
   public setPaused(paused: boolean) {
     this.isPaused = paused;
     if (!paused) {
@@ -360,6 +364,13 @@ export class GameEngine3D {
     this.velocity.set(0, 0, 0);
   }
 
+  public rotateCamera(deltaYawRad: number, deltaPitchRad: number) {
+    this.cameraYaw += deltaYawRad;
+    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + deltaPitchRad, 0.08, 1.22);
+    const degDelta = Math.abs(deltaYawRad) * (180 / Math.PI);
+    this.pendingYawDeltaDeg += degDelta;
+  }
+
   // --- PHYSICS & COLLISION RESOLUTION ---
   private updatePlayerPhysics(delta: number) {
     // 1. Determine input direction relative to camera angle
@@ -371,41 +382,59 @@ export class GameEngine3D {
       inputStr = this.mobileMoveVector.x;
     }
 
-    const hasMoveInput = Math.hypot(inputFwd, inputStr) > 0.05;
-    const baseSpeed = this.isSprinting ? 9.5 : 5.2;
+    const inputMag = Math.hypot(inputFwd, inputStr);
+    const hasMoveInput = inputMag > 0.05;
+    const baseSpeed = this.isSprinting ? 9.2 : 5.0;
 
     if (hasMoveInput) {
-      // Input direction relative to camera view
-      const camAngle = this.cameraYaw;
-      const moveAngle = Math.atan2(inputStr, inputFwd);
-      const worldMoveAngle = camAngle + moveAngle;
+      // Normalize input so diagonal movement doesn't exceed 1.0
+      const normFwd = inputFwd / Math.max(1.0, inputMag);
+      const normStr = inputStr / Math.max(1.0, inputMag);
+      const speedScale = Math.min(1.0, inputMag);
 
-      const targetVx = Math.sin(worldMoveAngle) * baseSpeed;
-      const targetVz = Math.cos(worldMoveAngle) * baseSpeed;
+      // Camera horizontal forward and right vectors (XZ plane)
+      // When cameraYaw = 0, camera is at target - (0, 0, dist), looking along +Z
+      const sinYaw = Math.sin(this.cameraYaw);
+      const cosYaw = Math.cos(this.cameraYaw);
+      const camFwdX = sinYaw;
+      const camFwdZ = cosYaw;
+      const camRightX = cosYaw;
+      const camRightZ = -sinYaw;
 
-      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, targetVx, 12, delta);
-      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, targetVz, 12, delta);
+      // Desired movement vector on horizontal plane
+      const moveDirX = camFwdX * normFwd + camRightX * normStr;
+      const moveDirZ = camFwdZ * normFwd + camRightZ * normStr;
 
-      // Rotate player smoothly towards movement direction
-      this.playerRot = THREE.MathUtils.damp(this.playerRot, worldMoveAngle, 14, delta);
+      const targetVx = moveDirX * baseSpeed * speedScale;
+      const targetVz = moveDirZ * baseSpeed * speedScale;
+
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, targetVx, 14, delta);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, targetVz, 14, delta);
+
+      // Rotate player smoothly towards movement direction using shortest angular arc
+      const targetHeading = Math.atan2(moveDirX, moveDirZ);
+      let angleDiff = (targetHeading - this.playerRot) % (Math.PI * 2);
+      if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      this.playerRot += angleDiff * (1 - Math.exp(-15 * delta));
       this.player.group.rotation.y = this.playerRot;
 
       // Audio footstep cadence
       this.footstepTimer += delta * (this.isSprinting ? 1.6 : 1.0);
-      if (this.isGrounded && this.footstepTimer > 0.45) {
+      if (this.isGrounded && this.footstepTimer > 0.42) {
         this.footstepTimer = 0;
         gameAudio.playFootstep();
       }
     } else {
-      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, 0, 16, delta);
-      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, 0, 16, delta);
+      this.velocity.x = THREE.MathUtils.damp(this.velocity.x, 0, 18, delta);
+      this.velocity.z = THREE.MathUtils.damp(this.velocity.z, 0, 18, delta);
       this.footstepTimer = 0;
     }
 
     // Jump / Jetpack physics
     if (this.jumpRequested) {
       this.jumpRequested = false;
-      this.velocity.y = 8.5;
+      this.velocity.y = 8.2;
       this.isGrounded = false;
       gameAudio.playJetpack();
     }
@@ -419,35 +448,48 @@ export class GameEngine3D {
     const nextY = this.playerPos.y + this.velocity.y * delta;
     const nextZ = this.playerPos.z + this.velocity.z * delta;
 
-    // Collide with station bounding boxes (sliding physics)
-    const playerRadius = 0.5;
+    // Collide with station bounding boxes with responsive wall sliding
+    const playerRadius = 0.42;
     let resolvedX = nextX;
     let resolvedZ = nextZ;
 
     for (const box of this.colliders) {
-      // Check X axis
+      // Check vertical overlap
+      if (this.playerPos.y > box.max.y || this.playerPos.y + 1.8 < box.min.y) {
+        continue;
+      }
+
+      // Check X penetration with current Z
       if (
         resolvedX + playerRadius > box.min.x &&
         resolvedX - playerRadius < box.max.x &&
         this.playerPos.z + playerRadius > box.min.z &&
-        this.playerPos.z - playerRadius < box.max.z &&
-        this.playerPos.y >= box.min.y - 0.5 &&
-        this.playerPos.y <= box.max.y
+        this.playerPos.z - playerRadius < box.max.z
       ) {
-        resolvedX = this.playerPos.x;
+        if (this.playerPos.x <= box.min.x) {
+          resolvedX = box.min.x - playerRadius;
+        } else if (this.playerPos.x >= box.max.x) {
+          resolvedX = box.max.x + playerRadius;
+        } else {
+          resolvedX = this.playerPos.x;
+        }
         this.velocity.x = 0;
       }
 
-      // Check Z axis
+      // Check Z penetration with resolved X
       if (
         resolvedX + playerRadius > box.min.x &&
         resolvedX - playerRadius < box.max.x &&
         resolvedZ + playerRadius > box.min.z &&
-        resolvedZ - playerRadius < box.max.z &&
-        this.playerPos.y >= box.min.y - 0.5 &&
-        this.playerPos.y <= box.max.y
+        resolvedZ - playerRadius < box.max.z
       ) {
-        resolvedZ = this.playerPos.z;
+        if (this.playerPos.z <= box.min.z) {
+          resolvedZ = box.min.z - playerRadius;
+        } else if (this.playerPos.z >= box.max.z) {
+          resolvedZ = box.max.z + playerRadius;
+        } else {
+          resolvedZ = this.playerPos.z;
+        }
         this.velocity.z = 0;
       }
     }
@@ -466,8 +508,8 @@ export class GameEngine3D {
     }
 
     // Enforce world limits so player never falls into deep void
-    this.playerPos.x = THREE.MathUtils.clamp(this.playerPos.x, -50, 50);
-    this.playerPos.z = THREE.MathUtils.clamp(this.playerPos.z, -30, 45);
+    this.playerPos.x = THREE.MathUtils.clamp(this.playerPos.x, -45, 45);
+    this.playerPos.z = THREE.MathUtils.clamp(this.playerPos.z, -25, 25);
 
     this.player.group.position.copy(this.playerPos);
 
@@ -501,7 +543,7 @@ export class GameEngine3D {
       this.playerPos.z
     );
 
-    this.cameraTarget.lerp(targetLook, 1 - Math.exp(-12 * delta));
+    this.cameraTarget.lerp(targetLook, 1 - Math.exp(-14 * delta));
 
     // Spherical offset from cameraTarget
     const offsetX = Math.sin(this.cameraYaw) * Math.cos(this.cameraPitch) * this.cameraDistance;
@@ -528,7 +570,7 @@ export class GameEngine3D {
       desiredCamPos.z = THREE.MathUtils.clamp(desiredCamPos.z, -11.2, 11.2);
     }
 
-    this.camera.position.lerp(desiredCamPos, 1 - Math.exp(-10 * delta));
+    this.camera.position.lerp(desiredCamPos, 1 - Math.exp(-12 * delta));
     this.camera.lookAt(this.cameraTarget);
   }
 
@@ -556,6 +598,20 @@ export class GameEngine3D {
     const t = this.terminals.find((term) => term.missionNumber === missionNumber);
     if (!t) return 0;
     return this.playerPos.distanceTo(t.position);
+  }
+
+  // Returns relative bearing to terminal in degrees (-180 to +180 relative to camera heading)
+  // 0° = dead ahead, +90° = right, -90° = left, +/-180° = behind
+  public getBearingToTerminal(missionNumber: number): number {
+    const t = this.terminals.find((term) => term.missionNumber === missionNumber);
+    if (!t) return 0;
+    const dx = t.position.x - this.playerPos.x;
+    const dz = t.position.z - this.playerPos.z;
+    const targetAngle = Math.atan2(dx, dz);
+    let relAngle = (targetAngle - this.cameraYaw) % (Math.PI * 2);
+    if (relAngle > Math.PI) relAngle -= Math.PI * 2;
+    if (relAngle < -Math.PI) relAngle += Math.PI * 2;
+    return (relAngle * 180) / Math.PI;
   }
 
   public getPlayerPosition(): { x: number; y: number; z: number } {

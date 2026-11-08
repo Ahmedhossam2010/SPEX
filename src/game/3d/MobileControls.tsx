@@ -8,6 +8,7 @@ interface MobileControlsProps {
   onInteract: () => void;
   canInteract: boolean;
   language: 'en' | 'ar';
+  onRotateCamera?: (deltaYawRad: number) => void;
 }
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
@@ -16,19 +17,16 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onInteract,
   canInteract,
   language,
+  onRotateCamera,
 }) => {
   const isAr = language === 'ar';
   const joystickRef = useRef<HTMLDivElement>(null);
+  const touchIdRef = useRef<number | null>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isSprinting, setIsSprinting] = useState(false);
 
   const maxRadius = 45;
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    setIsDragging(true);
-    updateJoystick(e.touches[0].clientX, e.touches[0].clientY);
-  };
 
   const updateJoystick = useCallback((clientX: number, clientY: number) => {
     if (!joystickRef.current) return;
@@ -59,15 +57,35 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     onMove(normX, normY, isSprinting);
   }, [isSprinting, onMove]);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isDragging) return;
-    updateJoystick(e.touches[0].clientX, e.touches[0].clientY);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (touchIdRef.current !== null) return;
+    const touch = e.changedTouches[0];
+    touchIdRef.current = touch.identifier;
+    setIsDragging(true);
+    updateJoystick(touch.clientX, touch.clientY);
   };
 
-  const handleTouchEnd = () => {
-    setIsDragging(false);
-    setKnobPos({ x: 0, y: 0 });
-    onMove(0, 0, false);
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || touchIdRef.current === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === touchIdRef.current) {
+        updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+        break;
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchIdRef.current === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      if (e.changedTouches[i].identifier === touchIdRef.current) {
+        touchIdRef.current = null;
+        setIsDragging(false);
+        setKnobPos({ x: 0, y: 0 });
+        onMove(0, 0, false);
+        break;
+      }
+    }
   };
 
   // Re-emit with updated sprint flag
@@ -102,7 +120,35 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       </div>
 
       {/* Action Buttons (Bottom Right) */}
-      <div className="pointer-events-auto flex flex-col items-end gap-3">
+      <div className="pointer-events-auto flex flex-col items-end gap-2.5">
+        {/* Quick Camera Rotate Controls */}
+        {onRotateCamera && (
+          <div className="flex items-center gap-2 mb-1">
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick();
+                onRotateCamera(Math.PI / 4); // Turn camera 45° left
+              }}
+              className="w-10 h-10 rounded-xl bg-slate-900/80 border border-cyan-500/30 text-cyan-300 font-mono text-xs flex items-center justify-center shadow"
+              title="Rotate Camera Left"
+            >
+              ⟲ 45°
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick();
+                onRotateCamera(-Math.PI / 4); // Turn camera 45° right
+              }}
+              className="w-10 h-10 rounded-xl bg-slate-900/80 border border-cyan-500/30 text-cyan-300 font-mono text-xs flex items-center justify-center shadow"
+              title="Rotate Camera Right"
+            >
+              45° ⟳
+            </button>
+          </div>
+        )}
+
         {/* Sprint Toggle */}
         <button
           type="button"

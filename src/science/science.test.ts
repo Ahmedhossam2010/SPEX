@@ -1236,10 +1236,11 @@ test('Dynamic Footprint & Solid Angle: verifies WCS corner projection and area d
 
   const cacheDir = '/tmp/spherex_cache';
   const cachedFiles = fs.readdirSync(cacheDir).filter((f: string) => f.endsWith('.fits'));
-  const buf = fs.readFileSync(path.join(cacheDir, cachedFiles[0]));
+  const benchmarkFile = cachedFiles.find((f: string) => f.includes('b6a1')) || cachedFiles[0];
+  const buf = fs.readFileSync(path.join(cacheDir, benchmarkFile));
 
   const norm = DataReleaseAdapter.normalizeFITS({
-    fileName: cachedFiles[0],
+    fileName: benchmarkFile,
     buffer: buf,
     sourceType: 'DEVELOPMENT_BENCHMARK',
   });

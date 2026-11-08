@@ -54,6 +54,7 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
   const [tutorialDistance, setTutorialDistance] = useState<number>(0);
   const [tutorialRotation, setTutorialRotation] = useState<number>(0);
   const [targetDistance, setTargetDistance] = useState<number>(4.0);
+  const [targetBearing, setTargetBearing] = useState<number>(0);
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
 
   // Pause Menu state
@@ -68,6 +69,16 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
     5,
     [1, 2, 3, 4, 5].find((m) => !completedMissions.includes(m)) || 5
   );
+
+  // Refs for stable callbacks across engine lifetime
+  const currentMissionNumberRef = useRef(currentMissionNumber);
+  currentMissionNumberRef.current = currentMissionNumber;
+
+  const showTutorialRef = useRef(showTutorial);
+  showTutorialRef.current = showTutorial;
+
+  const tutorialStepRef = useRef(tutorialStep);
+  tutorialStepRef.current = tutorialStep;
 
   // Active Terminal & Modal
   const [nearestTerminal, setNearestTerminal] = useState<InteractiveTerminal | null>(null);
@@ -114,12 +125,14 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
     gameAudio.setMuted(isMuted);
   }, [isMuted]);
 
-  // Sync active beacon with current mission
+  // Sync active beacon with current mission without tearing down the 3D world
   useEffect(() => {
     if (engineRef.current) {
       engineRef.current.setActiveMission(currentMissionNumber);
       const d = engineRef.current.getDistanceToTerminal(currentMissionNumber);
+      const b = engineRef.current.getBearingToTerminal(currentMissionNumber);
       setTargetDistance(d);
+      setTargetBearing(b);
     }
   }, [currentMissionNumber]);
 
@@ -146,9 +159,9 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
 
   // Live tutorial metrics tracker callback
   const handleTutorialMetrics = useCallback((dist: number, rotDeg: number) => {
-    if (!showTutorial) return;
+    if (!showTutorialRef.current) return;
 
-    if (tutorialStep === 2) {
+    if (tutorialStepRef.current === 2) {
       setTutorialDistance((prev) => {
         const next = prev + dist;
         if (next >= 2.5 && prev < 2.5) {
@@ -157,7 +170,7 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
         }
         return next;
       });
-    } else if (tutorialStep === 3) {
+    } else if (tutorialStepRef.current === 3) {
       setTutorialRotation((prev) => {
         const next = prev + rotDeg;
         if (next >= 60 && prev < 60) {
@@ -167,7 +180,10 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
         return next;
       });
     }
-  }, [showTutorial, tutorialStep]);
+  }, []);
+
+  const handleTutorialMetricsRef = useRef(handleTutorialMetrics);
+  handleTutorialMetricsRef.current = handleTutorialMetrics;
 
   // Keyboard Escape and Space listener
   useEffect(() => {
@@ -184,10 +200,10 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
           engineRef.current?.unlockPointer();
         }
       } else if (e.code === 'Space') {
-        if (showTutorial && tutorialStep === 1) {
+        if (showTutorialRef.current && tutorialStepRef.current === 1) {
           setTutorialStep(2);
           gameAudio.playClick();
-        } else if (showTutorial && tutorialStep === 5) {
+        } else if (showTutorialRef.current && tutorialStepRef.current === 5) {
           setShowTutorial(false);
           localStorage.setItem('spex_tutorial_seen', 'true');
           gameAudio.playSuccess();
@@ -197,9 +213,9 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeModalMission, notebookOpen, helpOpen, showTutorial, tutorialStep]);
+  }, [activeModalMission, notebookOpen, helpOpen]);
 
-  // Initialize Three.js Engine
+  // Initialize Three.js Engine ONCE on mount
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -208,7 +224,7 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
         setNearestTerminal(term);
       },
       onTerminalInteract: (term) => {
-        if (showTutorial && tutorialStep === 4) {
+        if (showTutorialRef.current && tutorialStepRef.current === 4) {
           gameAudio.playSuccess();
           setTutorialStep(5);
         }
@@ -216,12 +232,14 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
       },
       onPlayerPositionChange: () => {
         if (engineRef.current) {
-          const d = engineRef.current.getDistanceToTerminal(currentMissionNumber);
+          const d = engineRef.current.getDistanceToTerminal(currentMissionNumberRef.current);
+          const b = engineRef.current.getBearingToTerminal(currentMissionNumberRef.current);
           setTargetDistance(d);
+          setTargetBearing(b);
         }
       },
       onTutorialMetrics: (dist, rotDeg) => {
-        handleTutorialMetrics(dist, rotDeg);
+        handleTutorialMetricsRef.current(dist, rotDeg);
       },
       onPointerLockChange: (locked) => {
         setIsPointerLocked(locked);
@@ -229,15 +247,15 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
     });
 
     engineRef.current = engine;
-    engine.setActiveMission(currentMissionNumber);
+    engine.setActiveMission(currentMissionNumberRef.current);
 
     return () => {
       engine.dispose();
       engineRef.current = null;
     };
-  }, [currentMissionNumber, handleTutorialMetrics, showTutorial, tutorialStep]);
+  }, []);
 
-  // Pause engine when modal or pause menu is open (Note: showTutorial does NOT pause the engine!)
+  // Pause engine when modal or pause menu is open
   useEffect(() => {
     const isAnyModalOpen = activeModalMission !== null || notebookOpen || helpOpen || isPaused;
     if (engineRef.current) {
@@ -302,6 +320,7 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
         currentMissionNumber={currentMissionNumber}
         nearestTerminal={nearestTerminal}
         targetDistance={targetDistance}
+        targetBearing={targetBearing}
         onInteract={() => {
           if (nearestTerminal) {
             if (showTutorial && tutorialStep === 4) {
@@ -370,6 +389,11 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
           }}
           canInteract={nearestTerminal !== null}
           language={language}
+          onRotateCamera={(deltaYawRad) => {
+            if (engineRef.current) {
+              engineRef.current.rotateCamera(deltaYawRad, 0);
+            }
+          }}
         />
       )}
 

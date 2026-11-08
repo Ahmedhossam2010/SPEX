@@ -219,17 +219,17 @@ export class StationBuilder {
     colliders.push({ min: new THREE.Vector3(-15.5, 0, 4), max: new THREE.Vector3(-14.5, 6, 12) });
 
     // --- 2. CENTRAL COMMAND DAIS & HOLOGRAPHIC CELESTIAL GLOBE ---
-    const daisGeo = new THREE.CylinderGeometry(4.2, 4.5, 0.4, 24);
+    const daisGeo = new THREE.CylinderGeometry(4.2, 4.4, 0.1, 24);
     const daisMesh = new THREE.Mesh(daisGeo, metalFrameMat);
-    daisMesh.position.set(0, 0.2, 0);
+    daisMesh.position.set(0, 0.05, 0);
     daisMesh.receiveShadow = true;
     scene.add(daisMesh);
 
     // Glowing dais outer ring
-    const ringGeo = new THREE.TorusGeometry(4.35, 0.08, 8, 32);
+    const ringGeo = new THREE.TorusGeometry(4.35, 0.06, 8, 32);
     ringGeo.rotateX(Math.PI / 2);
     const ringMesh = new THREE.Mesh(ringGeo, cyanGlowMat);
-    ringMesh.position.set(0, 0.42, 0);
+    ringMesh.position.set(0, 0.11, 0);
     scene.add(ringMesh);
 
     // Floating Holographic All-Sky Celestial Sphere
@@ -346,6 +346,17 @@ export class StationBuilder {
     const westCorrFloor = new THREE.Mesh(new THREE.BoxGeometry(10, 0.4, 6), floorMat);
     westCorrFloor.position.set(-20, -0.2, 0);
     scene.add(westCorrFloor);
+
+    // West Corridor Walls
+    const westCorrWallN = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 0.5), wallMat);
+    westCorrWallN.position.set(-20, 3, -3.25);
+    scene.add(westCorrWallN);
+    colliders.push({ min: new THREE.Vector3(-25, 0, -3.5), max: new THREE.Vector3(-15, 6, -3) });
+
+    const westCorrWallS = new THREE.Mesh(new THREE.BoxGeometry(10, 6, 0.5), wallMat);
+    westCorrWallS.position.set(-20, 3, 3.25);
+    scene.add(westCorrWallS);
+    colliders.push({ min: new THREE.Vector3(-25, 0, 3), max: new THREE.Vector3(-15, 6, 3.5) });
 
     // Exterior Observation Deck Floor (Transparent space platform!)
     const deckFloor = new THREE.Mesh(

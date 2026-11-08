@@ -181,14 +181,14 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
             <div className="w-3 h-3 rounded-full bg-cyan-400 animate-ping" />
             <div>
               <span className="text-[10px] font-mono tracking-widest uppercase text-cyan-400">
-                {isAr ? 'محطة التحكم التفاعلية' : 'SPHEREx INTERACTIVE CONSOLE'} • {cadetName}
+                {isAr ? 'غرفة عمليات مرصد SPHEREx التفاعلية' : 'SPHEREx MISSION CONTROL CONSOLE'} • {cadetName}
               </span>
               <h2 className="text-lg font-bold text-white tracking-wide">
-                {missionNumber === 1 && (isAr ? 'المهمة 01: تنشيط أجهزة الاستشعار' : 'Mission 01: Subsystem Initialization')}
-                {missionNumber === 2 && (isAr ? 'المهمة 02: استكشاف أطياف الجليد' : 'Mission 02: 102-Band Spectral Lab')}
-                {missionNumber === 3 && (isAr ? 'المهمة 03: المحاذاة الزمنية والطرح الفلكي' : 'Mission 03: Temporal Alignment & Difference')}
-                {missionNumber === 4 && (isAr ? 'المهمة 04: فحص الإشارات الزائفة' : 'Mission 04: False Signal Discrimination')}
-                {missionNumber === 5 && (isAr ? 'المهمة 05: التحقيق الكوني النهائي' : 'Mission 05: Deep Cosmic Investigation')}
+                {missionNumber === 1 && (isAr ? 'المهمة 01: الوصول للمحطة وتفعيل المنظومة' : 'Mission 01: Welcome to SPEX Station & Console Arrival')}
+                {missionNumber === 2 && (isAr ? 'المهمة 02: فهم الكون غير المرئي بالأشعة تحت الحمراء' : 'Mission 02: Understanding the Invisible Universe (102 Infrared Bands)')}
+                {missionNumber === 3 && (isAr ? 'المهمة 03: لحظتان في السماء ومحاذاة الرصد' : 'Mission 03: Two Moments in the Sky (Multi-Epoch Alignment & Diff)')}
+                {missionNumber === 4 && (isAr ? 'المهمة 04: إشارة حقيقية أم إنذار زائف؟' : 'Mission 04: Signal or False Alarm? (PSF vs Cosmic Ray Artifacts)')}
+                {missionNumber === 5 && (isAr ? 'المهمة 05: تقرير التحقيق النهائي واعتماد ناسا' : 'Mission 05: The Final Investigation & NASA Certification')}
               </h2>
             </div>
           </div>
@@ -198,7 +198,7 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
               gameAudio.playClick();
               onClose();
             }}
-            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+            className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -210,38 +210,38 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
           {/* SPEX Dialogue Guidance */}
           <div className="flex items-start gap-4 p-4 rounded-xl bg-slate-900/70 border border-slate-700/60">
             <img 
-              src={isSuccess ? SPEX_IMAGES.proudSuccess : SPEX_IMAGES.explaining} 
-              alt="SPEX"
+              src={isSuccess ? '/assets/spex/15_pose_proud_success.svg' : '/assets/spex/08_pose_explaining.svg'} 
+              alt="SPEX Egyptian Mech Cat Guardian"
               className="w-16 h-16 rounded-xl object-contain bg-slate-800/80 p-1 border border-amber-400/30 flex-shrink-0"
             />
             <div className="flex-1 text-sm text-slate-300 leading-relaxed">
               <span className="text-xs font-mono font-semibold text-amber-400 uppercase tracking-wider block mb-1">
-                SPEX AI Agent • {isSuccess ? (isAr ? 'تم التحقق بنجاح!' : 'Signal Validated!') : (isAr ? 'توجيه الملاحة' : 'Flight Director Guidance')}
+                SPEX AI Guardian • {isSuccess ? (isAr ? 'تم التحقق بنجاح!' : 'Validation Complete!') : (isAr ? 'توجيهات المحقق' : 'Flight Director Briefing')}
               </span>
               {missionNumber === 1 && (
                 isAr
-                  ? 'مرحباً بك في المحطة! لتجهيز تلسكوب SPHEREx، يجب تفعيل مبرد النيتروجين المفرغ، وتشغيل منظومة المرشحات الطيفية الخطية المتغيرة (LVF)، ومعالج الطرح الزمني.'
-                  : 'Welcome aboard Cadet! To prepare SPHEREx, we must initialize the cryogenic cooler (80K), power on the Linear Variable Filter detectors, and warm up the temporal difference engine.'
+                  ? 'أهلاً بك في محطة SPEX المدارية! أنا رفيقك الفلكي. لتجهيز التلسكوب للرصد العلمي، قم بتشغيل مبرد الحساسات (80K)، وتفعيل كواشف المرشحات الطيفية الخطية (LVF)، وبدء تشغيل محرك الطرح الفلكي.'
+                  : 'Welcome aboard SPEX Station! I am your feline astrophysical companion. To prepare SPHEREx for active observation, calibrate the cryogenic cooler (80K), initialize the 102 Linear Variable Filter channels, and boot the difference engine.'
               )}
               {missionNumber === 2 && (
                 isAr
-                  ? 'يخترق ضوء الأشعة تحت الحمراء سحب الغبار النجمي. يمتلك SPHEREx مئة واثنين (102) من الحزم الطيفية. اسحب المؤشر لاكتشاف امتصاص جليد الماء عند 3.05 ميكرومتر وجليد ثاني أكسيد الكربون عند 4.27 ميكرومتر!'
-                  : 'Infrared penetrates cosmic dust where optical telescopes see blackness. SPHEREx records 102 spectral channels. Sweep across wavelengths to detect interstellar water ice (3.05 µm) and CO₂ ice (4.27 µm)!'
+                  ? 'الكون البصري يحجب الكثير! تخترق الأشعة تحت الحمراء سحب الغبار الباردة كاشفة ولادة النجوم وجليد الماء (3.05µm) وجليد ثاني أكسيد الكربون (4.27µm). اسحب المؤشر الطيفي وتعرّف على البصمة الجليدية الكونية.'
+                  : 'Visible light is blocked by cosmic dust! SPHEREx captures 102 infrared bands from 0.75 to 5.0 µm, peering straight through cold clouds to reveal water ice (3.05 µm) and CO₂ ice (4.27 µm). Sweep across wavelengths to lock onto the ice absorption dips.'
               )}
               {missionNumber === 3 && (
                 isAr
-                  ? 'لكشف النجوم المتغيرة، نقارن بين صورتين متباعدتين زمنياً. اضبط إزاحة البكسل لتطابق النجوم المرجعية تماماً، ثم شغل طرح التباين D = I₂ - I₁ لاستخراج التغير النجمي.'
-                  : 'To find transient signals, we compare two visits. Slide the spatial offset until reference stars align, then activate difference subtraction D = I₂ - I₁ with variance propagation!'
+                  ? 'السماء ليست ثابتة! لكشف التغير، نلتقط صورتين متباعدتين زمنياً. اضبط إزاحة بكسل WCS حتى تتطابق النجوم المرجعية عند الصفر، ثم فعّل طرح التباين D = I₂ - I₁ لاستخراج التغير النجمي الحقيقي.'
+                  : 'The sky is not static! To isolate shifting sources, we compare observations taken months apart. Tune the WCS registration offset to 0px so reference stars match, then apply difference subtraction D = I₂ - I₁ with error propagation.'
               )}
               {missionNumber === 4 && (
                 isAr
-                  ? 'تحذير: الفضاء مليء بالخدع البصرية! نبضات الأشعة الكونية تضرب بكسلاً واحداً فقط، بينما النجم الحقيقي يتبع توزيع دالة انتشار النقطة (PSF). صنف العينات الأربعة بدقة.'
-                  : 'Warning: Not every spike is a real star! Cosmic rays hit single pixels instantly, whereas genuine astronomical sources obey the 2D Point Spread Function (PSF). Categorize all 4 candidates.'
+                  ? 'انتبه: ليست كل نقطة ساطعة نجماً حقيقياً! تضرب الأشعة الكونية بكسلاً واحداً حاداً، بينما تسبب اهتزازات التوجيه خطوطاً طولية. وحدها الأجرام الفلكية تتبع توزيع PSF الحقيقي بنسبة دلالة إحصائية عالية (> 5σ).'
+                  : 'Caution: Space is full of illusions! Single cosmic ray hits light up only 1 pixel, while gyro jitter creates streaks. Only genuine celestial bodies follow the 2D Point Spread Function (PSF) at high statistical significance (> 5σ).'
               )}
               {missionNumber === 5 && (
                 isAr
-                  ? 'هذا هو الاختبار النهائي! رصدنا ثوراناً ضوئياً حاداً في سحابة ولادة النجوم. افحص منحنى الضوء والأطياف عند 2.3 ميكرومتر وحدد التشخيص الفيزيائي لإصدار شهادة التحقيق الرسمية.'
-                  : 'The master challenge: A sudden infrared flare inside a protostellar envelope. Analyze the lightcurve and the 2.3 µm CO absorption to deliver the final astrophysical verdict.'
+                  ? 'التحقيق النهائي: رصدنا ثوراناً فلكياً مفاجئاً في سحابة ولادة النجوم. افحص منحنى الضوء الطيفي وحافة امتصاص غاز أول أكسيد الكربون (2.3µm) لاعتماد تشخيص FU Orionis وإصدار شهادة التحقيق الفلكي الرسمية.'
+                  : 'The final investigative verdict: A violent infrared outburst in a stellar nursery. Verify the Δm = 4.5 mag flare and 2.3 µm CO absorption to confirm the FU Orionis protostellar accretion diagnosis and earn your NASA certification.'
               )}
             </div>
           </div>

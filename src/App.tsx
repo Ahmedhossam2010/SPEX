@@ -9,7 +9,38 @@ import { InvestigationResult } from './science/types';
 import { Language, translations } from './utils/translations';
 
 export function App() {
-  const [activeTab, setActiveTab] = useState<'home' | 'explore' | 'game' | 'cases' | 'about'>('explore');
+  const getInitialTab = (): 'home' | 'explore' | 'game' | 'cases' | 'about' => {
+    if (typeof window === 'undefined') return 'home';
+    const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get('tab');
+    if (tabParam === 'explore' || path === 'explore') return 'explore';
+    if (tabParam === 'game' || path === 'game') return 'game';
+    if (tabParam === 'cases' || path === 'cases') return 'cases';
+    if (tabParam === 'about' || path === 'about') return 'about';
+    if (tabParam === 'home' || path === 'home' || path === '') return 'home';
+    return 'home';
+  };
+
+  const [activeTab, setActiveTabState] = useState<'home' | 'explore' | 'game' | 'cases' | 'about'>(getInitialTab);
+
+  // Navigate tab and synchronize browser history pathname
+  const setActiveTab = (tab: 'home' | 'explore' | 'game' | 'cases' | 'about', replace = false) => {
+    setActiveTabState(tab);
+    if (typeof window !== 'undefined') {
+      const targetPath = tab === 'home' ? '/' : `/${tab}`;
+      const currentPath = window.location.pathname;
+      const currentSearch = window.location.search;
+      if (currentPath !== targetPath) {
+        if (replace) {
+          window.history.replaceState({ tab }, '', targetPath + currentSearch);
+        } else {
+          window.history.pushState({ tab }, '', targetPath + currentSearch);
+        }
+      }
+    }
+  };
+
   const [language, setLanguage] = useState<Language>(() => {
     const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
     const langParam = params.get('lang');
@@ -45,30 +76,34 @@ export function App() {
     });
   };
 
-  // Check URL query parameters (e.g. ?case=case-cal-stable-02 or ?ra=276.2614&dec=64.8258 or ?tab=explore or ?lang=ar)
+  // Sync with browser back/forward buttons
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\//, '').toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'explore' || path === 'explore') setActiveTabState('explore');
+      else if (tabParam === 'game' || path === 'game') setActiveTabState('game');
+      else if (tabParam === 'cases' || path === 'cases') setActiveTabState('cases');
+      else if (tabParam === 'about' || path === 'about') setActiveTabState('about');
+      else setActiveTabState('home');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Check URL query parameters and load initial data
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const caseParam = params.get('case');
     const raParam = params.get('ra');
     const decParam = params.get('dec');
-    const tabParam = params.get('tab');
     const langParam = params.get('lang');
 
     if (langParam === 'ar' || langParam === 'en') {
       setLanguage(langParam);
       localStorage.setItem('spherex_lang', langParam);
-    }
-
-    if (tabParam === 'home') {
-      setActiveTab('home');
-    } else if (tabParam === 'game') {
-      setActiveTab('game');
-    } else if (tabParam === 'cases') {
-      setActiveTab('cases');
-    } else if (tabParam === 'about') {
-      setActiveTab('about');
-    } else {
-      setActiveTab('explore');
     }
 
     // Fetch curated real cases on startup

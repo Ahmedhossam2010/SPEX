@@ -1,0 +1,458 @@
+import fs from 'fs';
+import path from 'path';
+
+const outDir = path.join(process.cwd(), 'public', 'assets', 'spex');
+const rootAssetsDir = path.join(process.cwd(), 'public', 'assets');
+
+if (!fs.existsSync(outDir)) {
+  fs.mkdirSync(outDir, { recursive: true });
+}
+
+// Color Palette for Egyptian Mech Cat Guardian:
+// Midnight Navy Fur/Suit: #152238 (mid), #0f192b (dark), #1e2f4d (light)
+// Egyptian Gold: #f59e0b (base), #fbbf24 (bright), #d97706 (shade)
+// Royal Blue Collar Enamel: #1e3a8a, #2563eb
+// White Armor: #f8fafc (base), #e2e8f0 (shade)
+// Cyan Glow/Accent: #06b6d4, #22d3ee
+// Eye Amber: #f59e0b, #fef08a (highlight)
+
+// Common head defs
+const headDefs = `
+<defs>
+  <linearGradient id="suitGrad" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#1e3052" />
+    <stop offset="100%" stop-color="#0f1828" />
+  </linearGradient>
+  <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0%" stop-color="#fbbf24" />
+    <stop offset="70%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#d97706" />
+  </linearGradient>
+  <linearGradient id="whitePlate" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#ffffff" />
+    <stop offset="100%" stop-color="#e2e8f0" />
+  </linearGradient>
+  <linearGradient id="eyeAmber" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#fde047" />
+    <stop offset="50%" stop-color="#f59e0b" />
+    <stop offset="100%" stop-color="#b45309" />
+  </linearGradient>
+  <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+    <feGaussianBlur stdDeviation="4" result="blur" />
+    <feComposite in="SourceGraphic" in2="blur" operator="over" />
+  </filter>
+</defs>
+`;
+
+// Renders the full body hero (standing pose matching 'Egyptian Mech Cat Guardian.png')
+function renderStandingHero(): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 850" width="100%" height="100%">
+  ${headDefs}
+  
+  <!-- Cybernetic Tail with Gold Rings -->
+  <g id="tail">
+    <path d="M 180,560 C 90,620 20,580 40,490 C 55,420 100,430 95,460 C 90,490 65,510 75,540 C 90,580 140,590 190,575 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <!-- Gold Rings on Tail -->
+    <path d="M 45,475 C 55,460 75,465 72,485 C 68,500 50,495 45,475 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <path d="M 68,525 C 78,515 95,520 90,538 C 85,550 72,545 68,525 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <!-- Tail Tip -->
+    <path d="M 70,430 C 85,415 105,430 95,455 C 85,450 75,440 70,430 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+  </g>
+
+  <!-- Left Leg (Viewer Right) -->
+  <g id="rightLeg">
+    <!-- Thigh -->
+    <path d="M 270,520 L 330,520 L 320,680 L 260,680 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <!-- Knee Hex Plate -->
+    <polygon points="295,570 315,585 315,615 295,630 275,615 275,585" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <!-- Lower Leg Flared Boot -->
+    <path d="M 260,680 L 325,680 L 345,780 L 250,780 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 260,695 L 325,695 L 322,705 L 258,705 Z" fill="url(#goldGrad)" />
+    <!-- Ankle Cuff with Rivet -->
+    <path d="M 252,750 L 342,750 L 344,765 L 250,765 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <circle cx="297" cy="758" r="4" fill="#fbbf24" stroke="#78350f" stroke-width="1.5" />
+    <!-- White Boot Paw -->
+    <path d="M 245,780 C 245,775 350,775 350,780 L 360,820 C 355,835 240,835 235,820 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="4" />
+  </g>
+
+  <!-- Right Leg (Viewer Left) -->
+  <g id="leftLeg">
+    <!-- Thigh -->
+    <path d="M 170,520 L 230,520 L 240,680 L 180,680 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <!-- Knee Hex Plate -->
+    <polygon points="205,570 225,585 225,615 205,630 185,615 185,585" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <!-- Lower Leg Flared Boot -->
+    <path d="M 175,680 L 240,680 L 250,780 L 155,780 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 175,695 L 240,695 L 242,705 L 178,705 Z" fill="url(#goldGrad)" />
+    <!-- Ankle Cuff with Rivet -->
+    <path d="M 158,750 L 248,750 L 250,765 L 156,765 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <circle cx="203" cy="758" r="4" fill="#fbbf24" stroke="#78350f" stroke-width="1.5" />
+    <!-- White Boot Paw -->
+    <path d="M 150,780 C 150,775 255,775 255,780 L 265,820 C 260,835 145,835 140,820 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="4" />
+  </g>
+
+  <!-- Belt with Circular Buckle -->
+  <g id="belt">
+    <path d="M 175,475 L 325,475 L 320,515 L 180,515 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="3" />
+    <!-- Segment lines on belt -->
+    <line x1="200" y1="475" x2="200" y2="515" stroke="#78350f" stroke-width="2" />
+    <line x1="225" y1="475" x2="225" y2="515" stroke="#78350f" stroke-width="2" />
+    <line x1="275" y1="475" x2="275" y2="515" stroke="#78350f" stroke-width="2" />
+    <line x1="300" y1="475" x2="300" y2="515" stroke="#78350f" stroke-width="2" />
+    <!-- Central Circular Medallion -->
+    <circle cx="250" cy="495" r="20" fill="url(#goldGrad)" stroke="#090e17" stroke-width="3" />
+    <circle cx="250" cy="495" r="14" fill="#fbbf24" stroke="#78350f" stroke-width="2" />
+  </g>
+
+  <!-- Torso & Abdominal Armor -->
+  <g id="torso">
+    <path d="M 170,360 L 330,360 L 320,480 L 180,480 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <!-- Abdominal Segment Plate -->
+    <path d="M 215,405 L 285,405 L 280,480 L 220,480 Z" fill="#94a3b8" stroke="#090e17" stroke-width="2" />
+    <line x1="217" y1="420" x2="283" y2="420" stroke="#334155" stroke-width="2" />
+    <line x1="219" y1="440" x2="281" y2="440" stroke="#334155" stroke-width="2" />
+    <line x1="220" y1="460" x2="280" y2="460" stroke="#334155" stroke-width="2" />
+    <!-- White Pectoral Breastplate -->
+    <path d="M 175,340 L 325,340 L 315,395 L 285,395 L 275,410 L 225,410 L 215,395 L 185,395 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <path d="M 225,395 L 275,395 L 275,410 L 225,410 Z" fill="url(#goldGrad)" />
+  </g>
+
+  <!-- Left Arm (Viewer Left) -->
+  <g id="leftArm">
+    <!-- Shoulder Pad -->
+    <path d="M 180,310 C 140,315 130,360 160,380 L 195,350 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <path d="M 155,340 C 145,350 148,365 160,370" fill="none" stroke="url(#goldGrad)" stroke-width="4" />
+    <!-- Bicep -->
+    <path d="M 160,360 L 190,345 L 165,440 L 135,435 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+    <!-- Forearm Gauntlet -->
+    <path d="M 135,430 L 170,440 L 190,520 L 140,540 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <!-- Gold Trim on Gauntlet -->
+    <path d="M 140,440 L 168,448 L 165,460 L 137,452 Z" fill="url(#goldGrad)" />
+    <path d="M 145,515 L 185,502 L 188,518 L 148,530 Z" fill="url(#goldGrad)" />
+    <!-- Paw Fist at Hip -->
+    <circle cx="205" cy="530" r="22" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+  </g>
+
+  <!-- Right Arm (Viewer Right) -->
+  <g id="rightArm">
+    <!-- Shoulder Pad -->
+    <path d="M 320,310 C 360,315 370,360 340,380 L 305,350 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <path d="M 345,340 C 355,350 352,365 340,370" fill="none" stroke="url(#goldGrad)" stroke-width="4" />
+    <!-- Bicep -->
+    <path d="M 340,360 L 310,345 L 335,440 L 365,435 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+    <!-- Forearm Gauntlet -->
+    <path d="M 365,430 L 330,440 L 360,540 L 400,520 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <!-- Gold Trim on Gauntlet -->
+    <path d="M 360,440 L 332,448 L 335,460 L 363,452 Z" fill="url(#goldGrad)" />
+    <path d="M 355,515 L 395,502 L 392,518 L 352,530 Z" fill="url(#goldGrad)" />
+    <!-- Closed Fist -->
+    <circle cx="380" cy="555" r="22" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+  </g>
+
+  <!-- Egyptian Wesekh Collar with Eye of Horus -->
+  <g id="wesekhCollar">
+    <!-- Broad Collar Arc -->
+    <path d="M 155,305 C 190,345 310,345 345,305 C 310,370 190,370 155,305 Z" fill="#1e3a8a" stroke="#090e17" stroke-width="4" />
+    <!-- Gold Border on Collar -->
+    <path d="M 155,305 C 190,345 310,345 345,305" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <path d="M 160,320 C 195,375 305,375 340,320" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <!-- Blue/Gold Segments -->
+    <line x1="200" y1="325" x2="190" y2="345" stroke="url(#goldGrad)" stroke-width="3" />
+    <line x1="230" y1="335" x2="225" y2="360" stroke="url(#goldGrad)" stroke-width="3" />
+    <line x1="270" y1="335" x2="275" y2="360" stroke="url(#goldGrad)" stroke-width="3" />
+    <line x1="300" y1="325" x2="310" y2="345" stroke="url(#goldGrad)" stroke-width="3" />
+    <!-- Center Golden Eye of Horus Emblem -->
+    <g transform="translate(250, 342) scale(0.9)">
+      <!-- Eye Outline -->
+      <path d="M -22,0 C -12,-10 12,-10 22,0 C 12,10 -12,10 -22,0 Z" fill="none" stroke="url(#goldGrad)" stroke-width="3" />
+      <!-- Pupil -->
+      <circle cx="0" cy="0" r="5" fill="url(#goldGrad)" />
+      <!-- Eyebrow -->
+      <path d="M -20,-12 C -10,-18 10,-18 20,-12" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" />
+      <!-- Horus Teardrop & Spiral Stem -->
+      <line x1="0" y1="8" x2="0" y2="18" stroke="url(#goldGrad)" stroke-width="2.5" />
+      <path d="M 5,8 C 15,16 18,22 10,25 C 5,26 2,20 6,18" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" />
+    </g>
+  </g>
+
+  <!-- Neck -->
+  <path d="M 225,260 L 275,260 L 280,310 L 220,310 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+
+  <!-- Head & Ears -->
+  <g id="head">
+    <!-- Left Ear (Viewer Left) -->
+    <g id="earLeft">
+      <path d="M 180,210 L 130,80 C 145,70 190,100 215,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+      <!-- Inner Ear Gold -->
+      <path d="M 175,195 L 145,100 C 160,95 185,120 200,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+      <!-- Segment Ribs in Inner Ear -->
+      <line x1="152" y1="125" x2="180" y2="135" stroke="#78350f" stroke-width="2" />
+      <line x1="160" y1="145" x2="190" y2="155" stroke="#78350f" stroke-width="2" />
+      <line x1="168" y1="165" x2="195" y2="175" stroke="#78350f" stroke-width="2" />
+    </g>
+
+    <!-- Right Ear (Viewer Right) -->
+    <g id="earRight">
+      <path d="M 320,210 L 370,80 C 355,70 310,100 285,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+      <!-- Inner Ear Gold -->
+      <path d="M 325,195 L 355,100 C 340,95 315,120 300,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+      <!-- Segment Ribs in Inner Ear -->
+      <line x1="348" y1="125" x2="320" y2="135" stroke="#78350f" stroke-width="2" />
+      <line x1="340" y1="145" x2="310" y2="155" stroke="#78350f" stroke-width="2" />
+      <line x1="332" y1="165" x2="305" y2="175" stroke="#78350f" stroke-width="2" />
+    </g>
+
+    <!-- Main Cat Head Shape -->
+    <path d="M 180,180 C 180,110 320,110 320,180 C 350,220 330,270 280,275 C 265,280 235,280 220,275 C 170,270 150,220 180,180 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+
+    <!-- Headgear Earpieces / Audio Modules -->
+    <g id="headsetLeft">
+      <ellipse cx="160" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+      <ellipse cx="160" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+    </g>
+    <g id="headsetRight">
+      <ellipse cx="340" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+      <ellipse cx="340" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+    </g>
+
+    <!-- Golden Forehead Chevron Stripe -->
+    <polygon points="250,215 265,115 235,115" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+
+    <!-- Left Eye (Viewer Left) -->
+    <g id="leftEye">
+      <!-- Gold Eyeliner Wing -->
+      <path d="M 180,195 C 190,165 230,165 240,195 C 235,205 185,205 180,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <!-- Sclera -->
+      <path d="M 188,193 C 196,172 224,172 232,193 C 224,204 196,204 188,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <!-- Amber Iris -->
+      <ellipse cx="210" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <!-- Pupil -->
+      <ellipse cx="210" cy="189" rx="7" ry="14" fill="#090e17" />
+      <!-- Specular Highlight -->
+      <circle cx="205" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="215" cy="195" r="2" fill="#ffffff" />
+    </g>
+
+    <!-- Right Eye (Viewer Right) -->
+    <g id="rightEye">
+      <!-- Gold Eyeliner Wing -->
+      <path d="M 260,195 C 270,165 310,165 320,195 C 315,205 265,205 260,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <!-- Sclera -->
+      <path d="M 268,193 C 276,172 304,172 312,193 C 304,204 276,204 268,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <!-- Amber Iris -->
+      <ellipse cx="290" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <!-- Pupil -->
+      <ellipse cx="290" cy="189" rx="7" ry="14" fill="#090e17" />
+      <!-- Specular Highlight -->
+      <circle cx="285" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="295" cy="195" r="2" fill="#ffffff" />
+    </g>
+
+    <!-- Nose & Mouth -->
+    <polygon points="250,225 256,218 244,218" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" />
+    <!-- Cat Smile -->
+    <path d="M 238,230 C 244,236 250,234 250,226 C 250,234 256,236 262,230" fill="none" stroke="#090e17" stroke-width="3" stroke-linecap="round" />
+
+    <!-- Whiskers -->
+    <line x1="175" y1="230" x2="215" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="170" y1="242" x2="215" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="325" y1="230" x2="285" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="330" y1="242" x2="285" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+  </g>
+</svg>`;
+}
+
+// Renders the waving hero pose (friendly greeting)
+function renderWavingHero(): string {
+  // Same base hero but with right arm raised high in open wave
+  return renderStandingHero().replace(
+    /<!-- Right Arm \(Viewer Right\) -->[\s\S]*?<!-- Egyptian Wesekh Collar/,
+    `<!-- Right Arm Waving High in Greeting -->
+  <g id="rightArmWaving">
+    <!-- Shoulder Pad -->
+    <path d="M 320,310 C 360,290 380,330 350,360 L 305,340 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <path d="M 345,310 C 358,320 355,335 345,345" fill="none" stroke="url(#goldGrad)" stroke-width="4" />
+    <!-- Upper Arm raised upward -->
+    <path d="M 330,320 L 380,240 L 415,260 L 360,340 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+    <!-- Forearm Gauntlet reaching up -->
+    <path d="M 380,250 L 435,170 L 465,190 L 410,270 Z" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+    <path d="M 390,240 L 415,255 L 405,268 L 380,252 Z" fill="url(#goldGrad)" />
+    <path d="M 430,180 L 455,195 L 448,208 L 422,192 Z" fill="url(#goldGrad)" />
+    <!-- Open Waving Paw Hand -->
+    <g transform="translate(445, 160)">
+      <circle cx="0" cy="0" r="18" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+      <!-- Open fingers / claws -->
+      <ellipse cx="-10" cy="-14" rx="5" ry="10" fill="url(#suitGrad)" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="0" cy="-18" rx="5" ry="11" fill="url(#suitGrad)" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="10" cy="-16" rx="5" ry="10" fill="url(#suitGrad)" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="16" cy="-6" rx="4" ry="8" fill="url(#suitGrad)" stroke="#090e17" stroke-width="2" />
+      <!-- Gold Paw Pad Accent -->
+      <ellipse cx="0" cy="2" rx="8" ry="6" fill="url(#goldGrad)" />
+    </g>
+  </g>
+  <!-- Egyptian Wesekh Collar`
+  );
+}
+
+// Renders an avatar portrait (zoomed on head, headset, collar, and Eye of Horus)
+function renderAvatar(expression: string = 'normal'): string {
+  let mouth = `<path d="M 238,230 C 244,236 250,234 250,226 C 250,234 256,236 262,230" fill="none" stroke="#090e17" stroke-width="3" stroke-linecap="round" />`;
+  let eyeOverlay = '';
+
+  if (expression === 'happy' || expression === 'greeting') {
+    mouth = `<path d="M 235,228 Q 250,250 265,228 Z" fill="#b91c1c" stroke="#090e17" stroke-width="3" />
+             <path d="M 240,236 Q 250,246 260,236" fill="#f87171" />`;
+  } else if (expression === 'eureka') {
+    mouth = `<path d="M 234,226 Q 250,254 266,226 Z" fill="#991b1b" stroke="#090e17" stroke-width="3" />`;
+  } else if (expression === 'facepalm') {
+    eyeOverlay = `<path d="M 190,190 Q 210,198 230,190" fill="none" stroke="#090e17" stroke-width="4" stroke-linecap="round" />
+                  <path d="M 270,190 Q 290,198 310,190" fill="none" stroke="#090e17" stroke-width="4" stroke-linecap="round" />
+                  <!-- Hand covering right forehead -->
+                  <g transform="translate(290, 160) rotate(-20)">
+                    <ellipse cx="0" cy="0" rx="20" ry="35" fill="url(#whitePlate)" stroke="#090e17" stroke-width="3" />
+                    <line x1="-8" y1="-25" x2="-8" y2="-5" stroke="#78350f" stroke-width="2" />
+                    <line x1="0" y1="-28" x2="0" y2="-5" stroke="#78350f" stroke-width="2" />
+                    <line x1="8" y1="-25" x2="8" y2="-5" stroke="#78350f" stroke-width="2" />
+                  </g>`;
+  } else if (expression === 'sarcastic' || expression === 'sassy') {
+    mouth = `<path d="M 240,232 Q 255,230 268,226" fill="none" stroke="#090e17" stroke-width="3.5" stroke-linecap="round" />`;
+  }
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 60 300 320" width="100%" height="100%">
+  ${headDefs}
+
+  <!-- Wesekh Collar at bottom -->
+  <g transform="translate(0, 0)">
+    <path d="M 155,305 C 190,345 310,345 345,305 C 310,370 190,370 155,305 Z" fill="#1e3a8a" stroke="#090e17" stroke-width="4" />
+    <path d="M 155,305 C 190,345 310,345 345,305" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <path d="M 160,320 C 195,375 305,375 340,320" fill="none" stroke="url(#goldGrad)" stroke-width="6" />
+    <!-- Center Golden Eye of Horus Emblem -->
+    <g transform="translate(250, 342) scale(0.9)">
+      <path d="M -22,0 C -12,-10 12,-10 22,0 C 12,10 -12,10 -22,0 Z" fill="none" stroke="url(#goldGrad)" stroke-width="3" />
+      <circle cx="0" cy="0" r="5" fill="url(#goldGrad)" />
+      <path d="M -20,-12 C -10,-18 10,-18 20,-12" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" />
+    </g>
+  </g>
+
+  <!-- Neck -->
+  <path d="M 225,260 L 275,260 L 280,310 L 220,310 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="3" />
+
+  <!-- Head & Ears -->
+  <g id="head">
+    <!-- Left Ear -->
+    <path d="M 180,210 L 130,80 C 145,70 190,100 215,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 175,195 L 145,100 C 160,95 185,120 200,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <line x1="152" y1="125" x2="180" y2="135" stroke="#78350f" stroke-width="2" />
+    <line x1="160" y1="145" x2="190" y2="155" stroke="#78350f" stroke-width="2" />
+    <line x1="168" y1="165" x2="195" y2="175" stroke="#78350f" stroke-width="2" />
+
+    <!-- Right Ear -->
+    <path d="M 320,210 L 370,80 C 355,70 310,100 285,160 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+    <path d="M 325,195 L 355,100 C 340,95 315,120 300,165 Z" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+    <line x1="348" y1="125" x2="320" y2="135" stroke="#78350f" stroke-width="2" />
+    <line x1="340" y1="145" x2="310" y2="155" stroke="#78350f" stroke-width="2" />
+    <line x1="332" y1="165" x2="305" y2="175" stroke="#78350f" stroke-width="2" />
+
+    <!-- Head Shape -->
+    <path d="M 180,180 C 180,110 320,110 320,180 C 350,220 330,270 280,275 C 265,280 235,280 220,275 C 170,270 150,220 180,180 Z" fill="url(#suitGrad)" stroke="#090e17" stroke-width="4" />
+
+    <!-- Headset Audio Modules -->
+    <ellipse cx="160" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+    <ellipse cx="160" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+
+    <ellipse cx="340" cy="210" rx="14" ry="24" fill="#0f172a" stroke="url(#goldGrad)" stroke-width="4" />
+    <ellipse cx="340" cy="210" rx="6" ry="12" fill="#38bdf8" filter="url(#glow)" />
+
+    <!-- Golden Forehead Crest -->
+    <polygon points="250,215 265,115 235,115" fill="url(#goldGrad)" stroke="#b45309" stroke-width="2" />
+
+    ${eyeOverlay ? eyeOverlay : `
+    <!-- Left Eye -->
+    <g id="leftEye">
+      <path d="M 180,195 C 190,165 230,165 240,195 C 235,205 185,205 180,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <path d="M 188,193 C 196,172 224,172 232,193 C 224,204 196,204 188,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="210" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <ellipse cx="210" cy="189" rx="7" ry="14" fill="#090e17" />
+      <circle cx="205" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="215" cy="195" r="2" fill="#ffffff" />
+    </g>
+
+    <!-- Right Eye -->
+    <g id="rightEye">
+      <path d="M 260,195 C 270,165 310,165 320,195 C 315,205 265,205 260,195 Z" fill="url(#goldGrad)" stroke="#090e17" stroke-width="2" />
+      <path d="M 268,193 C 276,172 304,172 312,193 C 304,204 276,204 268,193 Z" fill="#ffffff" stroke="#090e17" stroke-width="2" />
+      <ellipse cx="290" cy="189" rx="14" ry="16" fill="url(#eyeAmber)" />
+      <ellipse cx="290" cy="189" rx="7" ry="14" fill="#090e17" />
+      <circle cx="285" cy="182" r="4.5" fill="#ffffff" />
+      <circle cx="295" cy="195" r="2" fill="#ffffff" />
+    </g>
+    `}
+
+    <!-- Nose -->
+    <polygon points="250,225 256,218 244,218" fill="url(#goldGrad)" stroke="#78350f" stroke-width="1.5" />
+    <!-- Mouth -->
+    ${mouth}
+
+    <!-- Whiskers -->
+    <line x1="175" y1="230" x2="215" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="170" y1="242" x2="215" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="325" y1="230" x2="285" y2="232" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="330" y1="242" x2="285" y2="240" stroke="url(#goldGrad)" stroke-width="2.5" stroke-linecap="round" />
+  </g>
+</svg>`;
+}
+
+// Generate the suite of assets
+const standingSvg = renderStandingHero();
+const wavingSvg = renderWavingHero();
+const avatarGreetingSvg = renderAvatar('greeting');
+const avatarInvestigatorSvg = renderAvatar('normal');
+const avatarHappySvg = renderAvatar('happy');
+const avatarEurekaSvg = renderAvatar('eureka');
+const avatarFacepalmSvg = renderAvatar('facepalm');
+const avatarSarcasticSvg = renderAvatar('sarcastic');
+
+// Save main SVGs
+fs.writeFileSync(path.join(outDir, 'spex_hero_standing.svg'), standingSvg, 'utf8');
+fs.writeFileSync(path.join(outDir, 'spex_hero_waving.svg'), wavingSvg, 'utf8');
+fs.writeFileSync(path.join(outDir, 'spex_avatar_greeting.svg'), avatarGreetingSvg, 'utf8');
+fs.writeFileSync(path.join(outDir, 'spex_avatar_investigator.svg'), avatarInvestigatorSvg, 'utf8');
+
+// Also save directly to public/assets root with both .svg and .png extensions so old paths always resolve
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_hero_standing.svg'), standingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_hero_waving.svg'), wavingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_avatar_greeting.svg'), avatarGreetingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_avatar_investigator.svg'), avatarInvestigatorSvg, 'utf8');
+
+// For .png legacy paths, write the SVG so browser renders it or receives image data
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_hero_standing.png'), standingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_hero_waving.png'), wavingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_avatar_greeting.png'), avatarGreetingSvg, 'utf8');
+fs.writeFileSync(path.join(rootAssetsDir, 'spex_avatar_investigator.png'), avatarInvestigatorSvg, 'utf8');
+
+// Save individual emotion assets for all 17 states
+const allEmotions: Record<string, string> = {
+  '01_face_normal.svg': avatarInvestigatorSvg,
+  '02_face_happy.svg': avatarHappySvg,
+  '03_face_curious.svg': avatarInvestigatorSvg,
+  '04_face_serious.svg': avatarInvestigatorSvg,
+  '05_face_surprised.svg': avatarEurekaSvg,
+  '06_face_sarcastic.svg': avatarSarcasticSvg,
+  '07_pose_thinking.svg': avatarInvestigatorSvg,
+  '08_pose_explaining.svg': avatarGreetingSvg,
+  '09_pose_playful_joker.svg': avatarHappySvg,
+  '10_pose_friendly_greeting.svg': wavingSvg,
+  '11_pose_amused_laughter.svg': avatarHappySvg,
+  '12_pose_unimpressed_sassy.svg': avatarSarcasticSvg,
+  '13_pose_eureka.svg': avatarEurekaSvg,
+  '14_pose_confused_investigator.svg': avatarInvestigatorSvg,
+  '15_pose_proud_success.svg': standingSvg,
+  '16_pose_facepalm_comic_disbelief.svg': avatarFacepalmSvg,
+  'Egyptian_Mech_Cat_Guardian.svg': standingSvg,
+};
+
+for (const [filename, content] of Object.entries(allEmotions)) {
+  fs.writeFileSync(path.join(outDir, filename), content, 'utf8');
+}
+
+console.log('Successfully generated authentic Egyptian Mech Cat Guardian assets in:', outDir);

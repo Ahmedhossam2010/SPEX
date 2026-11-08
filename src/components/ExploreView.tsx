@@ -51,6 +51,7 @@ import { SkyCoverageModal } from './SkyCoverageModal';
 import { SpectralExplorerModal } from './SpectralExplorerModal';
 import { DiscoveryReportModal } from './DiscoveryReportModal';
 import { CandidateComparisonModal } from './CandidateComparisonModal';
+import { DataReleaseModal } from './DataReleaseModal';
 import { VisualScienceExplainer } from './VisualScienceExplainer';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 import { Language, translations } from '../utils/translations';
@@ -135,6 +136,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showSpectralExplorer, setShowSpectralExplorer] = useState<boolean>(false);
   const [showDiscoveryReport, setShowDiscoveryReport] = useState<boolean>(false);
   const [showCandidateComparison, setShowCandidateComparison] = useState<boolean>(false);
+  const [showDataRelease, setShowDataRelease] = useState<boolean>(false);
 
   useModalBehavior(isSearchOpen, () => setIsSearchOpen(false));
 
@@ -1154,6 +1156,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               >
                 <Table className="w-3.5 h-3.5 text-indigo-500" />
                 <span>Compare Table</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDataRelease(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 hover:text-emerald-500 cursor-pointer"
+              >
+                <Database className="w-3.5 h-3.5 text-emerald-500" />
+                <span>Data Ingestion</span>
               </button>
             </div>
           </section>

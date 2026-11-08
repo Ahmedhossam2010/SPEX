@@ -32,6 +32,7 @@ import {
 import { SPEX_ASSETS, SPEX_HERO_IMAGE, SPEX_WAVING_HERO } from '../spex/spexAssets';
 import { SpherexLogo } from './SpherexLogo';
 import { SpexPortrait } from '../spex/SpexPortrait';
+import { DataReleaseModal } from './DataReleaseModal';
 import { Language, translations } from '../utils/translations';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 
@@ -75,6 +76,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const [isMeetSpexOpen, setIsMeetSpexOpen] = useState(false);
   useModalBehavior(isMeetSpexOpen, () => setIsMeetSpexOpen(false));
+
+  const [isDataReleaseOpen, setIsDataReleaseOpen] = useState(false);
+  useModalBehavior(isDataReleaseOpen, () => setIsDataReleaseOpen(false));
 
   const [quickRa, setQuickRa] = useState<string>('276.2614');
   const [quickDec, setQuickDec] = useState<string>('64.8258');
@@ -274,9 +278,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 font-mono text-xs">
-              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-              <span className="text-emerald-400 font-bold">ALL SYSTEMS NOMINAL</span>
+            <div className="flex items-center gap-3 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setIsDataReleaseOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-mono font-bold transition cursor-pointer shadow-xs"
+              >
+                {isRtl ? 'دليل استيراد البيانات' : 'Data Ingestion Guide &rarr;'}
+              </button>
+              <div className="flex items-center gap-1.5">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-emerald-400 font-bold">ALL SYSTEMS NOMINAL</span>
+              </div>
             </div>
           </div>
 
@@ -598,6 +611,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* SPHEREx Data Release Ingestion Modal */}
+      <DataReleaseModal
+        isOpen={isDataReleaseOpen}
+        onClose={() => setIsDataReleaseOpen(false)}
+        language={language}
+      />
     </div>
   );
 };
