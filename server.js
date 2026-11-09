@@ -2106,6 +2106,8 @@ var KNOWN_BENCHMARK_GAIA_SOURCES = [
     dec: 64.82562,
     identifier: "Gaia DR3 2256659625017767168",
     gMag: 15.42,
+    pmRaMasYr: -3.2,
+    pmDecMasYr: -1.8,
     objectType: "Star / Variable Point Source"
   },
   {
@@ -2113,6 +2115,8 @@ var KNOWN_BENCHMARK_GAIA_SOURCES = [
     dec: 64.96072,
     identifier: "Gaia DR3 2256659620722802048",
     gMag: 14.18,
+    pmRaMasYr: 1.1,
+    pmDecMasYr: -4.5,
     objectType: "Photometric Standard Star"
   },
   {
@@ -2120,6 +2124,8 @@ var KNOWN_BENCHMARK_GAIA_SOURCES = [
     dec: 64.83605,
     identifier: "Gaia DR3 2256659551996956672",
     gMag: 16.05,
+    pmRaMasYr: -14.2,
+    pmDecMasYr: 8.5,
     objectType: "High-Proper-Motion Star"
   },
   {
@@ -2127,7 +2133,45 @@ var KNOWN_BENCHMARK_GAIA_SOURCES = [
     dec: 65.0998,
     identifier: "Gaia DR3 2256660140413843456",
     gMag: 13.75,
+    pmRaMasYr: 0.8,
+    pmDecMasYr: 2.1,
     objectType: "Field Star / Optical Counterpart"
+  },
+  {
+    ra: 269.45208,
+    dec: 4.69339,
+    identifier: "Gaia DR3 4472832130942585856 (GJ 699)",
+    gMag: 9.51,
+    pmRaMasYr: -802.8,
+    pmDecMasYr: 10362.5,
+    objectType: "Barnard Star (Ultra-High Proper Motion M4V)"
+  },
+  {
+    ra: 330.84042,
+    dec: -56.78601,
+    identifier: "Gaia DR3 6413247949313880448 (Eps Indi)",
+    gMag: 4.69,
+    pmRaMasYr: 3961.4,
+    pmDecMasYr: -2538.3,
+    objectType: "Epsilon Indi System"
+  },
+  {
+    ra: 77.45833,
+    dec: 30.40142,
+    identifier: "Gaia DR3 162985331610427392 (RW Aur)",
+    gMag: 10.42,
+    pmRaMasYr: 1.2,
+    pmDecMasYr: -18.4,
+    objectType: "RW Aurigae T Tauri Binary"
+  },
+  {
+    ra: 248.33004,
+    dec: 66.70281,
+    identifier: "Gaia DR3 1644781424687729280 (R Dra)",
+    gMag: 7.62,
+    pmRaMasYr: 15.6,
+    pmDecMasYr: -1.2,
+    objectType: "R Draconis Mira Variable"
   }
 ];
 var KNOWN_BENCHMARK_WISE_SOURCES = [
@@ -2162,6 +2206,22 @@ var KNOWN_BENCHMARK_WISE_SOURCES = [
     w1Mag: 12.95,
     w2Mag: 12.9,
     objectType: "Infrared Field Counterpart"
+  },
+  {
+    ra: 269.45208,
+    dec: 4.69339,
+    identifier: "AllWISE J175748.49+044138.3 (Barnard Star)",
+    w1Mag: 5.24,
+    w2Mag: 5.01,
+    objectType: "Mid-Infrared Counterpart (GJ 699)"
+  },
+  {
+    ra: 133.79513,
+    dec: -7.24515,
+    identifier: "AllWISE J085510.83-071442.5 (WISE 0855)",
+    w1Mag: 18.2,
+    w2Mag: 13.98,
+    objectType: "Sub-Brown Dwarf (Y-Dwarf ~250 K)"
   }
 ];
 var CatalogMatcher = class {
@@ -2348,7 +2408,191 @@ var CatalogMatcher = class {
     }
     return matches;
   }
+  /**
+   * Propagate celestial coordinates from reference catalog epoch to target observation epoch
+   * using proper motion vector (pmra in mas/yr [with cos(dec) convention], pmdec in mas/yr).
+   */
+  static propagateProperMotion(ra, dec, pmRaMasYr = 0, pmDecMasYr = 0, fromEpochYear = 2016, toEpochYear = 2025.35) {
+    const deltaYears = toEpochYear - fromEpochYear;
+    if (deltaYears === 0 || pmRaMasYr === 0 && pmDecMasYr === 0) {
+      return { ra, dec };
+    }
+    const cosDec = Math.cos(dec * Math.PI / 180);
+    const deltaRaDeg = cosDec !== 0 ? pmRaMasYr * deltaYears / (36e5 * cosDec) : 0;
+    const deltaDecDeg = pmDecMasYr * deltaYears / 36e5;
+    const propRa = ((ra + deltaRaDeg) % 360 + 360) % 360;
+    const propDec = Math.max(-90, Math.min(90, dec + deltaDecDeg));
+    return {
+      ra: Number(propRa.toFixed(6)),
+      dec: Number(propDec.toFixed(6))
+    };
+  }
+  /**
+   * Fetch astronomical sources in field for interactive canvas overlays,
+   * propagating high-proper-motion Gaia positions to the SPHEREx observation date.
+   */
+  static async getOverlaySources(ra, dec, radiusArcsec = 180, observationEpochYear = 2025.35, wcs) {
+    const overlays = [];
+    for (const src of KNOWN_BENCHMARK_GAIA_SOURCES) {
+      const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
+      if (sep <= radiusArcsec) {
+        const prop = this.propagateProperMotion(
+          src.ra,
+          src.dec,
+          src.pmRaMasYr || 0,
+          src.pmDecMasYr || 0,
+          2016,
+          observationEpochYear
+        );
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(prop.ra, prop.dec, wcs);
+            x = Math.round(pix.x);
+            y = Math.round(pix.y);
+          } catch {
+          }
+        }
+        overlays.push({
+          catalog: "Gaia DR3",
+          identifier: src.identifier,
+          raRaw: src.ra,
+          decRaw: src.dec,
+          raPropagated: prop.ra,
+          decPropagated: prop.dec,
+          x,
+          y,
+          mag: src.gMag,
+          magLabel: src.gMag ? `G = ${src.gMag.toFixed(2)}` : void 0,
+          pmRaMasYr: src.pmRaMasYr,
+          pmDecMasYr: src.pmDecMasYr,
+          sourceType: src.objectType
+        });
+      }
+    }
+    for (const src of KNOWN_BENCHMARK_WISE_SOURCES) {
+      const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
+      if (sep <= radiusArcsec) {
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(src.ra, src.dec, wcs);
+            x = Math.round(pix.x);
+            y = Math.round(pix.y);
+          } catch {
+          }
+        }
+        overlays.push({
+          catalog: "AllWISE",
+          identifier: src.identifier,
+          raRaw: src.ra,
+          decRaw: src.dec,
+          raPropagated: src.ra,
+          decPropagated: src.dec,
+          x,
+          y,
+          mag: src.w1Mag,
+          magLabel: `W1=${src.w1Mag.toFixed(1)}, W2=${src.w2Mag.toFixed(1)}`,
+          sourceType: src.objectType
+        });
+      }
+    }
+    return overlays;
+  }
 };
+
+// src/science/coordinates.ts
+function sexagesimalToDecimal(raStr, decStr) {
+  const raMatch = raStr.trim().match(/^([+]?\d+(?:\.\d+)?)\s*(?:h|:|\s)\s*(\d+(?:\.\d+)?)\s*(?:m|:|\s)\s*(\d+(?:\.\d+)?)\s*s?$/i);
+  let raDeg = NaN;
+  if (raMatch) {
+    const h = parseFloat(raMatch[1]);
+    const m = parseFloat(raMatch[2]);
+    const s = parseFloat(raMatch[3]);
+    if (Number.isFinite(h) && Number.isFinite(m) && Number.isFinite(s)) {
+      raDeg = (h + m / 60 + s / 3600) * 15;
+    }
+  } else {
+    const val = parseFloat(raStr.trim());
+    if (Number.isFinite(val)) raDeg = val;
+  }
+  const decTrim = decStr.trim();
+  const isNegative = decTrim.startsWith("-");
+  const unsignedDec = isNegative ? decTrim.slice(1).trim() : decTrim.startsWith("+") ? decTrim.slice(1).trim() : decTrim;
+  const decMatch = unsignedDec.match(/^(\d+(?:\.\d+)?)\s*(?:d|°|:|\s)\s*(\d+(?:\.\d+)?)\s*(?:m|'|:|\s)\s*(\d+(?:\.\d+)?)\s*(?:s|")?$/i);
+  let decDeg = NaN;
+  if (decMatch) {
+    const d = parseFloat(decMatch[1]);
+    const m = parseFloat(decMatch[2]);
+    const s = parseFloat(decMatch[3]);
+    if (Number.isFinite(d) && Number.isFinite(m) && Number.isFinite(s)) {
+      const mag = d + m / 60 + s / 3600;
+      decDeg = isNegative ? -mag : mag;
+    }
+  } else {
+    const val = parseFloat(decTrim);
+    if (Number.isFinite(val)) decDeg = val;
+  }
+  if (Number.isFinite(raDeg)) {
+    raDeg = (raDeg % 360 + 360) % 360;
+    raDeg = Number(raDeg.toFixed(5));
+  }
+  if (Number.isFinite(decDeg)) {
+    decDeg = Number(decDeg.toFixed(5));
+  }
+  return { ra: raDeg, dec: decDeg };
+}
+function decimalToSexagesimal(raDeg, decDeg) {
+  const normRa = (raDeg % 360 + 360) % 360;
+  const totalHours = normRa / 15;
+  const h = Math.floor(totalHours);
+  const mRemainder = (totalHours - h) * 60;
+  const m = Math.floor(mRemainder);
+  const s = (mRemainder - m) * 60;
+  const raStr = `${String(h).padStart(2, "0")}h${String(m).padStart(2, "0")}m${s.toFixed(3).padStart(6, "0")}s`;
+  const sign = decDeg < 0 ? "-" : "+";
+  const absDec = Math.abs(decDeg);
+  const d = Math.floor(absDec);
+  const dmRemainder = (absDec - d) * 60;
+  const dm = Math.floor(dmRemainder);
+  const ds = (dmRemainder - dm) * 60;
+  const decStr = `${sign}${String(d).padStart(2, "0")}d${String(dm).padStart(2, "0")}m${ds.toFixed(2).padStart(5, "0")}s`;
+  return { raStr, decStr };
+}
+function parseCoordinateInput(input) {
+  if (!input || typeof input !== "string") return null;
+  const trimmed = input.trim();
+  let parts = [];
+  if (trimmed.includes(",")) {
+    parts = trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    const signSplit = trimmed.match(/^(.+?)\s+([+-].+)$/);
+    if (signSplit) {
+      parts = [signSplit[1].trim(), signSplit[2].trim()];
+    } else {
+      parts = trimmed.split(/\s+/).filter(Boolean);
+      if (parts.length === 6) {
+        parts = [
+          `${parts[0]} ${parts[1]} ${parts[2]}`,
+          `${parts[3]} ${parts[4]} ${parts[5]}`
+        ];
+      }
+    }
+  }
+  if (parts.length !== 2) return null;
+  const { ra, dec } = sexagesimalToDecimal(parts[0], parts[1]);
+  if (!Number.isFinite(ra) || !Number.isFinite(dec)) return null;
+  if (dec < -90 || dec > 90) return null;
+  const { raStr, decStr } = decimalToSexagesimal(ra, dec);
+  return {
+    ra,
+    dec,
+    raSexagesimal: raStr,
+    decSexagesimal: decStr
+  };
+}
 
 // src/science/challengeTargets.ts
 var SPHEREX_QR2_FOOTPRINT = {
@@ -2675,65 +2919,80 @@ var OFFICIAL_CHALLENGE_TARGETS = [
     name: "Barnard's Star (GJ 699)",
     ra: 269.45208,
     dec: 4.69339,
+    sexagesimal: "17h57m48.50s +04d41m36.2s",
     constellation: "Ophiuchus",
     scienceType: "High-Proper-Motion M4V Red Dwarf",
     description: "The second-closest known stellar system to the Sun (~5.96 ly), celebrated for having the highest known proper motion of any star (10.36\u2033/year). Ideal for testing stellar dipole detection across multi-epoch infrared surveys.",
-    qr2Coverage: "outside_footprint",
+    qr2Coverage: "covered",
+    observationsCount: 39,
+    sampleObsId: "2025W35_1A_0444_3",
     angularDistanceDegToNEP: 60.2,
     recommendedBenchmarkId: "case-nep-var-01",
-    expectedBehavior: "Located in Ophiuchus (equatorial region), ~60.2\xB0 away from the QR2 NEP deep strip. IRSA returns HTTP 422 survey coverage limit. Use the verified NEP high-motion benchmark as analogue."
+    expectedBehavior: "Verified in IRSA TAP with 39 real exposures in SPHEREx QR2. Multi-epoch series allows visual inspection of fast proper motion and flux stability across passes."
   },
   {
     id: "target-epsilon-indi-b",
     name: "Epsilon Indi B & C",
     ra: 330.84042,
     dec: -56.78601,
+    sexagesimal: "22h03m21.70s -56d47m09.6s",
     constellation: "Indus",
     scienceType: "Cold Binary Brown Dwarf (T1V + T6V)",
     description: "A benchmark binary methane-dwarf system at ~11.8 ly. Its extreme near-infrared spectral features (methane absorption at 1.6 and 3.3 \xB5m) make it a key target for SPHEREx 102-band low-temperature spectroscopy.",
-    qr2Coverage: "outside_footprint",
+    qr2Coverage: "covered",
+    observationsCount: 27,
+    sampleObsId: "2025W18_1B_0175_1",
     angularDistanceDegToNEP: 125.8,
     recommendedBenchmarkId: "case-nep-var-01",
-    expectedBehavior: "Located in the Southern Celestial Hemisphere (Dec -56.8\xB0), ~125.8\xB0 away from the North Ecliptic Pole. Outside current QR2 release footprint; will be observed in all-sky survey releases."
+    expectedBehavior: "Verified in IRSA TAP with 27 real exposures across multiple detectors (including D3 at ~2.0 \xB5m) in the southern celestial hemisphere."
   },
   {
     id: "target-wise-0855",
     name: "WISE 0855-0714",
-    ra: 133.86462,
-    dec: -7.24115,
+    ra: 133.79513,
+    dec: -7.24515,
+    sexagesimal: "08h55m10.831s -07d14m42.53s",
     constellation: "Hydra",
     scienceType: "Sub-Brown Dwarf (Y-Dwarf, ~250 K)",
-    description: "The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225\u2013260 K), exhibiting atmospheric water-ice clouds. Detectable predominantly in mid-infrared channels (3.5\u20135.0 \xB5m).",
-    qr2Coverage: "outside_footprint",
+    description: "The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225\u2013260 K), exhibiting atmospheric water-ice clouds. Exact astrometric position derived from 08h55m10.831s, -07d14m42.53s.",
+    qr2Coverage: "covered",
+    observationsCount: 4,
+    sampleObsId: "2025W46_2A_0214_1",
     angularDistanceDegToNEP: 118.4,
     recommendedBenchmarkId: "case-nep-var-01",
-    expectedBehavior: "Located in Hydra near the celestial equator, ~118.4\xB0 away from the NEP deep strip. Outside current QR2 footprint."
+    expectedBehavior: "Verified in IRSA TAP with 4 real exposures in SPHEREx QR2. Key substellar target for detecting cold brown dwarf atmospheric features."
   },
   {
     id: "target-rw-aurigae",
     name: "RW Aurigae (RW Aur)",
     ra: 77.45833,
     dec: 30.40142,
+    sexagesimal: "05h09m50.00s +30d24m05.0s",
     constellation: "Auriga",
     scienceType: "Young Stellar Object (Classical T Tauri Star Binary)",
     description: "A complex pre-main-sequence binary star with a protoplanetary circumstellar disk undergoing dramatic multi-magnitude occultations and infrared accretion outbursts.",
-    qr2Coverage: "outside_footprint",
+    qr2Coverage: "covered",
+    observationsCount: 19,
+    sampleObsId: "2025W38_2C_0023_1",
     angularDistanceDegToNEP: 71.6,
     recommendedBenchmarkId: "case-nep-var-01",
-    expectedBehavior: "Located in Taurus-Auriga star-forming complex (Dec +30.4\xB0), ~71.6\xB0 from the NEP footprint. Outside current QR2 release."
+    expectedBehavior: "Verified in IRSA TAP with 19 real exposures in Taurus-Auriga. Time series captures young stellar variability and accretion dynamics."
   },
   {
     id: "target-r-draconis",
     name: "R Draconis (R Dra)",
     ra: 248.33004,
     dec: 66.70281,
+    sexagesimal: "16h33m19.21s +66d42m10.1s",
     constellation: "Draco",
     scienceType: "Mira-Type Pulsating Variable Giant (M5e-M9e)",
     description: "A long-period asymptotic giant branch (AGB) pulsating variable star with a 245-day period, varying by over 6 magnitudes between maximum and minimum as circumstellar dust cools and condensates.",
-    qr2Coverage: "outside_footprint",
+    qr2Coverage: "covered",
+    observationsCount: 55,
+    sampleObsId: "2025W24_2D_0534_1",
     angularDistanceDegToNEP: 11.3,
     recommendedBenchmarkId: "case-nep-var-01",
-    expectedBehavior: "Located in Draco at high northern declination (+66.7\xB0), only ~11.3\xB0 west of the QR2 North Ecliptic Pole strip boundary. While close, it lies just outside the narrow QR2 calibration corridor."
+    expectedBehavior: "Verified in IRSA TAP with 55 real exposures in Draco. Rich multi-epoch temporal series ideal for tracing giant star pulsation amplitudes."
   }
 ];
 
@@ -3536,11 +3795,231 @@ var DataReleaseAdapter = class {
   }
 };
 
+// src/science/timeSeriesPipeline.ts
+var datalinkUrlCache = /* @__PURE__ */ new Map();
+async function resolveFitsUrl(accessUrl, obsId, detector) {
+  if (!accessUrl) {
+    return buildFallbackFitsUrl(obsId, detector);
+  }
+  if (datalinkUrlCache.has(accessUrl)) {
+    return datalinkUrlCache.get(accessUrl);
+  }
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8e3);
+    const res = await fetch(accessUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": "SPHEREx-ChangingSky-SpaceApps/1.0" }
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const xml = await res.text();
+      const match = xml.match(/<TD>(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^<]+\.fits)<\/TD>/);
+      if (match && match[1]) {
+        datalinkUrlCache.set(accessUrl, match[1]);
+        return match[1];
+      }
+    }
+  } catch {
+  }
+  const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
+  datalinkUrlCache.set(accessUrl, fallback);
+  return fallback;
+}
+function buildFallbackFitsUrl(obsId, detector, accessUrl) {
+  const det = (detector || (accessUrl ? accessUrl.match(/\/D([1-6])$/)?.[1] : null) || "1").replace(/^D/i, "");
+  const id = obsId || "2025W18_1B_0001_1";
+  const weekMatch = id.match(/^(\d{4}W\d{2}_[0-9A-Z]+)/);
+  const week = weekMatch ? weekMatch[1] : "2025W18_1B";
+  const base = process.env.SPHEREX_BASE_URL || "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2";
+  return `${base}/level2/${week}/l2b-v20-2025-241/${det}/level2_${id}D${det}_spx_l2b-v20-2025-241.fits`;
+}
+function extractVisitKey(obsId) {
+  const parts = obsId.split("_");
+  if (parts.length >= 4) {
+    return `${parts[0]}_${parts[1]}_${parts[2]}`;
+  }
+  return obsId.replace(/_\d+$/, "");
+}
+function decodeBitmaskFlags(flags, totalPixels) {
+  const dq = {
+    transientOrCR: 0,
+    overflow: 0,
+    surError: 0,
+    nonFunc: 0,
+    hot: 0,
+    statisticalOutlier: 0,
+    source: 0,
+    totalMaskedPixels: 0,
+    totalPixels,
+    maskedFraction: 0
+  };
+  if (!flags || flags.length === 0) {
+    return dq;
+  }
+  let maskedCount = 0;
+  for (let i = 0; i < flags.length; i++) {
+    const f = flags[i];
+    if (f !== 0) {
+      maskedCount++;
+      if (f & 1) dq.transientOrCR++;
+      if (f & 2) dq.overflow++;
+      if (f & 4) dq.surError++;
+      if (f & 16) dq.nonFunc++;
+      if (f & 32) dq.hot++;
+      if (f & 524288) dq.statisticalOutlier++;
+      if (f & 2097152) dq.source++;
+    }
+  }
+  dq.totalMaskedPixels = maskedCount;
+  dq.maskedFraction = totalPixels > 0 ? Number((maskedCount / totalPixels).toFixed(4)) : 0;
+  return dq;
+}
+function computeDetectorStacks(frames) {
+  const stacks = {};
+  const byDetector = /* @__PURE__ */ new Map();
+  for (const f of frames) {
+    const list = byDetector.get(f.detector) || [];
+    list.push(f);
+    byDetector.set(f.detector, list);
+  }
+  byDetector.forEach((detFrames, det) => {
+    if (detFrames.length === 0) return;
+    const ref = detFrames[0];
+    const width = ref.width;
+    const height = ref.height;
+    const numPixels = width * height;
+    const stackedFlux = new Float32Array(numPixels);
+    const stackedVariance = new Float32Array(numPixels);
+    const weightSum = new Float32Array(numPixels);
+    for (const frame of detFrames) {
+      const data = frame.reprojectedFlux.length === numPixels ? frame.reprojectedFlux : frame.flux;
+      const vars = frame.variance && frame.variance.length === numPixels ? frame.variance : null;
+      const flags = frame.flags && frame.flags.length === numPixels ? frame.flags : null;
+      for (let p = 0; p < numPixels; p++) {
+        if (flags && (flags[p] & 2 || flags[p] & 16)) {
+          continue;
+        }
+        const v = vars && vars[p] > 1e-12 ? vars[p] : 1;
+        const w = 1 / v;
+        stackedFlux[p] += data[p] * w;
+        weightSum[p] += w;
+      }
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    let sum = 0;
+    let validPix = 0;
+    for (let p = 0; p < numPixels; p++) {
+      if (weightSum[p] > 0) {
+        stackedFlux[p] /= weightSum[p];
+        stackedVariance[p] = 1 / weightSum[p];
+        const val = stackedFlux[p];
+        if (Number.isFinite(val)) {
+          if (val < min) min = val;
+          if (val > max) max = val;
+          sum += val;
+          validPix++;
+        }
+      }
+    }
+    const mean = validPix > 0 ? sum / validPix : 0;
+    let varSum = 0;
+    for (let p = 0; p < numPixels; p++) {
+      if (weightSum[p] > 0) {
+        const diff = stackedFlux[p] - mean;
+        varSum += diff * diff;
+      }
+    }
+    const std = validPix > 1 ? Math.sqrt(varSum / (validPix - 1)) : 0;
+    const detNum = parseInt(det.replace(/\D/g, ""), 10) || 1;
+    const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+    stacks[det] = {
+      detector: det,
+      detectorNumber: detNum,
+      bandName: detArray ? detArray.name : `Detector ${det}`,
+      wavelengthRange: detArray ? `${detArray.wavelengthRangeUm[0]} \u2013 ${detArray.wavelengthRangeUm[1]} \xB5m` : "",
+      frameCount: detFrames.length,
+      width,
+      height,
+      stackedFlux: Array.from(stackedFlux),
+      stackedVariance: Array.from(stackedVariance),
+      stats: {
+        min: Number(min.toFixed(4)),
+        max: Number(max.toFixed(4)),
+        mean: Number(mean.toFixed(4)),
+        std: Number(std.toFixed(4))
+      }
+    };
+  });
+  return stacks;
+}
+function extractApertureSpectrum(frames, targetX, targetY, apertureRadiusPix = 2.5) {
+  const points = [];
+  for (const f of frames) {
+    const width = f.width;
+    const height = f.height;
+    if (width === 0 || height === 0) continue;
+    const detNum = parseInt(f.detector.replace(/\D/g, ""), 10) || 1;
+    const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+    let wavelengthUm = f.wavelengthUm;
+    if (detArray) {
+      const yNorm = Math.min(Math.max(targetY / height, 0), 1);
+      const [wMin, wMax] = detArray.wavelengthRangeUm;
+      wavelengthUm = Number((wMin + yNorm * (wMax - wMin)).toFixed(3));
+    }
+    const r2 = apertureRadiusPix * apertureRadiusPix;
+    let fluxSum = 0;
+    let varSum = 0;
+    let count = 0;
+    const data = f.reprojectedFlux.length === width * height ? f.reprojectedFlux : f.flux;
+    const vars = f.variance && f.variance.length === width * height ? f.variance : null;
+    const xMin = Math.max(0, Math.floor(targetX - apertureRadiusPix));
+    const xMax = Math.min(width - 1, Math.ceil(targetX + apertureRadiusPix));
+    const yMin = Math.max(0, Math.floor(targetY - apertureRadiusPix));
+    const yMax = Math.min(height - 1, Math.ceil(targetY + apertureRadiusPix));
+    for (let py = yMin; py <= yMax; py++) {
+      for (let px = xMin; px <= xMax; px++) {
+        const dx = px - targetX;
+        const dy = py - targetY;
+        if (dx * dx + dy * dy <= r2) {
+          const idx = py * width + px;
+          fluxSum += data[idx];
+          varSum += vars ? vars[idx] : 1;
+          count++;
+        }
+      }
+    }
+    if (count > 0) {
+      const meanFlux = fluxSum / count;
+      const uncertainty = Math.sqrt(varSum) / count;
+      const snr = uncertainty > 1e-12 ? Math.abs(meanFlux / uncertainty) : 0;
+      points.push({
+        detector: f.detector,
+        obsId: f.obsId,
+        mjd: f.mjd,
+        date: f.dateObs,
+        wavelengthUm,
+        fluxMjySr: Number(meanFlux.toFixed(4)),
+        uncertaintyMjySr: Number(uncertainty.toFixed(4)),
+        snr: Number(snr.toFixed(2)),
+        isApertureSum: true
+      });
+    }
+  }
+  points.sort((a, b) => a.wavelengthUm - b.wavelengthUm);
+  return points;
+}
+
 // server.ts
 dotenv.config();
 var app = express();
 var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
 var CACHE_DIR = path.join("/tmp", "spherex_cache");
+var SPHEREX_DATA_RELEASE = process.env.SPHEREX_DATA_RELEASE || "SPHEREx QR2 (Level 2B Processed Science Frames)";
+var SPHEREX_RELEASE_ID = process.env.SPHEREX_RELEASE_ID || "SPHEREx-QR2-Level2B";
+var SPHEREX_BASE_URL = process.env.SPHEREX_BASE_URL || "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2";
+var SPHEREX_TAP_TABLE = process.env.SPHEREX_TAP_TABLE || "spherex.obscore";
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
 }
@@ -3636,6 +4115,68 @@ var CURATED_CASES = [
     ]
   },
   {
+    id: "case-barnards-star",
+    title: "Barnard's Star Multi-Epoch Infrared Series",
+    subtitle: "High Proper Motion M4V Dwarf (~10.36\u2033/yr) in SPHEREx QR2",
+    ra: 269.45208,
+    dec: 4.69339,
+    targetName: "GJ 699 (Barnard Star)",
+    category: "Variable Candidate",
+    expectedClassification: "SIGNIFICANT CHANGE DETECTED",
+    description: "Authentic SPHEREx QR2 exposures of Barnard\u2019s Star (GJ 699) in Band 2 (D2 array at 1.48 \xB5m). Rapid astrometric motion and intra-visit photometric baseline.",
+    epoch1: {
+      obs_id: "2025W35_1A_0444_3",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-241/2/level2_2025W35_1A_0444_3D2_spx_l2b-v20-2025-241.fits",
+      mjd: 60912.448553,
+      band: "Band 2 (1.11 - 1.65 \xB5m)",
+      wavelength_um: 1.48,
+      date: "2025-08-25T10:45:55.000",
+      date_end: "2025-08-25T10:47:50.118",
+      integration_duration_sec: 115.118
+    },
+    epoch2: {
+      obs_id: "2025W35_1A_0444_4",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-241/2/level2_2025W35_1A_0444_4D2_spx_l2b-v20-2025-241.fits",
+      mjd: 60912.450045,
+      band: "Band 2 (1.11 - 1.65 \xB5m)",
+      wavelength_um: 1.48,
+      date: "2025-08-25T10:48:03.900",
+      date_end: "2025-08-25T10:49:59.018",
+      integration_duration_sec: 115.118
+    }
+  },
+  {
+    id: "case-wise-0855",
+    title: "WISE 0855-0714 Sub-Brown Dwarf Series",
+    subtitle: "Coldest Known Y-Dwarf (T ~ 250 K) at 08h55m10.831s, -07d14m42.53s",
+    ra: 133.79513,
+    dec: -7.24515,
+    targetName: "WISE 0855-0714",
+    category: "Variable Candidate",
+    expectedClassification: "NO SIGNIFICANT CHANGE DETECTED",
+    description: "Authentic SPHEREx D4 array exposures (2.76 \xB5m) imaging the coldest known sub-stellar object outside the solar system (~7.2 ly), tracing deep methane and water ice bands.",
+    epoch1: {
+      obs_id: "2025W32_1B_0521_1",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W32_1B/l2b-v20-2025-241/4/level2_2025W32_1B_0521_1D4_spx_l2b-v20-2025-241.fits",
+      mjd: 60891.21543,
+      band: "Band 4 (2.40 - 3.84 \xB5m)",
+      wavelength_um: 2.76,
+      date: "2025-08-04T05:10:13.152",
+      date_end: "2025-08-04T05:12:08.270",
+      integration_duration_sec: 115.118
+    },
+    epoch2: {
+      obs_id: "2025W32_1B_0521_2",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W32_1B/l2b-v20-2025-241/4/level2_2025W32_1B_0521_2D4_spx_l2b-v20-2025-241.fits",
+      mjd: 60891.216922,
+      band: "Band 4 (2.40 - 3.84 \xB5m)",
+      wavelength_um: 2.76,
+      date: "2025-08-04T05:12:22.061",
+      date_end: "2025-08-04T05:14:17.179",
+      integration_duration_sec: 115.118
+    }
+  },
+  {
     id: "case-cal-stable-02",
     title: "Photometric Stability Calibration Standard",
     subtitle: "No Statistically Significant Change Detected",
@@ -3706,7 +4247,9 @@ var CURATED_CASES = [
     targetName: "SPX-SPECTRAL-MISMATCH",
     category: "Channel Incompatibility",
     expectedClassification: "INSUFFICIENT DATA",
-    description: "Scientific integrity enforcement: prevents invalid mathematical subtraction between distinct infrared bands with different thermal SED baselines.",
+    description: "Scientific integrity guard demonstration: prevents invalid mathematical subtraction between distinct infrared spectral bands with different thermal SED baselines.",
+    isSimulated: true,
+    simulatedLabel: "Simulated cross-channel test / same-exposure demo",
     epoch1: {
       obs_id: "2025W18_1B_0001_1_D1",
       fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits",
@@ -3718,9 +4261,8 @@ var CURATED_CASES = [
       integration_duration_sec: 115.117
     },
     epoch2: {
-      obs_id: "2025W18_1B_0001_1_D4",
+      obs_id: "2025W18_1B_0001_1_D4_SIM",
       fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits",
-      // simulated cross-channel
       mjd: 60793.541849016,
       band: "Band 4 (2.40 - 3.84 \xB5m)",
       wavelength_um: 3.12,
@@ -3733,8 +4275,20 @@ var CURATED_CASES = [
 async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
   const cacheKey = crypto2.createHash("md5").update(`${fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`).digest("hex");
   const cacheFile = path.join(CACHE_DIR, `${cacheKey}.fits`);
+  const persistentFile = path.join(PERSISTENT_CACHE_DIR, `${cacheKey}.fits`);
   if (fs.existsSync(cacheFile)) {
     const buffer = fs.readFileSync(cacheFile);
+    const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
+    return { buffer, checksum };
+  }
+  if (fs.existsSync(persistentFile)) {
+    const buffer = fs.readFileSync(persistentFile);
+    if (!fs.existsSync(cacheFile)) {
+      try {
+        fs.writeFileSync(cacheFile, buffer);
+      } catch {
+      }
+    }
     const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
     return { buffer, checksum };
   }
@@ -3756,7 +4310,7 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
       if (!res.ok) {
         if (res.status === 422) {
           throw new Error(
-            `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5\xB0\u2013276.8\xB0, Dec ~64.5\xB0\u201365.2\xB0).`
+            `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0) do not overlap with survey coverage in this observation file.`
           );
         }
         throw new Error(`IRSA IBE server returned status ${res.status}: ${res.statusText}`);
@@ -3764,6 +4318,12 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
       const arrayBuf = await res.arrayBuffer();
       const buffer = Buffer.from(arrayBuf);
       fs.writeFileSync(cacheFile, buffer);
+      if (fs.existsSync(PERSISTENT_CACHE_DIR)) {
+        try {
+          fs.writeFileSync(persistentFile, buffer);
+        } catch {
+        }
+      }
       const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
       return { buffer, checksum };
     } catch (err) {
@@ -3789,37 +4349,87 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
   throw lastError || new Error("Failed to retrieve FITS cutout from NASA IRSA after multiple attempts.");
 }
 app.get("/api/spherex/query", async (req, res) => {
-  const ra = parseFloat(req.query.ra) || 276.26;
-  const dec = parseFloat(req.query.dec) || 64.82;
+  const coordParam = req.query.coords || req.query.target;
+  let ra = parseFloat(req.query.ra);
+  let dec = parseFloat(req.query.dec);
   const radius = parseFloat(req.query.radius) || 0.5;
-  const tapQuery = `SELECT TOP 10 obs_id, s_ra, s_dec, t_min, t_max, em_min, em_max, access_url, dataproduct_type FROM spherex.obscore WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radius}))=1`;
+  if (coordParam) {
+    const parsed = parseCoordinateInput(coordParam);
+    if (parsed) {
+      ra = parsed.ra;
+      dec = parsed.dec;
+    }
+  }
+  if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
+    ra = 276.2614;
+    dec = 64.8258;
+  }
+  const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, dataproduct_type FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radius}))=1 ORDER BY t_min ASC`;
   const url = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { headers: { "User-Agent": "SPHEREx-ChangingSky-SpaceApps/1.0" } });
     if (!resp.ok) {
       return res.status(resp.status).json({ error: `IRSA TAP query returned status ${resp.status}` });
     }
     const json = await resp.json();
     const rows = json?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
-    const observations = rows.map((row) => ({
-      obs_id: row[0],
-      s_ra: parseFloat(row[1]),
-      s_dec: parseFloat(row[2]),
-      t_min: parseFloat(row[3]),
-      t_max: parseFloat(row[4]),
-      em_min: parseFloat(row[5]),
-      em_max: parseFloat(row[6]),
-      wavelength_um: Number(((parseFloat(row[5]) + parseFloat(row[6])) / 2 * 1e6).toFixed(2)),
-      dataproduct_type: row[8] || "image",
-      access_url: row[7],
-      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits",
-      access_format: "application/fits",
-      survey: "SPHEREx QR2 All-Sky Survey"
-    }));
+    const observations = await Promise.all(
+      rows.map(async (row) => {
+        const obsId = String(row[0]);
+        const sRa = parseFloat(row[1]);
+        const sDec = parseFloat(row[2]);
+        const instrument = String(row[3] || "SPHEREx");
+        const tMin = parseFloat(row[4]);
+        const tMax = parseFloat(row[5]);
+        const emMin = parseFloat(row[6]);
+        const emMax = parseFloat(row[7]);
+        const accessUrl = String(row[8]);
+        const dataproduct = String(row[9] || "image");
+        const mjd = Number(((tMin + tMax) / 2).toFixed(6));
+        const dateMs = (mjd - 40587) * 86400 * 1e3;
+        const date = new Date(dateMs).toISOString();
+        const wavelengthUm = Number(((emMin + emMax) / 2 * 1e6).toFixed(2));
+        const detMatch = accessUrl.match(/\/D([1-6])$/);
+        const detector = detMatch ? `D${detMatch[1]}` : instrument.includes("D") ? instrument : "D1";
+        const detNum = parseInt(detector.replace(/\D/g, ""), 10) || 1;
+        const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+        const band = detArray ? detArray.name : `Band ${detector}`;
+        const visitKey = extractVisitKey(obsId);
+        const fitsUrl = await resolveFitsUrl(accessUrl, obsId, detector);
+        return {
+          obs_id: obsId,
+          s_ra: sRa,
+          s_dec: sDec,
+          instrument,
+          t_min: tMin,
+          t_max: tMax,
+          mjd,
+          date,
+          wavelength_um: wavelengthUm,
+          wavelength: wavelengthUm,
+          band,
+          detector,
+          visitKey,
+          dataproduct_type: dataproduct,
+          access_url: accessUrl,
+          fits_url: fitsUrl,
+          access_format: "application/fits",
+          survey: SPHEREX_DATA_RELEASE
+        };
+      })
+    );
+    const groupedByDetector = {};
+    const groupedByVisit = {};
+    for (const obs of observations) {
+      groupedByDetector[obs.detector] = (groupedByDetector[obs.detector] || 0) + 1;
+      groupedByVisit[obs.visitKey] = (groupedByVisit[obs.visitKey] || 0) + 1;
+    }
     return res.json({
       target: { ra, dec, radius },
       count: observations.length,
-      observations
+      observations,
+      groupedByDetector,
+      groupedByVisit
     });
   } catch (err) {
     console.error("IRSA TAP query failure:", err);
@@ -3923,49 +4533,118 @@ app.post("/api/spherex/process", async (req, res) => {
     if (!selectedCase) {
       selectedCase = CURATED_CASES[0];
     }
+    let ep1;
+    let ep2;
     if (customCoords) {
-      if (typeof customCoords.ra !== "number" || typeof customCoords.dec !== "number" || !Number.isFinite(customCoords.ra) || !Number.isFinite(customCoords.dec)) {
+      if (typeof customCoords.ra !== "number" || typeof customCoords.dec !== "number" || !Number.isFinite(customCoords.ra) || !Number.isFinite(customCoords.dec) || customCoords.dec < -90 || customCoords.dec > 90) {
         return res.status(400).json({
-          error: "Invalid celestial coordinates: RA and Dec must be finite decimal degree numbers.",
+          error: "Invalid celestial coordinates: RA and Dec must be finite decimal degree numbers (Dec between -90\xB0 and +90\xB0).",
           status: "FAILED",
           canRetry: false
         });
       }
-      const coordCheck = checkCoordinatesInQR2(ra, dec);
-      if (!coordCheck.inside) {
-        return res.status(422).json({
-          error: `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5\xB0\u2013276.8\xB0, Dec ~64.5\xB0\u201365.2\xB0).`,
-          status: "OUTSIDE_COVERAGE",
-          distanceDegToFootprint: coordCheck.distanceDeg,
-          sourceMode: "live",
-          canRetry: true,
-          suggestedCaseId: "case-nep-var-01"
-        });
+      const matchingCase = CURATED_CASES.find(
+        (c) => WCS.angularSeparationArcsec(ra, dec, c.ra, c.dec) <= 300
+      );
+      if (matchingCase) {
+        selectedCase = matchingCase;
+      } else {
+        const tapRadiusDeg = 0.35;
+        const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${tapRadiusDeg}))=1 ORDER BY t_min ASC`;
+        const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
+        let tapRows = [];
+        try {
+          const tapResp = await fetch(tapUrl, {
+            headers: { "User-Agent": "SPHEREx-ChangingSky-SpaceApps/1.0" }
+          });
+          if (tapResp.ok) {
+            const tapJson = await tapResp.json();
+            tapRows = tapJson?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
+          }
+        } catch (tapErr) {
+          console.warn("[Process] Live TAP query failed, checking benchmark hint:", tapErr.message);
+        }
+        if (tapRows.length === 0) {
+          const coordCheck = checkCoordinatesInQR2(ra, dec);
+          if (!coordCheck.inside) {
+            return res.status(404).json({
+              error: `IRSA TAP: 0 SPHEREx observations found for RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0. This celestial field has not yet been observed in the current public release (${SPHEREX_DATA_RELEASE}).`,
+              status: "NO_OBSERVATIONS",
+              targetCoords: { ra, dec },
+              distanceDegToNEP: coordCheck.distanceDeg,
+              sourceMode: "live",
+              canRetry: true
+            });
+          }
+        } else {
+          const rowsByDet = {};
+          for (const r of tapRows) {
+            const acc = String(r[8]);
+            const inst = String(r[3] || "");
+            const detMatch = acc.match(/\/D([1-6])$/);
+            const det = detMatch ? `D${detMatch[1]}` : inst.includes("D") ? inst : "D1";
+            if (!rowsByDet[det]) rowsByDet[det] = [];
+            rowsByDet[det].push(r);
+          }
+          const chosenDet = Object.keys(rowsByDet).find((d) => rowsByDet[d].length >= 2) || Object.keys(rowsByDet)[0];
+          const detList = rowsByDet[chosenDet] || tapRows;
+          const row1 = detList[0];
+          const row2 = detList.length > 1 ? detList[1] : detList[0];
+          const obsId1 = String(row1[0]);
+          const obsId2 = String(row2[0]);
+          const acc1 = String(row1[8]);
+          const acc2 = String(row2[8]);
+          const em1 = (parseFloat(row1[6]) + parseFloat(row1[7])) / 2 * 1e6;
+          const em2 = (parseFloat(row2[6]) + parseFloat(row2[7])) / 2 * 1e6;
+          const fitsUrl1 = await resolveFitsUrl(acc1, obsId1, chosenDet);
+          const fitsUrl2 = await resolveFitsUrl(acc2, obsId2, chosenDet);
+          const detNum = parseInt(chosenDet.replace(/\D/g, ""), 10) || 1;
+          const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+          const bandName = detArray ? detArray.name : `Detector ${chosenDet}`;
+          ep1 = {
+            obs_id: obsId1,
+            fits_url: fitsUrl1,
+            mjd: Number(((parseFloat(row1[4]) + parseFloat(row1[5])) / 2).toFixed(6)),
+            band: bandName,
+            wavelength_um: Number(em1.toFixed(2)),
+            date: new Date((parseFloat(row1[4]) - 40587) * 86400 * 1e3).toISOString()
+          };
+          ep2 = {
+            obs_id: obsId2,
+            fits_url: fitsUrl2,
+            mjd: Number(((parseFloat(row2[4]) + parseFloat(row2[5])) / 2).toFixed(6)),
+            band: bandName,
+            wavelength_um: Number(em2.toFixed(2)),
+            date: new Date((parseFloat(row2[4]) - 40587) * 86400 * 1e3).toISOString()
+          };
+        }
       }
     }
     const validSizes = [32, 64, 112, 160];
     const sizePix = validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
     const fovArcmin = Number((sizePix * 6.2 / 60).toFixed(1));
-    let ep1 = selectedCase.epoch1;
-    let ep2 = selectedCase.epoch2;
-    if (selectedCase.epochs && selectedCase.epochs.length >= 2) {
-      const match = typeof epochPair === "string" ? epochPair.match(/^(\d+)-(\d+)$/) : null;
-      if (match) {
-        const idx1 = parseInt(match[1], 10) - 1;
-        const idx2 = parseInt(match[2], 10) - 1;
-        if (selectedCase.epochs[idx1] && selectedCase.epochs[idx2]) {
-          ep1 = selectedCase.epochs[idx1];
-          ep2 = selectedCase.epochs[idx2];
+    if (!ep1 || !ep2) {
+      ep1 = selectedCase.epoch1;
+      ep2 = selectedCase.epoch2;
+      if (selectedCase.epochs && selectedCase.epochs.length >= 2) {
+        const match = typeof epochPair === "string" ? epochPair.match(/^(\d+)-(\d+)$/) : null;
+        if (match) {
+          const idx1 = parseInt(match[1], 10) - 1;
+          const idx2 = parseInt(match[2], 10) - 1;
+          if (selectedCase.epochs[idx1] && selectedCase.epochs[idx2]) {
+            ep1 = selectedCase.epochs[idx1];
+            ep2 = selectedCase.epochs[idx2];
+          }
+        } else if (epochPair === "1-2" && selectedCase.epochs.length >= 2) {
+          ep1 = selectedCase.epochs[0];
+          ep2 = selectedCase.epochs[1];
+        } else if (epochPair === "2-3" && selectedCase.epochs.length >= 3) {
+          ep1 = selectedCase.epochs[1];
+          ep2 = selectedCase.epochs[2];
+        } else if (selectedCase.epochs.length >= 3) {
+          ep1 = selectedCase.epochs[0];
+          ep2 = selectedCase.epochs[2];
         }
-      } else if (epochPair === "1-2" && selectedCase.epochs.length >= 2) {
-        ep1 = selectedCase.epochs[0];
-        ep2 = selectedCase.epochs[1];
-      } else if (epochPair === "2-3" && selectedCase.epochs.length >= 3) {
-        ep1 = selectedCase.epochs[1];
-        ep2 = selectedCase.epochs[2];
-      } else if (selectedCase.epochs.length >= 3) {
-        ep1 = selectedCase.epochs[0];
-        ep2 = selectedCase.epochs[2];
       }
     }
     const sourceMode = isCustomSearch ? "live" : "saved_benchmark";
@@ -4138,6 +4817,8 @@ app.post("/api/spherex/process", async (req, res) => {
       provenance,
       datasetSource: "DEVELOPMENT_BENCHMARK",
       releaseId: "SPHEREx-QR2-Level2B",
+      isSimulated: selectedCase.isSimulated ?? false,
+      simulatedLabel: selectedCase.simulatedLabel,
       observationIds: [obs1.obs_id, obs2.obs_id],
       fileIdentifiers: [ep1.fits_url, ep2.fits_url],
       observationTimestamps: [obs1.date_obs || ep1.date, obs2.date_obs || ep2.date],
@@ -4159,6 +4840,277 @@ app.post("/api/spherex/process", async (req, res) => {
       canRetry: true,
       suggestedCaseId: "case-nep-var-01"
     });
+  }
+});
+app.all("/api/spherex/timeseries", async (req, res) => {
+  try {
+    const coordParam = req.query.coords || req.body?.coords;
+    let ra = parseFloat(req.query.ra ?? req.body?.ra);
+    let dec = parseFloat(req.query.dec ?? req.body?.dec);
+    const caseId = req.query.caseId || req.body?.caseId;
+    const requestedSizePix = parseInt(req.query.sizePix ?? req.body?.sizePix, 10);
+    const validSizes = [32, 64, 112, 160];
+    const sizePix = validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
+    const fovArcmin = Number((sizePix * 6.2 / 60).toFixed(1));
+    if (coordParam) {
+      const parsed = parseCoordinateInput(coordParam);
+      if (parsed) {
+        ra = parsed.ra;
+        dec = parsed.dec;
+      }
+    }
+    const selectedCase = CURATED_CASES.find((c) => c.id === caseId);
+    if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
+      if (selectedCase) {
+        ra = selectedCase.ra;
+        dec = selectedCase.dec;
+      } else {
+        ra = 276.2614;
+        dec = 64.8258;
+      }
+    }
+    const tapRadiusDeg = 0.35;
+    const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${tapRadiusDeg}))=1 ORDER BY t_min ASC`;
+    const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
+    let exposures = [];
+    try {
+      const tapResp = await fetch(tapUrl, {
+        headers: { "User-Agent": "SPHEREx-ChangingSky-SpaceApps/1.0" }
+      });
+      if (tapResp.ok) {
+        const json = await tapResp.json();
+        const rows = json?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
+        for (const row of rows) {
+          const obsId = String(row[0]);
+          const inst = String(row[3] || "");
+          const tMin = parseFloat(row[4]);
+          const tMax = parseFloat(row[5]);
+          const emMin = parseFloat(row[6]);
+          const emMax = parseFloat(row[7]);
+          const accessUrl = String(row[8]);
+          const detMatch = accessUrl.match(/\/D([1-6])$/);
+          const detector = detMatch ? `D${detMatch[1]}` : inst.includes("D") ? inst : "D1";
+          const mjd = Number(((tMin + tMax) / 2).toFixed(6));
+          const date = new Date((mjd - 40587) * 86400 * 1e3).toISOString();
+          const wavelengthUm = Number(((emMin + emMax) / 2 * 1e6).toFixed(2));
+          const visitKey = extractVisitKey(obsId);
+          const fitsUrl = await resolveFitsUrl(accessUrl, obsId, detector);
+          exposures.push({
+            obsId,
+            detector,
+            accessUrl,
+            fitsUrl,
+            tMin,
+            tMax,
+            mjd,
+            date,
+            wavelengthUm,
+            visitKey
+          });
+        }
+      }
+    } catch (tapErr) {
+      console.warn("[TimeSeries] Live TAP query failed:", tapErr.message);
+    }
+    if (exposures.length === 0 && selectedCase) {
+      const caseEpochs = selectedCase.epochs || [selectedCase.epoch1, selectedCase.epoch2];
+      exposures = caseEpochs.map((ep) => {
+        const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
+        const det = detMatch ? `D${detMatch[1] || detMatch[2]}` : "D1";
+        return {
+          obsId: ep.obs_id,
+          detector: det,
+          accessUrl: ep.fits_url,
+          fitsUrl: ep.fits_url,
+          tMin: ep.mjd,
+          tMax: ep.mjd + 133e-5,
+          mjd: ep.mjd,
+          date: ep.date,
+          wavelengthUm: ep.wavelength_um,
+          visitKey: extractVisitKey(ep.obs_id)
+        };
+      });
+    }
+    if (exposures.length === 0) {
+      return res.status(404).json({
+        error: `IRSA TAP: 0 SPHEREx observations found for RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0. This field has not yet been observed in ${SPHEREX_DATA_RELEASE}.`,
+        status: "NO_OBSERVATIONS",
+        targetCoords: { ra, dec }
+      });
+    }
+    const MAX_FRAMES = 12;
+    const selectedExposures = exposures.slice(0, MAX_FRAMES);
+    const framePromises = selectedExposures.map(async (exp, idx) => {
+      try {
+        const cutout = await getFITSCutout(exp.fitsUrl, ra, dec, sizePix);
+        const parsed = FITSReader.parse(cutout.buffer);
+        const dq = decodeBitmaskFlags(parsed.flags, parsed.width * parsed.height);
+        const dateObs = typeof parsed.header["DATE-OBS"] === "string" && parsed.header["DATE-OBS"] || exp.date;
+        const dateEnd = typeof parsed.header["DATE-END"] === "string" && parsed.header["DATE-END"] || void 0;
+        let intSec = void 0;
+        if (dateObs && dateEnd) {
+          const s = Date.parse(dateObs.endsWith("Z") ? dateObs : `${dateObs}Z`);
+          const e = Date.parse(dateEnd.endsWith("Z") ? dateEnd : `${dateEnd}Z`);
+          if (Number.isFinite(s) && Number.isFinite(e) && e >= s) {
+            intSec = Number(((e - s) / 1e3).toFixed(3));
+          }
+        }
+        return {
+          index: idx + 1,
+          obsId: exp.obsId,
+          detector: exp.detector,
+          visitKey: exp.visitKey,
+          mjd: exp.mjd,
+          dateObs,
+          dateEnd,
+          integrationDurationSec: intSec,
+          wavelengthUm: exp.wavelengthUm,
+          width: parsed.width,
+          height: parsed.height,
+          flux: Array.from(parsed.data),
+          variance: parsed.variance ? Array.from(parsed.variance) : void 0,
+          flags: parsed.flags ? Array.from(parsed.flags) : void 0,
+          dqDecoded: dq,
+          wcs: parsed.wcs,
+          reprojectedFlux: Array.from(parsed.data),
+          fitsUrl: exp.fitsUrl,
+          accessUrl: exp.accessUrl
+        };
+      } catch (frameErr) {
+        console.warn(`[TimeSeries] Could not load frame for ${exp.obsId}:`, frameErr.message);
+        return null;
+      }
+    });
+    const loadedFrames = (await Promise.all(framePromises)).filter((f) => f !== null);
+    if (loadedFrames.length === 0) {
+      return res.status(500).json({ error: "Could not load any FITS frames for this position" });
+    }
+    const refWcs = loadedFrames[0].wcs;
+    const refW = loadedFrames[0].width;
+    const refH = loadedFrames[0].height;
+    for (let i = 1; i < loadedFrames.length; i++) {
+      const fr = loadedFrames[i];
+      try {
+        const reproj = ScientificPipeline.reprojectPixelByPixel(
+          {
+            width: fr.width,
+            height: fr.height,
+            data: new Float32Array(fr.flux),
+            variance: fr.variance ? new Float32Array(fr.variance) : null,
+            flags: fr.flags ? new Int32Array(fr.flags) : null,
+            wcs: fr.wcs
+          },
+          refWcs,
+          refW,
+          refH
+        );
+        fr.reprojectedFlux = Array.from(reproj.alignedData);
+      } catch {
+        fr.reprojectedFlux = fr.flux;
+      }
+    }
+    const pairs = [];
+    for (let i = 0; i < loadedFrames.length - 1; i++) {
+      const fA = loadedFrames[i];
+      const fB = loadedFrames[i + 1];
+      const deltaMjd = Math.abs(fB.mjd - fA.mjd);
+      const deltaSec = deltaMjd * 86400;
+      const deltaDays = deltaMjd;
+      let baselineType = "INTRA_VISIT";
+      if (deltaDays > 30) {
+        baselineType = "SURVEY_EPOCH";
+      } else if (fA.visitKey !== fB.visitKey || deltaSec > 3600) {
+        baselineType = "INDEPENDENT_VISIT";
+      } else {
+        baselineType = "INTRA_VISIT";
+      }
+      let humanBaseline = "";
+      if (deltaSec < 3600) {
+        humanBaseline = `${deltaSec.toFixed(1)}s (start-to-start cadence)`;
+      } else if (deltaDays < 2) {
+        humanBaseline = `${(deltaSec / 3600).toFixed(1)} hours`;
+      } else {
+        humanBaseline = `${deltaDays.toFixed(1)} days (~${(deltaDays / 30.4).toFixed(1)} months)`;
+      }
+      pairs.push({
+        frameAIndex: fA.index,
+        frameBIndex: fB.index,
+        obsIdA: fA.obsId,
+        obsIdB: fB.obsId,
+        baselineType,
+        deltaMjd,
+        deltaSeconds: deltaSec,
+        deltaDays,
+        humanBaseline,
+        startToStartCadenceSec: deltaSec < 3600 ? Number(deltaSec.toFixed(1)) : void 0
+      });
+    }
+    const detectorStacks = computeDetectorStacks(loadedFrames);
+    const centerX = Math.floor(refW / 2);
+    const centerY = Math.floor(refH / 2);
+    const spectrumAtCenter = extractApertureSpectrum(loadedFrames, centerX, centerY, 2.5);
+    const obsEpochYear = 2025 + (loadedFrames[0].mjd - 60676) / 365.25;
+    const catalogOverlays = await CatalogMatcher.getOverlaySources(ra, dec, fovArcmin * 30, obsEpochYear, refWcs);
+    return res.json({
+      targetCoords: { ra, dec },
+      fovArcmin,
+      sizePix,
+      totalExposuresFound: exposures.length,
+      framesReturned: loadedFrames.length,
+      frames: loadedFrames,
+      pairs,
+      detectorStacks,
+      spectrumAtCenter,
+      referenceWcs: refWcs,
+      catalogOverlays,
+      releaseId: SPHEREX_RELEASE_ID
+    });
+  } catch (tsErr) {
+    console.error("Time series pipeline error:", tsErr);
+    return res.status(500).json({ error: "Failed to process time series: " + tsErr.message });
+  }
+});
+app.post("/api/spherex/spectrum", async (req, res) => {
+  try {
+    const { targetX, targetY, apertureRadiusPix = 2.5, frames } = req.body;
+    if (!Array.isArray(frames) || frames.length === 0) {
+      return res.status(400).json({ error: "Frames array is required for on-the-fly spectral extraction" });
+    }
+    const x = typeof targetX === "number" ? targetX : 32;
+    const y = typeof targetY === "number" ? targetY : 32;
+    const radius = typeof apertureRadiusPix === "number" ? apertureRadiusPix : 2.5;
+    const spectrum = extractApertureSpectrum(frames, x, y, radius);
+    return res.json({
+      targetX: x,
+      targetY: y,
+      apertureRadiusPix: radius,
+      channelCount: spectrum.length,
+      spectrum
+    });
+  } catch (specErr) {
+    return res.status(500).json({ error: "Spectral extraction failed: " + specErr.message });
+  }
+});
+app.get("/api/spherex/catalog-overlay", async (req, res) => {
+  try {
+    const ra = parseFloat(req.query.ra);
+    const dec = parseFloat(req.query.dec);
+    const radiusArcsec = parseFloat(req.query.radiusArcsec) || 180;
+    const epochYear = parseFloat(req.query.epochYear) || 2025.35;
+    if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
+      return res.status(400).json({ error: "RA and Dec must be finite numbers" });
+    }
+    const overlays = await CatalogMatcher.getOverlaySources(ra, dec, radiusArcsec, epochYear);
+    return res.json({
+      ra,
+      dec,
+      radiusArcsec,
+      epochYear,
+      count: overlays.length,
+      overlays
+    });
+  } catch (catErr) {
+    return res.status(500).json({ error: "Catalog overlay query failed: " + catErr.message });
   }
 });
 app.post("/api/spex/chat", async (req, res) => {

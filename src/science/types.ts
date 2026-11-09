@@ -238,10 +238,13 @@ export interface ChallengeTarget {
   constellation: string;
   scienceType: string;
   description: string;
-  qr2Coverage: 'outside_footprint' | 'inside_footprint';
+  qr2Coverage: 'outside_footprint' | 'inside_footprint' | 'covered';
   angularDistanceDegToNEP: number;
   recommendedBenchmarkId: string;
   expectedBehavior: string;
+  observationsCount?: number;
+  sampleObsId?: string;
+  sexagesimal?: string;
 }
 
 export interface SpectralBandInfo {
@@ -350,6 +353,12 @@ export interface InvestigationResult {
   fileIdentifiers?: string[];
   observationTimestamps?: string[];
   processingVersion?: string;
+  isSimulated?: boolean;
+  simulatedLabel?: string;
+  timeSeries?: any;
+  detectorStacks?: any;
+  spectrumAtCenter?: any;
+  timeSeriesFramesCount?: number;
 }
 
 export type DatasetSourceType = 'DEVELOPMENT_BENCHMARK' | 'OFFICIAL_CHALLENGE_RELEASE' | 'SYNTHETIC_INGESTION_FIXTURE';

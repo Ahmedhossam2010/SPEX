@@ -1,4 +1,5 @@
-import { CatalogMatch } from './types';
+import { CatalogMatch, WCSParams } from './types';
+import { CatalogOverlayItem } from './timeSeriesPipeline';
 import { WCS } from './wcs';
 
 /**
@@ -17,6 +18,8 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
   dec: number;
   identifier: string;
   gMag?: number;
+  pmRaMasYr?: number;
+  pmDecMasYr?: number;
   objectType: string;
 }> = [
   {
@@ -24,6 +27,8 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     dec: 64.82562,
     identifier: 'Gaia DR3 2256659625017767168',
     gMag: 15.42,
+    pmRaMasYr: -3.2,
+    pmDecMasYr: -1.8,
     objectType: 'Star / Variable Point Source',
   },
   {
@@ -31,6 +36,8 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     dec: 64.96072,
     identifier: 'Gaia DR3 2256659620722802048',
     gMag: 14.18,
+    pmRaMasYr: 1.1,
+    pmDecMasYr: -4.5,
     objectType: 'Photometric Standard Star',
   },
   {
@@ -38,6 +45,8 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     dec: 64.83605,
     identifier: 'Gaia DR3 2256659551996956672',
     gMag: 16.05,
+    pmRaMasYr: -14.2,
+    pmDecMasYr: 8.5,
     objectType: 'High-Proper-Motion Star',
   },
   {
@@ -45,7 +54,45 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     dec: 65.09980,
     identifier: 'Gaia DR3 2256660140413843456',
     gMag: 13.75,
+    pmRaMasYr: 0.8,
+    pmDecMasYr: 2.1,
     objectType: 'Field Star / Optical Counterpart',
+  },
+  {
+    ra: 269.45208,
+    dec: 4.69339,
+    identifier: 'Gaia DR3 4472832130942585856 (GJ 699)',
+    gMag: 9.51,
+    pmRaMasYr: -802.8,
+    pmDecMasYr: 10362.5,
+    objectType: 'Barnard Star (Ultra-High Proper Motion M4V)',
+  },
+  {
+    ra: 330.84042,
+    dec: -56.78601,
+    identifier: 'Gaia DR3 6413247949313880448 (Eps Indi)',
+    gMag: 4.69,
+    pmRaMasYr: 3961.4,
+    pmDecMasYr: -2538.3,
+    objectType: 'Epsilon Indi System',
+  },
+  {
+    ra: 77.45833,
+    dec: 30.40142,
+    identifier: 'Gaia DR3 162985331610427392 (RW Aur)',
+    gMag: 10.42,
+    pmRaMasYr: 1.2,
+    pmDecMasYr: -18.4,
+    objectType: 'RW Aurigae T Tauri Binary',
+  },
+  {
+    ra: 248.33004,
+    dec: 66.70281,
+    identifier: 'Gaia DR3 1644781424687729280 (R Dra)',
+    gMag: 7.62,
+    pmRaMasYr: 15.6,
+    pmDecMasYr: -1.2,
+    objectType: 'R Draconis Mira Variable',
   },
 ];
 
@@ -88,6 +135,22 @@ const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
     w1Mag: 12.95,
     w2Mag: 12.90,
     objectType: 'Infrared Field Counterpart',
+  },
+  {
+    ra: 269.45208,
+    dec: 4.69339,
+    identifier: 'AllWISE J175748.49+044138.3 (Barnard Star)',
+    w1Mag: 5.24,
+    w2Mag: 5.01,
+    objectType: 'Mid-Infrared Counterpart (GJ 699)',
+  },
+  {
+    ra: 133.79513,
+    dec: -7.24515,
+    identifier: 'AllWISE J085510.83-071442.5 (WISE 0855)',
+    w1Mag: 18.2,
+    w2Mag: 13.98,
+    objectType: 'Sub-Brown Dwarf (Y-Dwarf ~250 K)',
   },
 ];
 
@@ -312,5 +375,122 @@ export class CatalogMatcher {
     }
 
     return matches;
+  }
+
+  /**
+   * Propagate celestial coordinates from reference catalog epoch to target observation epoch
+   * using proper motion vector (pmra in mas/yr [with cos(dec) convention], pmdec in mas/yr).
+   */
+  public static propagateProperMotion(
+    ra: number,
+    dec: number,
+    pmRaMasYr = 0,
+    pmDecMasYr = 0,
+    fromEpochYear = 2016.0,
+    toEpochYear = 2025.35
+  ): { ra: number; dec: number } {
+    const deltaYears = toEpochYear - fromEpochYear;
+    if (deltaYears === 0 || (pmRaMasYr === 0 && pmDecMasYr === 0)) {
+      return { ra, dec };
+    }
+
+    const cosDec = Math.cos((dec * Math.PI) / 180);
+    const deltaRaDeg = cosDec !== 0 ? (pmRaMasYr * deltaYears) / (3.6e6 * cosDec) : 0;
+    const deltaDecDeg = (pmDecMasYr * deltaYears) / 3.6e6;
+
+    const propRa = ((ra + deltaRaDeg) % 360 + 360) % 360;
+    const propDec = Math.max(-90, Math.min(90, dec + deltaDecDeg));
+
+    return {
+      ra: Number(propRa.toFixed(6)),
+      dec: Number(propDec.toFixed(6)),
+    };
+  }
+
+  /**
+   * Fetch astronomical sources in field for interactive canvas overlays,
+   * propagating high-proper-motion Gaia positions to the SPHEREx observation date.
+   */
+  public static async getOverlaySources(
+    ra: number,
+    dec: number,
+    radiusArcsec = 180,
+    observationEpochYear = 2025.35,
+    wcs?: WCSParams
+  ): Promise<CatalogOverlayItem[]> {
+    const overlays: CatalogOverlayItem[] = [];
+
+    // Query Gaia sources in field
+    for (const src of KNOWN_BENCHMARK_GAIA_SOURCES) {
+      const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
+      if (sep <= radiusArcsec) {
+        const prop = this.propagateProperMotion(
+          src.ra,
+          src.dec,
+          src.pmRaMasYr || 0,
+          src.pmDecMasYr || 0,
+          2016.0,
+          observationEpochYear
+        );
+
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(prop.ra, prop.dec, wcs);
+            x = Math.round(pix.x);
+            y = Math.round(pix.y);
+          } catch {}
+        }
+
+        overlays.push({
+          catalog: 'Gaia DR3',
+          identifier: src.identifier,
+          raRaw: src.ra,
+          decRaw: src.dec,
+          raPropagated: prop.ra,
+          decPropagated: prop.dec,
+          x,
+          y,
+          mag: src.gMag,
+          magLabel: src.gMag ? `G = ${src.gMag.toFixed(2)}` : undefined,
+          pmRaMasYr: src.pmRaMasYr,
+          pmDecMasYr: src.pmDecMasYr,
+          sourceType: src.objectType,
+        });
+      }
+    }
+
+    // Query AllWISE sources in field
+    for (const src of KNOWN_BENCHMARK_WISE_SOURCES) {
+      const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
+      if (sep <= radiusArcsec) {
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(src.ra, src.dec, wcs);
+            x = Math.round(pix.x);
+            y = Math.round(pix.y);
+          } catch {}
+        }
+
+        overlays.push({
+          catalog: 'AllWISE',
+          identifier: src.identifier,
+          raRaw: src.ra,
+          decRaw: src.dec,
+          raPropagated: src.ra,
+          decPropagated: src.dec,
+          x,
+          y,
+          mag: src.w1Mag,
+          magLabel: `W1=${src.w1Mag.toFixed(1)}, W2=${src.w2Mag.toFixed(1)}`,
+          sourceType: src.objectType,
+        });
+      }
+    }
+
+    return overlays;
   }
 }

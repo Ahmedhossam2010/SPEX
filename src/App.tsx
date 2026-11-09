@@ -6,7 +6,7 @@ import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { InvestigationResult } from './science/types';
-import { checkCoordinatesInQR2 } from './science/challengeTargets';
+import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 
 export function App() {
@@ -95,17 +95,32 @@ export function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // Check URL query parameters and load initial data
+  // Check URL query parameters and load initial data (Task 7)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const caseParam = params.get('case');
+    const coordsParam = params.get('coords');
     const raParam = params.get('ra');
     const decParam = params.get('dec');
     const langParam = params.get('lang');
+    const fovParam = params.get('fov');
+    const sizePixParam = fovParam ? Math.round((parseFloat(fovParam) * 60) / 6.2) : undefined;
+    const epochAParam = params.get('epochA') || '1';
+    const epochBParam = params.get('epochB') || '3';
+    const epochPair = `${epochAParam}-${epochBParam}`;
 
     if (langParam === 'ar' || langParam === 'en') {
       setLanguage(langParam);
       localStorage.setItem('spherex_lang', langParam);
+    }
+
+    let parsedCoords: { ra: number; dec: number } | null = null;
+    if (coordsParam) {
+      const p = parseCoordinateInput(coordsParam);
+      if (p) parsedCoords = { ra: p.ra, dec: p.dec };
+    } else if (raParam && decParam) {
+      const p = parseCoordinateInput(`${raParam}, ${decParam}`);
+      if (p) parsedCoords = { ra: p.ra, dec: p.dec };
     }
 
     // Fetch curated real cases on startup
@@ -113,15 +128,12 @@ export function App() {
       .then((r) => r.json())
       .then((data) => {
         setCases(data);
-        if (caseParam && data.some((c: any) => c.id === caseParam)) {
-          loadCase(caseParam);
-        } else if (raParam && decParam && !Number.isNaN(parseFloat(raParam)) && !Number.isNaN(parseFloat(decParam))) {
-          loadCase(data[0]?.id || 'case-nep-var-01', {
-            ra: parseFloat(raParam),
-            dec: parseFloat(decParam),
-          });
+        if (parsedCoords) {
+          loadCase(data[0]?.id || 'case-nep-var-01', parsedCoords, { sizePix: sizePixParam, epochPair });
+        } else if (caseParam && data.some((c: any) => c.id === caseParam)) {
+          loadCase(caseParam, undefined, { sizePix: sizePixParam, epochPair });
         } else if (data && data.length > 0) {
-          loadCase(data[0].id);
+          loadCase(data[0].id, undefined, { sizePix: sizePixParam, epochPair });
         }
       })
       .catch((err) => {
@@ -129,32 +141,15 @@ export function App() {
       });
   }, []);
 
-  // Process a case by ID with optional custom coordinates, FOV sizePix, and epochPair
+  // Process a case by ID with optional custom coordinates, FOV sizePix, and epochPair (Task 1 & 7)
   const loadCase = async (
     caseId: string,
     customCoords?: { ra: number; dec: number },
-    options?: { sizePix?: number; epochPair?: string }
+    options?: { sizePix?: number; epochPair?: string; mode?: string; detector?: string }
   ) => {
     setIsLoading(true);
     setErrorMsg(null);
     setFailedQuery(null);
-
-    // Client-side survey footprint boundary check to avoid uncaught network/pipeline errors
-    if (customCoords) {
-      const coordCheck = checkCoordinatesInQR2(customCoords.ra, customCoords.dec);
-      if (!coordCheck.inside) {
-        setIsLoading(false);
-        const coverageMsg = `IRSA IBE: Celestial coordinates (RA ${customCoords.ra.toFixed(4)}°, Dec ${customCoords.dec >= 0 ? '+' : ''}${customCoords.dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`;
-        setErrorMsg(coverageMsg);
-        setFailedQuery({ caseId, customCoords });
-        setFallbackQuery({ ra: customCoords.ra, dec: customCoords.dec });
-        // Automatically open verified NEP benchmark so the user can inspect a reference field
-        loadCase('case-nep-var-01');
-        return;
-      } else {
-        setFallbackQuery(null);
-      }
-    }
 
     try {
       const res = await fetch('/api/spherex/process', {
@@ -167,28 +162,56 @@ export function App() {
           epochPair: options?.epochPair,
         }),
       });
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
-        if (res.status === 422) {
-          setErrorMsg(errorData.error || 'Coordinates lie outside SPHEREx QR2 survey coverage.');
+        if (res.status === 404 || res.status === 422) {
+          // Honest reporting: field has not yet been observed in current release
+          const msg = errorData.error || `IRSA TAP: 0 SPHEREx observations found for requested coordinates.`;
+          setErrorMsg(msg);
           setFailedQuery({ caseId, customCoords });
-          if (customCoords) {
-            setFallbackQuery({ ra: customCoords.ra, dec: customCoords.dec });
-            loadCase('case-nep-var-01');
-          }
           return;
         }
         throw new Error(errorData.error || `Pipeline returned HTTP status ${res.status}`);
       }
+
       const data: InvestigationResult = await res.json();
       setCurrentResult(data);
+
+      // Update URL query parameters so any view can be bookmarked or shared (Task 7)
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (customCoords) {
+          params.set('ra', customCoords.ra.toFixed(5));
+          params.set('dec', customCoords.dec.toFixed(5));
+          params.delete('case');
+        } else {
+          params.set('case', caseId);
+          params.delete('ra');
+          params.delete('dec');
+          params.delete('coords');
+        }
+        if (options?.sizePix) {
+          const fov = Number(((options.sizePix * 6.2) / 60).toFixed(1));
+          params.set('fov', String(fov));
+        }
+        if (options?.epochPair) {
+          const [eA, eB] = options.epochPair.split('-');
+          if (eA) params.set('epochA', eA);
+          if (eB) params.set('epochB', eB);
+        }
+        if (options?.mode) {
+          params.set('mode', options.mode);
+        }
+        if (options?.detector) {
+          params.set('detector', options.detector);
+        }
+        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({ ...window.history.state }, '', newUrl);
+      }
     } catch (err: any) {
       const msg = err.message || 'Failed to process SPHEREx observation';
-      if (msg.includes('coverage') || msg.includes('footprint') || msg.includes('422')) {
-        console.warn('[Coverage Notice]', msg);
-      } else {
-        console.error('Case processing failed:', err);
-      }
+      console.error('Case processing failed:', err);
       setErrorMsg(msg);
       setFailedQuery({ caseId, customCoords });
     } finally {

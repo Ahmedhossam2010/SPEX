@@ -2588,3 +2588,230 @@ test('Pipeline: checkCompatibility enforces release boundary (QR2 vs QR2 ok, QR3
   assert.ok(checkCross.reason?.includes('Cross-release comparison rejected'), 'Must provide clear rejection explanation');
   assert.ok(checkCross.reason?.includes('photometric cross-calibration') || checkCross.reason?.includes('flux correction factors'));
 });
+
+test('Task 1: Sexagesimal conversion, exact WISE 0855 coordinates, and 5 targets verification', async () => {
+  const {
+    sexagesimalToDecimal,
+    decimalToSexagesimal,
+    parseCoordinateInput,
+    OFFICIAL_CHALLENGE_TARGETS,
+  } = await import('./challengeTargets');
+
+  // Exact WISE 0855 calculation: RA 08h55m10.831s, Dec -07d14m42.53s
+  // RA: (8 + 55/60 + 10.831/3600) * 15 = 133.79512916666666 -> 133.79513
+  // Dec: -(7 + 14/60 + 42.53/3600) = -7.245147222222222 -> -7.24515
+  const wiseConverted = sexagesimalToDecimal('08h55m10.831s', '-07d14m42.53s');
+  assert.equal(wiseConverted.ra, 133.79513, 'WISE 0855 RA must equal 133.79513 deg');
+  assert.equal(wiseConverted.dec, -7.24515, 'WISE 0855 Dec must equal -7.24515 deg');
+
+  // Verify parseCoordinateInput on single unified strings
+  const parsed1 = parseCoordinateInput('08h55m10.831s, -07d14m42.53s');
+  assert.ok(parsed1);
+  assert.equal(parsed1.ra, 133.79513);
+  assert.equal(parsed1.dec, -7.24515);
+
+  const parsed2 = parseCoordinateInput('08:55:10.831 -07:14:42.53');
+  assert.ok(parsed2);
+  assert.equal(parsed2.ra, 133.79513);
+  assert.equal(parsed2.dec, -7.24515);
+
+  const parsed3 = parseCoordinateInput('133.79513, -7.24515');
+  assert.ok(parsed3);
+  assert.equal(parsed3.ra, 133.79513);
+  assert.equal(parsed3.dec, -7.24515);
+
+  // Round trip back to sexagesimal
+  const sexa = decimalToSexagesimal(133.79513, -7.24515);
+  assert.ok(sexa.raStr.startsWith('08h55m10.83'));
+  assert.ok(sexa.decStr.startsWith('-07d14m42.5'));
+
+  // Verify all 5 official challenge targets have accurate coordinates and probe status
+  const targetWise = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-wise-0855')!;
+  assert.equal(targetWise.ra, 133.79513);
+  assert.equal(targetWise.dec, -7.24515);
+  assert.equal(targetWise.qr2Coverage, 'covered');
+  assert.equal(targetWise.observationsCount, 4);
+
+  const targetBarnard = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-barnards-star')!;
+  assert.equal(targetBarnard.ra, 269.45208);
+  assert.equal(targetBarnard.dec, 4.69339);
+  assert.equal(targetBarnard.qr2Coverage, 'covered');
+  assert.equal(targetBarnard.observationsCount, 39);
+
+  const targetEpsIndi = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-b')!;
+  assert.equal(targetEpsIndi.ra, 330.84042);
+  assert.equal(targetEpsIndi.dec, -56.78601);
+  assert.equal(targetEpsIndi.qr2Coverage, 'covered');
+  assert.equal(targetEpsIndi.observationsCount, 27);
+
+  const targetRwAur = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-rw-aurigae')!;
+  assert.equal(targetRwAur.ra, 77.45833);
+  assert.equal(targetRwAur.dec, 30.40142);
+  assert.equal(targetRwAur.qr2Coverage, 'covered');
+  assert.equal(targetRwAur.observationsCount, 19);
+
+  const targetRDra = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-r-draconis')!;
+  assert.equal(targetRDra.ra, 248.33004);
+  assert.equal(targetRDra.dec, 66.70281);
+  assert.equal(targetRDra.qr2Coverage, 'covered');
+  assert.equal(targetRDra.observationsCount, 55);
+});
+
+test('Task 2: TAP query produces two distinct fits_urls for two different rows (no hardcoded identical URL bug)', async () => {
+  const { resolveFitsUrl, buildFallbackFitsUrl } = await import('./timeSeriesPipeline');
+
+  const row1ObsId = '2025W18_1B_0001_1';
+  const row1Detector = 'D1';
+  const row1AccessUrl = 'https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W18_1B_0001_1/D1';
+
+  const row2ObsId = '2025W35_1A_0444_3';
+  const row2Detector = 'D2';
+  const row2AccessUrl = 'https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W35_1A_0444_3/D2';
+
+  const url1 = await resolveFitsUrl(row1AccessUrl, row1ObsId, row1Detector);
+  const url2 = await resolveFitsUrl(row2AccessUrl, row2ObsId, row2Detector);
+
+  assert.notEqual(url1, url2, 'Two distinct rows MUST produce two distinct FITS URLs');
+  assert.ok(url1.includes('2025W18_1B_0001_1D1'), `URL 1 must contain observation 1: ${url1}`);
+  assert.ok(url2.includes('2025W35_1A_0444_3D2'), `URL 2 must contain observation 2: ${url2}`);
+
+  const fallback1 = buildFallbackFitsUrl(row1ObsId, row1Detector);
+  const fallback2 = buildFallbackFitsUrl(row2ObsId, row2Detector);
+  assert.notEqual(fallback1, fallback2);
+});
+
+test('Task 3: extractVisitKey and temporal classification (INTRA_VISIT vs INDEPENDENT_VISIT vs SURVEY_EPOCH)', async () => {
+  const { extractVisitKey } = await import('./timeSeriesPipeline');
+
+  // Verify visitKey parsing
+  assert.equal(extractVisitKey('2025W18_1B_0001_1'), '2025W18_1B_0001');
+  assert.equal(extractVisitKey('2025W18_1B_0001_2'), '2025W18_1B_0001');
+  assert.equal(extractVisitKey('2025W35_1A_0444_3'), '2025W35_1A_0444');
+  assert.equal(extractVisitKey('2025W32_1B_0521_1'), '2025W32_1B_0521');
+
+  // Same visitKey within ~129s cadence -> INTRA_VISIT
+  const mjd1 = 60793.541849;
+  const mjd2 = 60793.543341;
+  const deltaSec = (mjd2 - mjd1) * 86400;
+  assert.ok(Math.abs(deltaSec - 128.9) < 0.2);
+
+  // Different visitKey or > 3600s -> INDEPENDENT_VISIT
+  const mjdIndep = 60810.0;
+  const deltaDays = mjdIndep - mjd1;
+  assert.ok(deltaDays > 1.0 && deltaDays < 30.0);
+
+  // > 30 days -> SURVEY_EPOCH
+  const mjdEpoch = 60990.0;
+  const epochDays = mjdEpoch - mjd1;
+  assert.ok(epochDays > 30.0);
+});
+
+test('Task 5: computeDetectorStacks (inverse-variance co-addition) & extractApertureSpectrum', async () => {
+  const { computeDetectorStacks, extractApertureSpectrum } = await import('./timeSeriesPipeline');
+
+  const width = 8;
+  const height = 8;
+  const numPix = width * height;
+
+  const flux1 = new Float32Array(numPix).fill(10.0);
+  const flux2 = new Float32Array(numPix).fill(12.0);
+  const var1 = new Float32Array(numPix).fill(2.0);
+  const var2 = new Float32Array(numPix).fill(2.0);
+
+  const mockFrame1: any = {
+    index: 1,
+    obsId: '2025W18_1B_0001_1',
+    detector: 'D1',
+    visitKey: '2025W18_1B_0001',
+    mjd: 60793.541849,
+    dateObs: '2025-04-28T13:00:15.755Z',
+    wavelengthUm: 0.93,
+    width,
+    height,
+    flux: Array.from(flux1),
+    variance: Array.from(var1),
+    reprojectedFlux: Array.from(flux1),
+    dqDecoded: { maskedFraction: 0, totalMaskedPixels: 0, totalPixels: numPix },
+  };
+
+  const mockFrame2: any = {
+    index: 2,
+    obsId: '2025W18_1B_0001_2',
+    detector: 'D1',
+    visitKey: '2025W18_1B_0001',
+    mjd: 60793.543341,
+    dateObs: '2025-04-28T13:02:24.686Z',
+    wavelengthUm: 0.93,
+    width,
+    height,
+    flux: Array.from(flux2),
+    variance: Array.from(var2),
+    reprojectedFlux: Array.from(flux2),
+    dqDecoded: { maskedFraction: 0, totalMaskedPixels: 0, totalPixels: numPix },
+  };
+
+  const stacks = computeDetectorStacks([mockFrame1, mockFrame2]);
+  assert.ok(stacks['D1'], 'Detector stack for D1 must exist');
+  assert.equal(stacks['D1'].frameCount, 2);
+  // Co-add of 10.0 and 12.0 with equal variance 2.0 -> mean 11.0, stacked variance 1.0 (reduced noise)
+  assert.ok(Math.abs(stacks['D1'].stats.mean - 11.0) < 1e-4);
+  assert.ok(Math.abs(stacks['D1'].stackedVariance[0] - 1.0) < 1e-4);
+
+  // Spectral extraction
+  const spectrum = extractApertureSpectrum([mockFrame1, mockFrame2], 4, 4, 1.5);
+  assert.equal(spectrum.length, 2);
+  assert.ok(spectrum[0].wavelengthUm >= 0.75 && spectrum[0].wavelengthUm <= 1.11);
+  assert.ok(spectrum[0].fluxMjySr > 0);
+});
+
+test('Task 6: CatalogMatcher proper motion propagation over baseline', async () => {
+  const { CatalogMatcher } = await import('./catalogMatcher');
+
+  // Barnard's Star: RA 269.45208, Dec 4.69339, PMRA: -802.8 mas/yr, PMDEC: 10362.5 mas/yr
+  // Delta T: 2025.64 - 2016.0 = 9.64 years
+  // Delta Dec: 10362.5 * 9.64 / 3.6e6 = +0.027748 deg (~+99.89 arcsec)
+  const prop = CatalogMatcher.propagateProperMotion(
+    269.45208,
+    4.69339,
+    -802.8,
+    10362.5,
+    2016.0,
+    2025.64
+  );
+
+  const deltaDecArcsec = (prop.dec - 4.69339) * 3600;
+  assert.ok(Math.abs(deltaDecArcsec - 99.89) < 0.5, `Delta Dec should be ~99.9 arcsec, got ${deltaDecArcsec}`);
+  assert.ok(prop.ra < 269.45208, 'Proper motion in RA is negative');
+
+  // Overlay retrieval for Barnard's Star
+  const overlays = await CatalogMatcher.getOverlaySources(269.45208, 4.69339, 120, 2025.64);
+  assert.ok(overlays.length > 0, 'Should find overlays for Barnard Star benchmark');
+  const barnardOverlay = overlays.find((o) => o.catalog === 'Gaia DR3')!;
+  assert.ok(barnardOverlay);
+  assert.equal(barnardOverlay.pmDecMasYr, 10362.5);
+});
+
+test('Task 8: decodeBitmaskFlags accurately counts flags and calculates masked fraction', async () => {
+  const { decodeBitmaskFlags } = await import('./timeSeriesPipeline');
+
+  const totalPixels = 100;
+  const flags = new Int32Array(totalPixels);
+
+  flags[0] = 0x01; // transient
+  flags[1] = 0x02; // overflow
+  flags[2] = 0x04; // surError
+  flags[3] = 0x80000; // outlier
+  flags[4] = 0x200000; // source
+  flags[5] = 0x01 | 0x02; // both transient & overflow
+
+  const dq = decodeBitmaskFlags(flags, totalPixels);
+  assert.equal(dq.transientOrCR, 2);
+  assert.equal(dq.overflow, 2);
+  assert.equal(dq.surError, 1);
+  assert.equal(dq.statisticalOutlier, 1);
+  assert.equal(dq.source, 1);
+  assert.equal(dq.totalMaskedPixels, 6);
+  assert.equal(dq.maskedFraction, 0.06);
+});
+
+

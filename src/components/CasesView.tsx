@@ -11,6 +11,8 @@ interface CaseItem {
   category: 'Variable Candidate' | 'Stability Reference' | 'Artifact Rejection' | 'Channel Incompatibility';
   expectedClassification: string;
   description: string;
+  isSimulated?: boolean;
+  simulatedLabel?: string;
 }
 
 interface CasesViewProps {
@@ -43,8 +45,8 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
         </div>
         <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
           {language === 'ar'
-            ? 'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل قياس الفروق الضوئية ومعايير الثبات وتصفية أعلام الجودة (0x01/0x02/0x80000).'
-            : 'Four genuine multi-epoch SPHEREx investigations. Demonstrating verified variable stars, photometric null stability, and automated bitmask artifact rejection.'}
+            ? 'تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل النجوم المتغيرة، نجم برنارد فائق الحركة الخاصة، قزم بني بارد، ومعايير الثبات وتصفية أعلام الجودة.'
+            : 'Authentic multi-epoch SPHEREx investigations across verified targets including Barnard’s Star, WISE 0855, North Ecliptic Pole deep surveys, and photometric calibration standards.'}
         </p>
       </div>
 
@@ -63,9 +65,21 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
           return (
             <div
               key={c.id}
-              className="group relative flex flex-col justify-between rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02] hover:bg-slate-50 dark:hover:bg-white/[0.04] p-6 transition-all duration-300 hover:border-amber-400/50 shadow-sm hover:shadow-md"
+              className={`group relative flex flex-col justify-between rounded-3xl border ${
+                c.isSimulated
+                  ? 'border-amber-500/40 bg-amber-500/[0.02]'
+                  : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02]'
+              } hover:bg-slate-50 dark:hover:bg-white/[0.04] p-6 transition-all duration-300 hover:border-amber-400/50 shadow-sm hover:shadow-md`}
             >
               <div>
+                {/* Simulated Data Transparency Badge (Task 4) */}
+                {c.isSimulated && (
+                  <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider">
+                    <span>⚠️</span>
+                    <span>{c.simulatedLabel || 'Simulated / Demonstration Data'}</span>
+                  </div>
+                )}
+
                 {/* Category & Astrometric Coordinates */}
                 <div className="flex items-center justify-between text-xs mb-3 font-mono">
                   <span className={`text-[11px] font-bold uppercase tracking-wider ${categoryColor}`}>
@@ -102,7 +116,7 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
               <button
                 type="button"
                 onClick={() => onSelectCase(c.id)}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all active:scale-95 shadow-xs"
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
               >
                 <span>{language === 'ar' ? 'افحص هذه الحالة الفلكية' : 'Investigate Case'}</span>
                 <ArrowRight className="w-4 h-4" />

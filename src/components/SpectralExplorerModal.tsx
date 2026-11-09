@@ -6,6 +6,7 @@ import {
   generateCandidateSED,
 } from '../science/spectralBands';
 import { CandidateDetection } from '../science/types';
+import { SpectrumPoint } from '../science/timeSeriesPipeline';
 import { Language, translations } from '../utils/translations';
 
 import { useModalBehavior } from '../hooks/useModalBehavior';
@@ -13,12 +14,16 @@ import { useModalBehavior } from '../hooks/useModalBehavior';
 interface SpectralExplorerModalProps {
   onClose: () => void;
   selectedCandidate?: CandidateDetection | null;
+  extractedSpectrum?: SpectrumPoint[] | null;
+  targetCoords?: { ra: number; dec: number } | null;
   language: Language;
 }
 
 export const SpectralExplorerModal: React.FC<SpectralExplorerModalProps> = ({
   onClose,
   selectedCandidate,
+  extractedSpectrum,
+  targetCoords,
   language,
 }) => {
   const t = translations[language];
@@ -126,16 +131,24 @@ export const SpectralExplorerModal: React.FC<SpectralExplorerModalProps> = ({
           </div>
         </div>
 
-        {/* Multi-Wavelength Spectral Energy Distribution (SED) Plot */}
+        {/* Multi-Wavelength Spectral Energy Distribution (SED) or Live SPHEREx Spectrum Plot */}
         <div className="rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-slate-950 p-4 space-y-2">
           <div className="flex items-center justify-between text-xs font-mono text-slate-400">
             <div className="flex items-center gap-2">
               <Activity className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-slate-200 font-bold">
-                {selectedCandidate ? `Candidate #${selectedCandidate.id} SED Plot` : 'Candidate SED Energy Profile'}
+                {extractedSpectrum && extractedSpectrum.length > 0
+                  ? (isRtl ? 'الطيف المقاس الحقيقي من تلسكوب SPHEREx (LVF)' : 'Authentic SPHEREx Extracted Spectrum (LVF Dispersion)')
+                  : selectedCandidate
+                  ? `Candidate #${selectedCandidate.id} SED Profile`
+                  : 'Candidate Multi-Wavelength SED Profile'}
               </span>
             </div>
-            <span className="text-[11px] text-amber-400">Gaia G → SPHEREx B1 → AllWISE W1/W2</span>
+            <span className="text-[11px] text-amber-400">
+              {extractedSpectrum && extractedSpectrum.length > 0
+                ? `${extractedSpectrum.length} Observed Spectral Channels`
+                : 'Gaia G → SPHEREx B1 → AllWISE W1/W2'}
+            </span>
           </div>
 
           <svg viewBox="0 0 600 180" className="w-full h-44 bg-slate-900/60 rounded-xl">
@@ -143,45 +156,99 @@ export const SpectralExplorerModal: React.FC<SpectralExplorerModalProps> = ({
             <line x1="60" y1="140" x2="570" y2="140" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
             <line x1="60" y1="20" x2="60" y2="140" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />
             <text x="530" y="155" fill="rgba(255,255,255,0.5)" fontSize="9" fontFamily="monospace">λ (µm)</text>
-            <text x="15" y="30" fill="rgba(255,255,255,0.5)" fontSize="9" fontFamily="monospace">Flux (mJy)</text>
+            <text x="10" y="30" fill="rgba(255,255,255,0.5)" fontSize="9" fontFamily="monospace">
+              {extractedSpectrum && extractedSpectrum.length > 0 ? 'F_λ (MJy/sr)' : 'Flux (mJy)'}
+            </text>
 
-            {/* Plot SED curve line connecting data points */}
-            {sedPoints.length > 1 && (
-              <polyline
-                fill="none"
-                stroke="#F59E0B"
-                strokeWidth="2"
-                points={sedPoints
-                  .map((pt) => {
-                    // Wavelength map: 0.5 to 5.0 µm -> x: 60 to 570
-                    const x = 60 + ((pt.wavelengthUm - 0.5) / 4.5) * 510;
-                    // Max flux clamp
-                    const maxF = Math.max(...sedPoints.map((p) => p.fluxMjy), 1);
-                    const y = 140 - (pt.fluxMjy / maxF) * 110;
-                    return `${x},${y}`;
-                  })
-                  .join(' ')}
-              />
+            {extractedSpectrum && extractedSpectrum.length > 0 ? (
+              <>
+                {/* Connect real SPHEREx data points */}
+                <polyline
+                  fill="none"
+                  stroke="#38BDF8"
+                  strokeWidth="2"
+                  points={extractedSpectrum
+                    .map((pt) => {
+                      const minW = 0.75;
+                      const maxW = 5.0;
+                      const x = 60 + ((pt.wavelengthUm - minW) / (maxW - minW)) * 500;
+                      const allF = extractedSpectrum.map((p) => p.fluxMjySr);
+                      const maxF = Math.max(...allF, 1);
+                      const minF = Math.min(...allF, 0);
+                      const range = maxF - minF || 1;
+                      const y = 140 - ((pt.fluxMjySr - minF) / range) * 110;
+                      return `${x},${y}`;
+                    })
+                    .join(' ')}
+                />
+
+                {/* Plot real SPHEREx data points with error bars */}
+                {extractedSpectrum.map((pt, i) => {
+                  const minW = 0.75;
+                  const maxW = 5.0;
+                  const x = 60 + ((pt.wavelengthUm - minW) / (maxW - minW)) * 500;
+                  const allF = extractedSpectrum.map((p) => p.fluxMjySr);
+                  const maxF = Math.max(...allF, 1);
+                  const minF = Math.min(...allF, 0);
+                  const range = maxF - minF || 1;
+                  const y = 140 - ((pt.fluxMjySr - minF) / range) * 110;
+                  const errH = Math.min(25, (pt.uncertaintyMjySr / range) * 110);
+
+                  return (
+                    <g key={i}>
+                      {/* Vertical Error Bar */}
+                      <line x1={x} y1={y - errH} x2={x} y2={y + errH} stroke="#F59E0B" strokeWidth="1.5" />
+                      <line x1={x - 3} y1={y - errH} x2={x + 3} y2={y - errH} stroke="#F59E0B" strokeWidth="1.5" />
+                      <line x1={x - 3} y1={y + errH} x2={x + 3} y2={y + errH} stroke="#F59E0B" strokeWidth="1.5" />
+
+                      <circle cx={x} cy={y} r="4.5" fill="#F59E0B" stroke="#FFFFFF" strokeWidth="1.5" />
+                      <text x={x - 12} y={y - errH - 5} fill="#CBD5E1" fontSize="8" fontFamily="monospace">
+                        {pt.detector}: {pt.fluxMjySr.toFixed(1)}
+                      </text>
+                      <text x={x - 8} y="155" fill="#94A3B8" fontSize="8" fontFamily="monospace">
+                        {pt.wavelengthUm}µm
+                      </text>
+                    </g>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                {sedPoints.length > 1 && (
+                  <polyline
+                    fill="none"
+                    stroke="#F59E0B"
+                    strokeWidth="2"
+                    points={sedPoints
+                      .map((pt) => {
+                        const x = 60 + ((pt.wavelengthUm - 0.5) / 4.5) * 510;
+                        const maxF = Math.max(...sedPoints.map((p) => p.fluxMjy), 1);
+                        const y = 140 - (pt.fluxMjy / maxF) * 110;
+                        return `${x},${y}`;
+                      })
+                      .join(' ')}
+                  />
+                )}
+
+                {sedPoints.map((pt, i) => {
+                  const x = 60 + ((pt.wavelengthUm - 0.5) / 4.5) * 510;
+                  const maxF = Math.max(...sedPoints.map((p) => p.fluxMjy), 1);
+                  const y = 140 - (pt.fluxMjy / maxF) * 110;
+
+                  return (
+                    <g key={i}>
+                      <circle cx={x} cy={y} r="5" fill="#38BDF8" stroke="#FFFFFF" strokeWidth="1.5" />
+                      <text x={x - 15} y={y - 8} fill="#CBD5E1" fontSize="9" fontFamily="monospace">
+                        {pt.source} ({pt.fluxMjy} mJy)
+                      </text>
+                      <text x={x - 8} y="155" fill="#94A3B8" fontSize="8" fontFamily="monospace">
+                        {pt.wavelengthUm}µm
+                      </text>
+                    </g>
+                  );
+                })}
+              </>
             )}
-
-            {/* Plot individual catalog data points */}
-            {sedPoints.map((pt, i) => {
-              const x = 60 + ((pt.wavelengthUm - 0.5) / 4.5) * 510;
-              const maxF = Math.max(...sedPoints.map((p) => p.fluxMjy), 1);
-              const y = 140 - (pt.fluxMjy / maxF) * 110;
-
-              return (
-                <g key={i}>
-                  <circle cx={x} cy={y} r="5" fill="#38BDF8" stroke="#FFFFFF" strokeWidth="1.5" />
-                  <text x={x - 15} y={y - 8} fill="#CBD5E1" fontSize="9" fontFamily="monospace">
-                    {pt.source} ({pt.fluxMjy} mJy)
-                  </text>
-                  <text x={x - 8} y="155" fill="#94A3B8" fontSize="8" fontFamily="monospace">
-                    {pt.wavelengthUm}µm
-                  </text>
-                </g>
-              );
-            })}
           </svg>
         </div>
 

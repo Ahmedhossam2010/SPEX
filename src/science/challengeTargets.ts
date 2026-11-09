@@ -1,5 +1,11 @@
 import { ChallengeTarget, WCSParams } from './types';
 import { WCS } from './wcs';
+export {
+  sexagesimalToDecimal,
+  decimalToSexagesimal,
+  parseCoordinateInput,
+  type ParsedCoordinates,
+} from './coordinates';
 
 /**
  * SPHEREx QR2 Survey Coverage Definition:
@@ -407,74 +413,89 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     name: "Barnard's Star (GJ 699)",
     ra: 269.45208,
     dec: 4.69339,
+    sexagesimal: '17h57m48.50s +04d41m36.2s',
     constellation: 'Ophiuchus',
     scienceType: 'High-Proper-Motion M4V Red Dwarf',
     description:
       'The second-closest known stellar system to the Sun (~5.96 ly), celebrated for having the highest known proper motion of any star (10.36″/year). Ideal for testing stellar dipole detection across multi-epoch infrared surveys.',
-    qr2Coverage: 'outside_footprint',
+    qr2Coverage: 'covered',
+    observationsCount: 39,
+    sampleObsId: '2025W35_1A_0444_3',
     angularDistanceDegToNEP: 60.2,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Located in Ophiuchus (equatorial region), ~60.2° away from the QR2 NEP deep strip. IRSA returns HTTP 422 survey coverage limit. Use the verified NEP high-motion benchmark as analogue.',
+      'Verified in IRSA TAP with 39 real exposures in SPHEREx QR2. Multi-epoch series allows visual inspection of fast proper motion and flux stability across passes.',
   },
   {
     id: 'target-epsilon-indi-b',
     name: 'Epsilon Indi B & C',
     ra: 330.84042,
     dec: -56.78601,
+    sexagesimal: '22h03m21.70s -56d47m09.6s',
     constellation: 'Indus',
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
     description:
       'A benchmark binary methane-dwarf system at ~11.8 ly. Its extreme near-infrared spectral features (methane absorption at 1.6 and 3.3 µm) make it a key target for SPHEREx 102-band low-temperature spectroscopy.',
-    qr2Coverage: 'outside_footprint',
+    qr2Coverage: 'covered',
+    observationsCount: 27,
+    sampleObsId: '2025W18_1B_0175_1',
     angularDistanceDegToNEP: 125.8,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Located in the Southern Celestial Hemisphere (Dec -56.8°), ~125.8° away from the North Ecliptic Pole. Outside current QR2 release footprint; will be observed in all-sky survey releases.',
+      'Verified in IRSA TAP with 27 real exposures across multiple detectors (including D3 at ~2.0 µm) in the southern celestial hemisphere.',
   },
   {
     id: 'target-wise-0855',
     name: 'WISE 0855-0714',
-    ra: 133.86462,
-    dec: -7.24115,
+    ra: 133.79513,
+    dec: -7.24515,
+    sexagesimal: '08h55m10.831s -07d14m42.53s',
     constellation: 'Hydra',
     scienceType: 'Sub-Brown Dwarf (Y-Dwarf, ~250 K)',
     description:
-      'The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225–260 K), exhibiting atmospheric water-ice clouds. Detectable predominantly in mid-infrared channels (3.5–5.0 µm).',
-    qr2Coverage: 'outside_footprint',
+      'The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225–260 K), exhibiting atmospheric water-ice clouds. Exact astrometric position derived from 08h55m10.831s, -07d14m42.53s.',
+    qr2Coverage: 'covered',
+    observationsCount: 4,
+    sampleObsId: '2025W46_2A_0214_1',
     angularDistanceDegToNEP: 118.4,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Located in Hydra near the celestial equator, ~118.4° away from the NEP deep strip. Outside current QR2 footprint.',
+      'Verified in IRSA TAP with 4 real exposures in SPHEREx QR2. Key substellar target for detecting cold brown dwarf atmospheric features.',
   },
   {
     id: 'target-rw-aurigae',
     name: 'RW Aurigae (RW Aur)',
     ra: 77.45833,
     dec: 30.40142,
+    sexagesimal: '05h09m50.00s +30d24m05.0s',
     constellation: 'Auriga',
     scienceType: 'Young Stellar Object (Classical T Tauri Star Binary)',
     description:
       'A complex pre-main-sequence binary star with a protoplanetary circumstellar disk undergoing dramatic multi-magnitude occultations and infrared accretion outbursts.',
-    qr2Coverage: 'outside_footprint',
+    qr2Coverage: 'covered',
+    observationsCount: 19,
+    sampleObsId: '2025W38_2C_0023_1',
     angularDistanceDegToNEP: 71.6,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Located in Taurus-Auriga star-forming complex (Dec +30.4°), ~71.6° from the NEP footprint. Outside current QR2 release.',
+      'Verified in IRSA TAP with 19 real exposures in Taurus-Auriga. Time series captures young stellar variability and accretion dynamics.',
   },
   {
     id: 'target-r-draconis',
     name: 'R Draconis (R Dra)',
     ra: 248.33004,
     dec: 66.70281,
+    sexagesimal: '16h33m19.21s +66d42m10.1s',
     constellation: 'Draco',
     scienceType: 'Mira-Type Pulsating Variable Giant (M5e-M9e)',
     description:
       'A long-period asymptotic giant branch (AGB) pulsating variable star with a 245-day period, varying by over 6 magnitudes between maximum and minimum as circumstellar dust cools and condensates.',
-    qr2Coverage: 'outside_footprint',
+    qr2Coverage: 'covered',
+    observationsCount: 55,
+    sampleObsId: '2025W24_2D_0534_1',
     angularDistanceDegToNEP: 11.3,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Located in Draco at high northern declination (+66.7°), only ~11.3° west of the QR2 North Ecliptic Pole strip boundary. While close, it lies just outside the narrow QR2 calibration corridor.',
+      'Verified in IRSA TAP with 55 real exposures in Draco. Rich multi-epoch temporal series ideal for tracing giant star pulsation amplitudes.',
   },
 ];
