@@ -64,6 +64,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   const [isThinking, setIsThinking] = useState<boolean>(false);
   const [currentMood, setCurrentMood] = useState<SPEXMood>('greeting');
   const [currentThought, setCurrentThought] = useState<string>('');
+  const [simplificationLevel, setSimplificationLevel] = useState<number>(0);
+  const [explanationLevel, setExplanationLevel] = useState<'simple' | 'normal' | 'science'>('simple');
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -72,7 +74,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
     if (!currentResult) {
       setCurrentMood('greeting');
       const intro = isRtl
-        ? 'أهلاً بك! أنا SPEX، مرشدك الفلكي لمهمة SPHEREx 🐾 اختر هدفاً أو أدخل إحداثيات، وسنقارن صور السماء معاً لنرى ما الذي تغير!'
+        ? 'أهلاً بك! أنا SPEX، مرشدك الفلكي الذكي لمهمة SPHEREx 🐾 اختر هدفاً أو أدخل إحداثيات، وسنقارن صور السماء معاً لنرى ما الذي تغير!'
         : 'Welcome! I am SPEX, your celestial guide for SPHEREx 🐾 Choose a sky target or enter coordinates, and we will compare observations to see what moved or changed brightness!';
       setCurrentThought(intro);
       setMessages([
@@ -178,11 +180,49 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
     setIsThinking(true);
     setCurrentMood('thinking');
 
-    // Contextual client-side intelligent answers + server fallback
+    // Contextual client-side intelligent answers + progressive simplification
     const lower = text.toLowerCase();
     let instantReply: { text: string; mood: SPEXMood } | null = null;
 
-    if (lower.includes('joke') || lower.includes('نكتة') || lower.includes('ضحك')) {
+    const isSimplerQuery =
+      lower.includes('مش فاهم') ||
+      lower.includes('اشرح أبسط') ||
+      lower.includes('ابسط') ||
+      lower.includes('مثال') ||
+      lower.includes('ليه') ||
+      lower.includes("don't understand") ||
+      lower.includes('dont understand') ||
+      lower.includes('simpler') ||
+      lower.includes('example') ||
+      lower.includes('eli5');
+
+    if (isSimplerQuery) {
+      const nextSimp = (simplificationLevel + 1) % 3;
+      setSimplificationLevel(nextSimp);
+
+      if (nextSimp === 1) {
+        instantReply = {
+          mood: 'explaining',
+          text: isRtl
+            ? 'فكر في ريموت التلفزيون! لما بتدوس على زرار، بيبعت وميض أشعة تحت حمراء مخفية للشاشة مش بنشوفه بعنينا بس التلفزيون بيلقطه علطول. تلسكوب SPHEREx عامل زي ريموت كوني عملاق، بيلقط حرارة النجوم وسحب الغبار اللي عنينا مبتشوفهاش!'
+            : 'Think of your TV remote control! When you press a button, it sends an invisible pulse of infrared light that your eyes cannot see, but your TV detects instantly. SPHEREx is like a giant cosmic TV receiver, catching the invisible heat radiated by stars and dust clouds!',
+        };
+      } else if (nextSimp === 2) {
+        instantReply = {
+          mood: 'eureka',
+          text: isRtl
+            ? 'زي ما الكلاب والقطط بتسمع ترددات صوتية عالية ودان الإنسان مش بتسمعها خالص، الكون فيه ألوان ضوء عنينا كبشر مبتشوفهاش. الأشعة تحت الحمراء لون من الألوان السرية دي، وتلسكوب SPHEREx هو النظارة السحرية اللي بتخلينا نشوفها!'
+            : 'Just like dogs can hear high-frequency dog whistles that human ears cannot hear at all, the universe is full of light colors our eyes cannot see. Infrared is one of those hidden colors, and SPHEREx is our telescope that makes the invisible visible!',
+        };
+      } else {
+        instantReply = {
+          mood: 'greeting',
+          text: isRtl
+            ? 'الحكاية في كلمتين: تلسكوب SPHEREx صور نفس الجزء من السماء مرتين في وقتين مختلفين وطرحنا الصورتين من بعض؛ أي نقطة بتنور في صورة الفرق معناها إن فيه نجم سطع أو كويكب اتحرك!'
+            : 'In two sentences: SPHEREx imaged this patch of sky twice at different times, and we subtracted the two pictures. Any bright spot left behind is a star that flared up or an asteroid that shifted position!',
+        };
+      }
+    } else if (lower.includes('joke') || lower.includes('نكتة') || lower.includes('ضحك')) {
       // State 10: Playful / Joking
       instantReply = {
         mood: 'joking',
@@ -240,7 +280,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
           },
         ]);
         setIsThinking(false);
-      }, 400);
+      }, 350);
       return;
     }
 
@@ -254,6 +294,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
           language,
           currentResult,
           selectedCandidate,
+          simplificationLevel,
+          explanationLevel,
         }),
       });
 
@@ -299,12 +341,14 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
 
   const quickPrompts = isRtl
     ? [
+        { label: 'مش فاهم، بسطها؟', prompt: 'مش فاهم، ممكن تشرحهالي بمثال بسيط خالص من حياتنا اليومية؟' },
         { label: 'إيه النقطة دي؟', prompt: 'اشرح لي ببساطة ماذا تمثل النقطة المضيئة المحددة هنا؟' },
         { label: 'هل ده كويكب؟', prompt: 'هل توجد أدلة على حركة أو كويكب في هذه الرصدة؟' },
         { label: 'خلل ولا اكتشاف؟', prompt: 'كيف تفرق بين الخلل التقني في الحساس والجرم الحقيقي؟' },
         { label: 'قل لي نكتة فلكية', prompt: 'قل لي نكتة فلكية سريعة عن النجوم والكويكبات!' },
       ]
     : [
+        { label: 'Explain simpler?', prompt: 'I don’t understand, could you explain with a simple everyday analogy?' },
         { label: 'What is this spot?', prompt: 'Explain in plain English what this highlighted signal represents.' },
         { label: 'Could this be an asteroid?', prompt: 'Is there any evidence of motion or an asteroid in this observation?' },
         { label: 'Glitch or discovery?', prompt: 'How do you tell a detector glitch from a real astronomical discovery?' },
@@ -367,7 +411,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
 
             {/* Quick action buttons */}
             <div className="mt-2.5 flex flex-wrap gap-1.5">
-              {quickPrompts.slice(0, 3).map((item, idx) => (
+              {quickPrompts.slice(0, 4).map((item, idx) => (
                 <button
                   key={idx}
                   type="button"
@@ -375,7 +419,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
                     setIsChatOpen(true);
                     handleUserQuery(item.prompt);
                   }}
-                  className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/15 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-white/[0.08] transition-colors"
+                  className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/15 dark:hover:bg-amber-500/20 text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-300 border border-slate-200 dark:border-white/[0.08] transition-colors cursor-pointer"
                 >
                   {item.label}
                 </button>
@@ -394,7 +438,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
           className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
         >
           <div
-            className="w-full sm:max-w-xl h-[85vh] sm:h-[600px] bg-white dark:bg-[#0c1220] rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-white/[0.1] shadow-2xl flex flex-col overflow-hidden"
+            className="w-full sm:max-w-xl h-[85vh] sm:h-[620px] bg-white dark:bg-[#0c1220] rounded-t-3xl sm:rounded-3xl border border-slate-200 dark:border-white/[0.1] shadow-2xl flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -410,20 +454,43 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
                 </div>
                 <div>
                   <h3 className="font-['Outfit'] font-bold text-sm text-slate-900 dark:text-slate-100">
-                    {isRtl ? 'محادثة SPEX الفلكية' : 'Chat with SPEX'}
+                    {isRtl ? 'محادثة SPEX الفلكية الذكية' : 'Intelligent SPEX Astro Guide'}
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {isRtl ? 'اسأل عن السيجما، الحركة، أو كويكبات السماء' : 'Ask about sigma, motion, or astronomy in plain English'}
+                    {isRtl ? 'اسأل أو قل "مش فاهم" وهبسطهالك بأمثلة يومية' : 'Ask anything, or say "I don’t understand" for daily-life analogies'}
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsChatOpen(false)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
+
+              <div className="flex items-center gap-2">
+                {/* 3-Level Explanation Mode Switcher */}
+                <div className="hidden sm:flex items-center gap-1 p-0.5 rounded-lg bg-slate-200 dark:bg-white/[0.06] text-[10px] font-mono">
+                  {(['simple', 'normal', 'science'] as const).map((lvl) => (
+                    <button
+                      key={lvl}
+                      type="button"
+                      onClick={() => setExplanationLevel(lvl)}
+                      className={`px-2 py-0.5 rounded-md transition cursor-pointer capitalize ${
+                        explanationLevel === lvl
+                          ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {lvl === 'simple' && (isRtl ? 'بسيط' : 'Simple')}
+                      {lvl === 'normal' && (isRtl ? 'معتاد' : 'Normal')}
+                      {lvl === 'science' && (isRtl ? 'عميق' : 'Science')}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsChatOpen(false)}
+                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/[0.08] transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Chat Messages */}

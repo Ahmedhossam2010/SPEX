@@ -527,15 +527,22 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     let ep1 = selectedCase.epoch1;
     let ep2 = selectedCase.epoch2;
 
-    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
-      if (epochPair === '1-2') {
+    if (selectedCase.epochs && selectedCase.epochs.length >= 2) {
+      const match = typeof epochPair === 'string' ? epochPair.match(/^(\d+)-(\d+)$/) : null;
+      if (match) {
+        const idx1 = parseInt(match[1], 10) - 1;
+        const idx2 = parseInt(match[2], 10) - 1;
+        if (selectedCase.epochs[idx1] && selectedCase.epochs[idx2]) {
+          ep1 = selectedCase.epochs[idx1];
+          ep2 = selectedCase.epochs[idx2];
+        }
+      } else if (epochPair === '1-2' && selectedCase.epochs.length >= 2) {
         ep1 = selectedCase.epochs[0];
         ep2 = selectedCase.epochs[1];
-      } else if (epochPair === '2-3') {
+      } else if (epochPair === '2-3' && selectedCase.epochs.length >= 3) {
         ep1 = selectedCase.epochs[1];
         ep2 = selectedCase.epochs[2];
-      } else {
-        // '1-3'
+      } else if (selectedCase.epochs.length >= 3) {
         ep1 = selectedCase.epochs[0];
         ep2 = selectedCase.epochs[2];
       }
@@ -815,15 +822,58 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
       language,
       currentResult,
       selectedCandidate,
+      simplificationLevel = 0,
+      explanationLevel = 'simple',
     } = req.body;
 
-    const userMessage = rawUserMessage ?? message;
+    const userMessage = (rawUserMessage ?? message ?? '').trim();
     const evidence = rawEvidence ?? currentResult?.evidence;
     const topCandidate = rawTopCandidate ?? selectedCandidate ?? currentResult?.candidates?.[0] ?? null;
     const provenance = rawProvenance ?? currentResult?.provenance;
     const compatibility = rawCompatibility ?? currentResult?.compatibility;
     const targetCoords = rawTargetCoords ?? currentResult?.targetCoords;
     const lang = rawLang ?? language ?? 'en';
+    const isArabic = lang === 'ar' || /[\u0600-\u06FF]/.test(userMessage || '');
+
+    const lowerQuery = userMessage.toLowerCase();
+    const isSimplerRequest =
+      lowerQuery.includes('مش فاهم') ||
+      lowerQuery.includes('اشرح أبسط') ||
+      lowerQuery.includes('ابسط') ||
+      lowerQuery.includes('مثال') ||
+      lowerQuery.includes('ليه') ||
+      lowerQuery.includes("don't understand") ||
+      lowerQuery.includes('dont understand') ||
+      lowerQuery.includes('simpler') ||
+      lowerQuery.includes('example') ||
+      lowerQuery.includes('eli5') ||
+      lowerQuery.includes('easy');
+
+    // Effective simplification: escalate if user explicitly asked for simpler explanation
+    const effectiveSimpLevel = isSimplerRequest ? Math.max(1, simplificationLevel + 1) : simplificationLevel;
+
+    // Direct Everyday Analogies (Level 1: TV Remote, Level 2: Animal Hearing)
+    if (effectiveSimpLevel === 1 || lowerQuery.includes('remote') || lowerQuery.includes('ريموت')) {
+      const tvReplyAr = 'فكر في ريموت التلفزيون! لما بتدوس على زرار، بيبعت وميض أشعة تحت حمراء مخفية للشاشة مش بنشوفه بعنينا بس التلفزيون بيلقطه علطول. تلسكوب SPHEREx عامل زي ريموت كوني عملاق، بيلقط حرارة النجوم وسحب الغبار اللي عنينا مبتشوفهاش!';
+      const tvReplyEn = 'Think of your TV remote control! When you press a button, it sends an invisible pulse of infrared light that your eyes cannot see, but your TV detects instantly. SPHEREx is like a giant cosmic TV receiver, catching the invisible heat radiated by stars and dust clouds!';
+      return res.json({
+        reply: isArabic ? tvReplyAr : tvReplyEn,
+        mood: 'explaining',
+        engine: 'pedagogical_analogy',
+        simplificationLevel: 1,
+      });
+    }
+
+    if (effectiveSimpLevel >= 2 || lowerQuery.includes('animal') || lowerQuery.includes('كلاب') || lowerQuery.includes('صوت')) {
+      const animalReplyAr = 'زي ما الكلاب والقطط بتسمع ترددات صوتية عالية ودان الإنسان مش بتسمعها خالص، الكون فيه ألوان ضوء عنينا كبشر مبتشوفهاش. الأشعة تحت الحمراء لون من الألوان السرية دي، وتلسكوب SPHEREx هو النظارة السحرية اللي بتخلينا نشوفها!';
+      const animalReplyEn = 'Just like dogs can hear high-frequency dog whistles that human ears cannot hear at all, the universe is full of light colors our eyes cannot see. Infrared is one of those hidden colors, and SPHEREx is our telescope that makes the invisible visible!';
+      return res.json({
+        reply: isArabic ? animalReplyAr : animalReplyEn,
+        mood: 'eureka',
+        engine: 'pedagogical_analogy',
+        simplificationLevel: 2,
+      });
+    }
 
     const structuredContext = {
       classification: evidence?.classification ?? 'UNKNOWN',
@@ -860,8 +910,6 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
       },
       coords: targetCoords,
     };
-
-    const isArabic = lang === 'ar' || /[\u0600-\u06FF]/.test(userMessage || '');
 
     const systemPromptArabic = `You are SPEX, the witty, sharp Egyptian feline-themed astrophysics guide for NASA SPHEREx "The Changing Sky".
 STRICT RULES:

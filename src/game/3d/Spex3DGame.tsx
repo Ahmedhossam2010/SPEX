@@ -57,9 +57,19 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
   const [targetBearing, setTargetBearing] = useState<number>(0);
   const [isPointerLocked, setIsPointerLocked] = useState<boolean>(false);
 
-  // Pause Menu state
+  // Pause Menu & Camera Settings
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [graphicsQuality, setGraphicsQuality] = useState<'high' | 'standard'>('high');
+  const [invertCameraX, setInvertCameraX] = useState<boolean>(false);
+  const [invertCameraY, setInvertCameraY] = useState<boolean>(false);
+
+  // Sync camera invert settings to GameEngine3D
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.invertCameraX = invertCameraX;
+      engineRef.current.invertCameraY = invertCameraY;
+    }
+  }, [invertCameraX, invertCameraY]);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -498,6 +508,41 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
                   {isMuted ? (isAr ? 'معطل' : 'MUTED') : (isAr ? 'مفعل' : 'ENABLED')}
                 </span>
               </button>
+
+              {/* Camera Look Inversion Toggles */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    setInvertCameraX((prev) => !prev);
+                  }}
+                  className={`py-2 px-3 rounded-xl border text-xs flex items-center justify-between transition cursor-pointer ${
+                    invertCameraX
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  <span>{isAr ? 'عكس حركة الفأرة أفقياً (X)' : 'Invert Mouse X'}</span>
+                  <span className="font-bold font-mono text-[10px]">{invertCameraX ? 'ON' : 'OFF'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    setInvertCameraY((prev) => !prev);
+                  }}
+                  className={`py-2 px-3 rounded-xl border text-xs flex items-center justify-between transition cursor-pointer ${
+                    invertCameraY
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-300'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  <span>{isAr ? 'عكس حركة الفأرة رأسياً (Y)' : 'Invert Mouse Y'}</span>
+                  <span className="font-bold font-mono text-[10px]">{invertCameraY ? 'ON' : 'OFF'}</span>
+                </button>
+              </div>
 
               {/* Graphics Toggle */}
               <button

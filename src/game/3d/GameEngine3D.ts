@@ -50,6 +50,10 @@ export class GameEngine3D {
   private isPaused: boolean = false;
   private callbacks: GameEngineCallbacks;
 
+  // Camera Inversion Settings
+  public invertCameraX: boolean = false;
+  public invertCameraY: boolean = false;
+
   // Footstep audio timing
   private footstepTimer: number = 0;
 
@@ -309,9 +313,11 @@ export class GameEngine3D {
     }
 
     const rotSpeed = 0.0035;
-    const yawDelta = dx * rotSpeed;
-    this.cameraYaw -= yawDelta;
-    this.cameraPitch = Math.max(0.06, Math.min(1.22, this.cameraPitch + dy * rotSpeed));
+    const dirX = this.invertCameraX ? -1 : 1;
+    const dirY = this.invertCameraY ? -1 : 1;
+    const yawDelta = dx * rotSpeed * dirX;
+    this.cameraYaw += yawDelta;
+    this.cameraPitch = Math.max(0.06, Math.min(1.22, this.cameraPitch + dy * rotSpeed * dirY));
 
     // Convert yaw delta to degrees for tutorial tracking
     const degDelta = Math.abs(yawDelta) * (180 / Math.PI);
@@ -365,8 +371,10 @@ export class GameEngine3D {
   }
 
   public rotateCamera(deltaYawRad: number, deltaPitchRad: number) {
-    this.cameraYaw += deltaYawRad;
-    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + deltaPitchRad, 0.08, 1.22);
+    const dirX = this.invertCameraX ? -1 : 1;
+    const dirY = this.invertCameraY ? -1 : 1;
+    this.cameraYaw += deltaYawRad * dirX;
+    this.cameraPitch = THREE.MathUtils.clamp(this.cameraPitch + deltaPitchRad * dirY, 0.08, 1.22);
     const degDelta = Math.abs(deltaYawRad) * (180 / Math.PI);
     this.pendingYawDeltaDeg += degDelta;
   }

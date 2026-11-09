@@ -674,180 +674,523 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       />
 
       {/* =========================================================================
-          HERO ASTRONOMICAL VIEWER: SECTION 03 & 04 (The Sky is the Center of Attention)
+          EXPLORE THE CHANGING SKY: EXACT 6 SECTIONS IN INTUITIVE ORDER
          ========================================================================= */}
-      <div ref={viewerSectionRef} className="space-y-4">
-        {/* SECTION 04 PERSPECTIVE TOOLBAR */}
-        <section id="explore-compare-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                {isRtl ? 'الخطوة 4 — المقارنة الفلكية' : 'STEP 4 — COMPARE WHAT CHANGED'}
-              </span>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                {isRtl ? 'اختر طريقة العرض والمقارنة' : 'Observation Comparison Perspectives'}
-              </h3>
-            </div>
-            <div className="text-[11px] font-mono text-slate-500">
-              Formula: D(x,y) = I₂(x,y) - I₁(x,y)
-            </div>
-          </div>
+      <div ref={viewerSectionRef} className="space-y-6">
 
-          {/* Perspective Buttons */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('epoch1')}
-              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                viewMode === 'epoch1'
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
-                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
-              }`}
-            >
-              {isRtl ? '1. الرصدة الأولى (سابقاً)' : '1. Earlier Snapshot'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('epoch2')}
-              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                viewMode === 'epoch2'
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
-                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
-              }`}
-            >
-              {isRtl ? '2. الرصدة الثانية (لاحقاً)' : '2. Later Snapshot'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('difference')}
-              className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-bold transition cursor-pointer border flex items-center justify-center gap-1.5 ${
-                viewMode === 'difference'
-                  ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 text-slate-950 border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] scale-[1.02]'
-                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{isRtl ? '3. ما الذي تغير؟ (الطرح الفلكي)' : '3. What Changed (D = I₂ - I₁)'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('significance')}
-              className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
-                viewMode === 'significance'
-                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
-                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
-              }`}
-            >
-              {isRtl ? '4. قوة الإشارة (خريطة σ)' : '4. Signal Strength (σ)'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('split')}
-              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
-                viewMode === 'split'
-                  ? 'bg-indigo-500 text-white border-indigo-400 font-bold shadow-sm'
-                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
-              }`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'المقارنة بالشريط المقسم' : 'Split Slider'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleSelectViewMode('blink')}
-              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
-                viewMode === 'blink'
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
-                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
-              }`}
-            >
-              <Eye className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'الوميض السريع (Blink)' : 'Fast Blink'}</span>
-            </button>
-          </div>
-
-          {/* Split Slider Control */}
-          {viewMode === 'split' && (
-            <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-3 text-xs font-mono animate-in fade-in">
-              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
-                {isRtl ? 'الرصدة 1 (يسار)' : 'Visit 1 (Left)'}
-              </span>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={sliderPos}
-                onChange={(e) => setSliderPos(parseFloat(e.target.value))}
-                className="w-full accent-indigo-500 cursor-ew-resize"
-              />
-              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
-                {isRtl ? 'الرصدة 2 (يمين)' : 'Visit 2 (Right)'}
-              </span>
-            </div>
-          )}
-
-          {/* Fast Blink Cadence Control */}
-          {viewMode === 'blink' && (
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 text-xs font-mono animate-in fade-in">
+        {/* =========================================================================
+            SECTION 01 — EXPLORE THE SKY: SEARCH, PRESETS & CELESTIAL COORDINATES
+           ========================================================================= */}
+        <section id="explore-search-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-white/[0.06] pb-3">
+            <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-amber-400 font-bold">
-                  {blinkEpoch === 'epoch1' ? 'Showing: Visit 1 (Earlier)' : 'Showing: Visit 2 (Later)'}
+                <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[11px] tracking-wider uppercase">
+                  01
                 </span>
-                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                  {isRtl ? '01 — استكشف السماء (Explore the Sky)' : '01 — Explore the Sky'}
+                </h2>
               </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+                {isRtl
+                  ? 'اختر منطقة في السماء وشاهد ما رصده تلسكوب SPHEREx. يقاس موقع السماء بإحداثيين: المطلع المستقيم (RA) والميل (Dec).'
+                  : 'Choose a region of the sky and see what SPHEREx has observed. Coordinates work like GPS for deep space: Right Ascension (RA) and Declination (Dec).'}
+              </p>
+            </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsBlinking(!isBlinking)}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold cursor-pointer"
-                >
-                  {isBlinking ? 'Pause' : 'Play'}
-                </button>
-                <span className="text-slate-400">Cadence Speed:</span>
-                {[0.5, 1, 2].map((spd) => (
-                  <button
-                    key={spd}
-                    type="button"
-                    onClick={() => setBlinkSpeed(spd)}
-                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
-                      blinkSpeed === spd
-                        ? 'bg-amber-400 text-slate-950'
-                        : 'bg-white/10 text-slate-300 hover:text-white'
-                    }`}
-                  >
-                    {spd}x
-                  </button>
+            <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
+              <select
+                value={currentResult?.caseId || ''}
+                onChange={(e) => onSelectCase(e.target.value, { sizePix: selectedFovSize, epochPair: selectedEpochPair })}
+                className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 hover:border-amber-400 focus:outline-none transition cursor-pointer"
+              >
+                {cases.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
                 ))}
-              </div>
+              </select>
+
+              <button
+                type="button"
+                onClick={() => setIsSearchOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition cursor-pointer shadow-sm active:scale-95"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>{isRtl ? 'بحث بالإحداثيات' : 'Search Coordinates'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Lightweight Search History Chips */}
+          {searchHistory.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+              <span className="text-slate-400 flex items-center gap-1 text-[11px]">
+                <History className="w-3 h-3 text-slate-500" />
+                {isRtl ? 'المواقع الأخيرة:' : 'Recent:'}
+              </span>
+              {searchHistory.map((item, idx) => (
+                <button
+                  key={`${item.ra}-${item.dec}-${idx}`}
+                  type="button"
+                  onClick={() => {
+                    setCustomRa(item.ra.toString());
+                    setCustomDec(item.dec.toString());
+                    onSearchTarget(item.ra, item.dec, selectedFovSize);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/40 text-slate-700 dark:text-slate-300 text-[11px] transition cursor-pointer"
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
           )}
+
+          {/* Guided Target Presets Cards */}
+          <div>
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-2 font-medium">
+              {isRtl ? 'أمثلة ومناطق مقترحة للبدء السريع (حقول SPHEREx الحقيقية):' : 'Quick Starting Suggestions (Authentic SPHEREx Regions):'}
+            </span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {[
+                { 
+                  name: isRtl ? 'نجم متغير مثير' : 'Interesting Variable Star', 
+                  sub: isRtl ? 'توهج قوي بمستوى 7.8σ' : 'NEP Deep Variable (7.8σ flare)', 
+                  ra: 276.2614, 
+                  dec: 64.8258,
+                  badge: isRtl ? 'توهج' : 'Surge'
+                },
+                { 
+                  name: isRtl ? 'منطقة مرجعية هادئة' : 'Calm Reference Region', 
+                  sub: isRtl ? 'معيار استقرار ضوئي 0.0σ' : 'Calibration Standard (Null 0.0σ)', 
+                  ra: 275.9265, 
+                  dec: 64.9585,
+                  badge: isRtl ? 'ثابت' : 'Stable'
+                },
+                { 
+                  name: isRtl ? 'نجم سريع الحركة' : 'Fast-Moving Star', 
+                  sub: isRtl ? 'بصمة حركة ثنائية 14.2″' : 'Proper Motion Star (14.2″ shift)', 
+                  ra: 276.1389, 
+                  dec: 64.8361,
+                  badge: isRtl ? 'حركة' : 'Motion'
+                },
+                { 
+                  name: isRtl ? 'حقل كوني عميق' : 'Deep Calm Field', 
+                  sub: isRtl ? 'خلفية هادئة للمجرة' : 'Deep NEP Quiet Sky', 
+                  ra: 275.8512, 
+                  dec: 65.0998,
+                  badge: isRtl ? 'عميق' : 'Quiet'
+                },
+              ].map((tgt) => (
+                <button
+                  key={tgt.name}
+                  type="button"
+                  onClick={() => {
+                    setCustomRa(tgt.ra.toString());
+                    setCustomDec(tgt.dec.toString());
+                    onSearchTarget(tgt.ra, tgt.dec, selectedFovSize);
+                  }}
+                  className="p-3 rounded-2xl text-left bg-slate-50 dark:bg-white/[0.03] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/50 transition-all cursor-pointer group"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500 transition-colors">
+                      {tgt.name}
+                    </div>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-300 font-mono font-semibold">
+                      {tgt.badge}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-1">
+                    {tgt.sub}
+                  </div>
+                  <div className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono mt-1">
+                    RA {tgt.ra}° · Dec +{tgt.dec}°
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Visual Celestial Coordinates Explanation Card */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/5 via-cyan-500/5 to-transparent border border-slate-200 dark:border-white/[0.08] grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="flex items-start gap-2.5">
+              <div className="p-2 rounded-xl bg-amber-500/10 text-amber-500 shrink-0 font-bold font-mono">
+                RA
+              </div>
+              <div>
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                  {isRtl ? 'المطلع المستقيم (Right Ascension - RA): خط طول السماء' : 'Right Ascension (RA): Sky Longitude (0° to 360°)'}
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                  {isRtl
+                    ? 'يقيس الموضع شرقاً وغرباً على طول خط الاستواء السماوي بالدرجات من 0° إلى 360°.'
+                    : 'Measures position East-to-West along the celestial equator from 0° to 360°.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5">
+              <div className="p-2 rounded-xl bg-cyan-500/10 text-cyan-500 shrink-0 font-bold font-mono">
+                Dec
+              </div>
+              <div>
+                <span className="font-bold text-slate-800 dark:text-slate-200 block">
+                  {isRtl ? 'الميل السماوي (Declination - Dec): دائرة عرض السماء' : 'Declination (Dec): Sky Latitude (-90° to +90°)'}
+                </span>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                  {isRtl
+                    ? 'يقيس الموضع شمالاً (+) أو جنوباً (-) من خط الاستواء السماوي نحو القطبين.'
+                    : 'Measures position North (+) or South (-) from the celestial equator toward the poles.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 5 Official NASA Challenge Targets with Honest Footprint & Test Query */}
+          <ChallengeTargetsBar
+            onSelectTarget={(ra: number, dec: number) => {
+              setCustomRa(ra.toString());
+              setCustomDec(dec.toString());
+              onSearchTarget(ra, dec, selectedFovSize);
+            }}
+            onLoadBenchmarkAnalogue={(benchId: string) => {
+              onSelectCase(benchId, { sizePix: selectedFovSize, epochPair: selectedEpochPair });
+            }}
+            language={language}
+          />
         </section>
 
-        {/* SECTION 03 — ASTRONOMICAL SKY VIEWER */}
-        <section id="explore-viewer-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-slate-950 p-4 sm:p-5 shadow-2xl space-y-4">
-          <div className="flex items-center justify-between border-b border-white/[0.08] pb-3 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                {isRtl ? 'الخطوة 3 — شاشة الرصد' : 'STEP 3 — THE SKY VIEWER'}
+        {/* =========================================================================
+            SECTION 02 — YOUR OBSERVATIONS: TIMELINE, BASELINE & SEQUENTIAL PLAYBACK
+           ========================================================================= */}
+        <section id="explore-timeline-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono font-bold text-[11px] tracking-wider uppercase">
+                  02
+                </span>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                  {isRtl ? '02 — رصداتك الفلكية (Your Observations)' : '02 — Your Observations'}
+                </h2>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+                {isRtl
+                  ? 'شاهد الجدول الزمني لرصدات SPHEREx في هذه المنطقة وحدد الزيارات للمقارنة أو شغل التسلسل الزمني.'
+                  : 'View the timeline of all SPHEREx observations for this region and select visits to compare or step through.'}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                {timeBaselineInfo ? `Δt = ${timeBaselineInfo.formattedTime}` : 'Pair Selected'}
               </span>
-              <h3 className="text-sm font-bold text-white font-['Outfit']">
-                {isRtl ? 'نافذة الرصد الفلكي المباشر' : 'Deep Space Infrared Viewport'}
-              </h3>
+            </div>
+          </div>
+
+          {/* Visual Timeline Cards of ALL Valid Observations (N >= 1) */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 font-medium">
+                {isRtl ? 'الجدول الزمني لجميع الرصدات المتاحة:' : 'Visual Timeline of All Valid Observations:'}
+              </span>
+              <span className="text-[11px] font-mono text-cyan-500 font-bold">
+                {timeBaselineInfo?.totalVisits || 2} {isRtl ? 'زيارات رصد' : 'Visits'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+              {timeBaselineInfo?.allEpochs.map((ep, idx) => {
+                const isEarlier = epoch1Idx === idx;
+                const isLater = epoch2Idx === idx;
+                const isPlayingActive = viewMode === 'sequence' && activeEpochIdx === idx;
+
+                return (
+                  <div
+                    key={`timeline-card-${idx}`}
+                    className={`p-2.5 rounded-xl border text-xs font-mono transition-all ${
+                      isPlayingActive
+                        ? 'bg-amber-500/20 border-amber-400 shadow-md ring-1 ring-amber-400'
+                        : isEarlier && isLater
+                        ? 'bg-purple-500/15 border-purple-400'
+                        : isEarlier
+                        ? 'bg-cyan-500/15 border-cyan-400'
+                        : isLater
+                        ? 'bg-amber-500/15 border-amber-400'
+                        : 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.06]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-bold text-slate-800 dark:text-slate-200">
+                        Visit {idx + 1}
+                      </span>
+                      {isPlayingActive && (
+                        <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                      {ep.date ? ep.date.split(' ')[0] : '2025-04-28'}
+                    </div>
+                    <div className="text-[9px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                      {ep.obsId ? ep.obsId.split('_').slice(-2).join('_') : `Obs ${idx + 1}`}
+                    </div>
+                    <div className="flex items-center gap-1 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectEpoch('epoch1', idx)}
+                        className={`flex-1 py-0.5 rounded text-[9px] font-bold transition cursor-pointer ${
+                          isEarlier
+                            ? 'bg-cyan-500 text-slate-950'
+                            : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white'
+                        }`}
+                        title="Set as Visit 1 (Earlier)"
+                      >
+                        V1
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectEpoch('epoch2', idx)}
+                        className={`flex-1 py-0.5 rounded text-[9px] font-bold transition cursor-pointer ${
+                          isLater
+                            ? 'bg-amber-500 text-slate-950'
+                            : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:text-white'
+                        }`}
+                        title="Set as Visit 2 (Later)"
+                      >
+                        V2
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick Baseline Interval Suggestions */}
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+            <span className="text-slate-400 text-[11px] font-medium">
+              {isRtl ? 'اقتراحات الفاصل الزمني:' : 'Suggested Intervals:'}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                handleSelectEpoch('epoch1', 0);
+                handleSelectEpoch('epoch2', 1);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-cyan-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-cyan-500/40 text-cyan-600 dark:text-cyan-400 text-[11px] transition cursor-pointer"
+            >
+              Short Interval (~128.9s)
+            </button>
+            {(timeBaselineInfo?.totalVisits || 0) > 2 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const mid = Math.floor((timeBaselineInfo?.totalVisits || 3) / 2);
+                  handleSelectEpoch('epoch1', 0);
+                  handleSelectEpoch('epoch2', mid);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-indigo-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-indigo-500/40 text-indigo-600 dark:text-indigo-400 text-[11px] transition cursor-pointer"
+              >
+                Medium Interval
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const lastIdx = (timeBaselineInfo?.totalVisits || 2) - 1;
+                handleSelectEpoch('epoch1', 0);
+                handleSelectEpoch('epoch2', lastIdx);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/40 text-amber-600 dark:text-amber-400 text-[11px] transition cursor-pointer"
+            >
+              Longest Interval (Full Baseline)
+            </button>
+          </div>
+
+          {/* Interactive Observation Pickers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Visit A Selector */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4" />
+                  {isRtl ? 'الرصدة الأولى (Visit 1 - البداية)' : 'Observation 1 (Visit 1 - Earlier Baseline)'}
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">I₁(x,y)</span>
+              </div>
+
+              <select
+                value={epoch1Idx}
+                onChange={(e) => handleSelectEpoch('epoch1', parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
+              >
+                {timeBaselineInfo?.allEpochs.map((ep, idx) => (
+                  <option key={`ep1-${idx}`} value={idx}>
+                    Visit {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
+                  </option>
+                ))}
+              </select>
+
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                Timestamp: {timeBaselineInfo?.dateA || '2025-04-28 13:00:15 UTC'}
+              </div>
+            </div>
+
+            {/* Visit B Selector */}
+            <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-mono uppercase font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4" />
+                  {isRtl ? 'الرصدة الثانية (Visit 2 - المقارنة)' : 'Observation 2 (Visit 2 - Comparison)'}
+                </span>
+                <span className="text-[10px] font-mono text-slate-500">I₂(x,y)</span>
+              </div>
+
+              <select
+                value={epoch2Idx}
+                onChange={(e) => handleSelectEpoch('epoch2', parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+              >
+                {timeBaselineInfo?.allEpochs.map((ep, idx) => (
+                  <option key={`ep2-${idx}`} value={idx}>
+                    Visit {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
+                  </option>
+                ))}
+              </select>
+
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                Timestamp: {timeBaselineInfo?.dateB || '2025-04-28 13:02:24 UTC'}
+              </div>
+            </div>
+          </div>
+
+          {/* Sequential Playback Controls Bar */}
+          <div className="p-3.5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('sequence');
+                  setIsSequencePlaying(!isSequencePlaying);
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition cursor-pointer shadow-sm ${
+                  isSequencePlaying
+                    ? 'bg-amber-500 text-slate-950'
+                    : 'bg-white/10 text-white hover:bg-white/20'
+                }`}
+              >
+                {isSequencePlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                <span>{isSequencePlaying ? (isRtl ? 'إيقاف التسلسل' : 'Pause Sequence') : (isRtl ? 'تشغيل التسلسل' : 'Play Sequence')}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('sequence');
+                  setActiveEpochIdx((prev) => (prev - 1 + (timeBaselineInfo?.totalVisits || 1)) % (timeBaselineInfo?.totalVisits || 1));
+                }}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 cursor-pointer"
+                title="Previous Visit"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('sequence');
+                  setActiveEpochIdx((prev) => (prev + 1) % (timeBaselineInfo?.totalVisits || 1));
+                }}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 cursor-pointer"
+                title="Next Visit"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <span className="text-slate-400 text-[11px] px-2 py-1 rounded bg-black/40">
+                {isRtl ? `الرصدة ${activeEpochIdx + 1} من ${timeBaselineInfo?.totalVisits || 2}` : `Visit ${activeEpochIdx + 1} of ${timeBaselineInfo?.totalVisits || 2}`}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400 text-[11px]">{isRtl ? 'السرعة:' : 'Speed:'}</span>
+              {[0.5, 1, 2].map((spd) => (
+                <button
+                  key={`seq-spd-${spd}`}
+                  type="button"
+                  onClick={() => setSequenceSpeed(spd)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold transition cursor-pointer ${
+                    sequenceSpeed === spd
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-white/5 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {spd}x
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Warning if Identical Dates Selected */}
+          {timeBaselineInfo?.isSame && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center gap-2 animate-in fade-in">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+              <span>
+                {isRtl
+                  ? 'تحذير: لقد اخترت نفس الرصدة في الزيارتين! سيكون ناتج الطرح صفراً (D = 0). يرجى اختيار رصدتين بموعدين مختلفين.'
+                  : 'Identical observations selected: subtraction will be zero (D = 0). Please select two different observation dates to compare changes.'}
+              </span>
+            </div>
+          )}
+
+          {/* Why the Time Difference Matters (Astronomical Context) */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] text-xs text-slate-600 dark:text-slate-300 leading-relaxed space-y-1.5">
+            <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>{isRtl ? 'لماذا يعد الفارق الزمني حاسماً في علم الفلك؟' : 'Why the Time Separation (Δt) Matters:'}</span>
+            </div>
+            <p>
+              {isRtl
+                ? '• الفواصل الزمنية القصيرة (دقائق إلى ساعات): تكشف التوهجات النجمية المفاجئة، والكويكبات السريعة، وتغيرات السطوع السريعة.'
+                : '• Short time baselines (minutes to hours): Detect rapid stellar flares, passing asteroids, and variable star pulsations.'}
+            </p>
+            <p>
+              {isRtl
+                ? '• الفواصل الزمنية الطويلة (أشهر إلى سنوات): تكشف الحركة الخاصة للنجوم القريبة (مثل نجم برنارد) حيث يظهر النجم متحركاً بالنسبة للنجوم البعيدة.'
+                : '• Long time baselines (months to years): Detect proper motion (stellar shift across the sky) for nearby cold stars like Barnard’s Star and brown dwarf WISE 0855.'}
+            </p>
+          </div>
+        </section>
+
+        {/* =========================================================================
+            SECTION 03 — SEE THE IMAGE: LARGE ASTRONOMICAL SKY VIEWPORT
+           ========================================================================= */}
+        <section id="explore-viewer-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-slate-950 p-4 sm:p-6 shadow-2xl space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.08] pb-3 text-xs">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 font-mono font-bold text-[11px] tracking-wider uppercase">
+                  03
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-white font-['Outfit']">
+                  {isRtl ? '03 — شاهد الصورة الفلكية (See the Image)' : '03 — See the Image'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                {isRtl
+                  ? 'هذه صورة بالأشعة تحت الحمراء للمنطقة المحددة التقطها تلسكوب SPHEREx. تشير المناطق الأكثر سطوعاً إلى طاقة تحت حمراء أكبر من النجوم والغبار الكوني.'
+                  : 'This is an infrared image of the selected region taken by SPHEREx. Brighter areas indicate higher infrared energy from stars, gas, and cosmic dust.'}
+              </p>
             </div>
 
             {/* Detector Pixels vs Presentation Smooth View Toggle */}
-            <div className="flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800">
+            <div className="flex items-center p-0.5 rounded-xl bg-slate-900 border border-slate-800 self-end sm:self-auto">
               <button
                 type="button"
                 onClick={() => setDisplayMode('presentation')}
-                className={`px-3 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-mono transition cursor-pointer ${
                   displayMode === 'presentation'
                     ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -859,7 +1202,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDisplayMode('science')}
-                className={`px-3 py-1 rounded-lg text-[11px] font-mono transition cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-mono transition cursor-pointer ${
                   displayMode === 'science'
                     ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
                     : 'text-slate-400 hover:text-white'
@@ -1033,6 +1376,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="px-2.5 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 text-[11px] font-mono text-amber-400 font-semibold">
                   {viewMode === 'epoch1' && `${t.statusVisit1}: ${currentResult?.epoch1.metadata.date_obs || '2025-04-28'}`}
                   {viewMode === 'epoch2' && `${t.statusVisit2}: ${currentResult?.epoch2.metadata.date_obs || '2025-04-28'}`}
+                  {viewMode === 'sequence' && (isRtl ? `تسلسل زمني: رصدة ${activeEpochIdx + 1}` : `Sequence: Visit ${activeEpochIdx + 1}`)}
                   {viewMode === 'difference' && (isRtl ? 'صورة الفروقات (ما الذي تغير؟)' : 'Difference Image (What Changed)')}
                   {viewMode === 'significance' && (isRtl ? 'خريطة قوة الإشارة الإحصائية' : 'Signal Significance Map (σ)')}
                   {viewMode === 'split' && (isRtl ? 'المقارنة بالشريط المقسم' : 'Split Swipe Comparison')}
@@ -1113,275 +1457,209 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               <span>+{activeDataInfo.stats.max.toFixed(2)} {viewMode === 'significance' ? 'σ' : 'MJy/sr'}</span>
             </div>
           </div>
-
-          {/* Visual 1-2 sentence explanation */}
-          <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-            <p>
-              {isRtl
-                ? 'أنت تشاهد ضوء الأشعة تحت الحمراء المعاير من مرصد SPHEREx. تشير المناطق الأكثر سطوعاً إلى تدفق إشعاعي أكبر صادر عن غبار النجوم وسحب الغاز الكوني.'
-                : 'You are viewing calibrated SPHEREx infrared light. Brighter areas indicate higher infrared photon flux emitted by stars, gas, and cosmic dust clouds.'}
-            </p>
-          </div>
         </section>
-      </div>
 
-      {/* =========================================================================
-          SECTION 01: STEP 1 — CHOOSE WHERE TO LOOK
-         ========================================================================= */}
-      <section id="explore-search-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-white/[0.06] pb-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                {isRtl ? 'الخطوة 1' : 'STEP 1'}
-              </span>
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                {isRtl ? 'اختر موقع التحقيق في السماء' : 'Choose Where to Look in the Sky'}
-              </h2>
+        {/* =========================================================================
+            SECTION 04 — COMPARE OBSERVATIONS: PERSPECTIVE BUTTONS, SPLIT & BLINK
+           ========================================================================= */}
+        <section id="explore-compare-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-6 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-mono font-bold text-[11px] tracking-wider uppercase">
+                  04
+                </span>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                  {isRtl ? '04 — قارن الرصدات الفلكية (Compare Observations)' : '04 — Compare Observations'}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+                {isRtl
+                  ? 'شاهد كيف تغيرت السماء بين موعدي الرصد المحددين عبر الطرح الفلكي أو الوميض السريع أو الشريط المقسم.'
+                  : 'See how the sky changed between your selected observation times using subtraction, blink comparison, or split swipe.'}
+              </p>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
-              {isRtl
-                ? 'اختر منطقة في قبة السماء للتحقيق فيها. يقاس موقع السماء بإحداثيين بسيطين: المطلع المستقيم (RA) والميل (Dec).'
-                : 'Select or search a sky position. Coordinates work like GPS for space: Right Ascension (RA) is the position along the celestial equator, and Declination (Dec) is north or south.'}
-            </p>
+            <div className="text-[11px] font-mono text-slate-500 bg-slate-100 dark:bg-white/[0.04] px-2.5 py-1 rounded-lg border border-slate-200 dark:border-white/[0.08] self-end sm:self-auto">
+              Formula: D(x,y) = I₂(x,y) - I₁(x,y)
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap self-end md:self-auto">
-            <select
-              value={currentResult?.caseId || ''}
-              onChange={(e) => onSelectCase(e.target.value, { sizePix: selectedFovSize, epochPair: selectedEpochPair })}
-              className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-white/[0.05] border border-slate-200 dark:border-white/[0.1] text-slate-800 dark:text-slate-200 hover:border-amber-400 focus:outline-none transition cursor-pointer"
+          {/* Perspective Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('epoch1')}
+              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'epoch1'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
             >
-              {cases.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title}
-                </option>
-              ))}
-            </select>
+              {isRtl ? '1. الرصدة الأولى (سابقاً)' : '1. Earlier Snapshot (I₁)'}
+            </button>
 
             <button
               type="button"
-              onClick={() => setIsSearchOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition cursor-pointer shadow-sm active:scale-95"
+              onClick={() => handleSelectViewMode('epoch2')}
+              className={`flex-1 min-w-[130px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'epoch2'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'بحث بالإحداثيات' : 'Search Coordinates'}</span>
+              {isRtl ? '2. الرصدة الثانية (لاحقاً)' : '2. Later Snapshot (I₂)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('difference')}
+              className={`flex-1 min-w-[160px] py-2.5 px-4 rounded-xl text-xs font-bold transition cursor-pointer border flex items-center justify-center gap-1.5 ${
+                viewMode === 'difference'
+                  ? 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-300 text-slate-950 border-amber-300 shadow-[0_0_20px_rgba(245,158,11,0.5)] scale-[1.02]'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{isRtl ? '3. ما الذي تغير؟ (D = I₂ - I₁)' : '3. What Changed (D = I₂ - I₁)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('significance')}
+              className={`flex-1 min-w-[140px] py-2.5 px-3 rounded-xl text-xs font-semibold transition cursor-pointer border ${
+                viewMode === 'significance'
+                  ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.08] text-slate-700 dark:text-slate-300 hover:text-white'
+              }`}
+            >
+              {isRtl ? '4. قوة الإشارة (خريطة σ)' : '4. Signal Strength (σ)'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('split')}
+              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'split'
+                  ? 'bg-indigo-500 text-white border-indigo-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'المقارنة بالشريط المقسم' : 'Split Slider'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode('blink')}
+              className={`px-3 py-2.5 text-xs font-semibold rounded-xl border transition cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'blink'
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : 'bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-white/[0.08] hover:text-white'
+              }`}
+            >
+              <Eye className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'الوميض السريع (Blink)' : 'Fast Blink'}</span>
             </button>
           </div>
-        </div>
 
-        {/* Lightweight Search History Chips */}
-        {searchHistory.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-            <span className="text-slate-400 flex items-center gap-1 text-[11px]">
-              <History className="w-3 h-3 text-slate-500" />
-              {isRtl ? 'المواقع الأخيرة:' : 'Recent:'}
-            </span>
-            {searchHistory.map((item, idx) => (
-              <button
-                key={`${item.ra}-${item.dec}-${idx}`}
-                type="button"
-                onClick={() => {
-                  setCustomRa(item.ra.toString());
-                  setCustomDec(item.dec.toString());
-                  onSearchTarget(item.ra, item.dec, selectedFovSize);
-                }}
-                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.04] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/40 text-slate-700 dark:text-slate-300 text-[11px] transition cursor-pointer"
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Guided Target Presets Cards */}
-        <div>
-          <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 block mb-2 font-medium">
-            {isRtl ? 'أمثلة ومناطق مقترحة للبدء السريع (حقول SPHEREx الحقيقية):' : 'Quick Starting Suggestions (Authentic SPHEREx Regions):'}
-          </span>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            {[
-              { 
-                name: isRtl ? 'نجم متغير مثير' : 'Interesting Variable Star', 
-                sub: isRtl ? 'توهج قوي بمستوى 7.8σ' : 'NEP Deep Variable (7.8σ flare)', 
-                ra: 276.2614, 
-                dec: 64.8258,
-                badge: isRtl ? 'توهج' : 'Surge'
-              },
-              { 
-                name: isRtl ? 'منطقة مرجعية هادئة' : 'Calm Reference Region', 
-                sub: isRtl ? 'معيار استقرار ضوئي 0.0σ' : 'Calibration Standard (Null 0.0σ)', 
-                ra: 275.9265, 
-                dec: 64.9585,
-                badge: isRtl ? 'ثابت' : 'Stable'
-              },
-              { 
-                name: isRtl ? 'نجم سريع الحركة' : 'Fast-Moving Star', 
-                sub: isRtl ? 'بصمة حركة ثنائية 14.2″' : 'Proper Motion Star (14.2″ shift)', 
-                ra: 276.1389, 
-                dec: 64.8361,
-                badge: isRtl ? 'حركة' : 'Motion'
-              },
-              { 
-                name: isRtl ? 'حقل كوني عميق' : 'Deep Calm Field', 
-                sub: isRtl ? 'خلفية هادئة للمجرة' : 'Deep NEP Quiet Sky', 
-                ra: 275.8512, 
-                dec: 65.0998,
-                badge: isRtl ? 'عميق' : 'Quiet'
-              },
-            ].map((tgt) => (
-              <button
-                key={tgt.name}
-                type="button"
-                onClick={() => {
-                  setCustomRa(tgt.ra.toString());
-                  setCustomDec(tgt.dec.toString());
-                  onSearchTarget(tgt.ra, tgt.dec, selectedFovSize);
-                }}
-                className="p-3 rounded-2xl text-left bg-slate-50 dark:bg-white/[0.03] hover:bg-amber-500/10 border border-slate-200 dark:border-white/[0.08] hover:border-amber-500/50 transition-all cursor-pointer group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 group-hover:text-amber-500 transition-colors">
-                    {tgt.name}
-                  </div>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-300 font-mono font-semibold">
-                    {tgt.badge}
-                  </span>
-                </div>
-                <div className="text-[10px] text-slate-500 font-mono mt-1">
-                  {tgt.sub}
-                </div>
-                <div className="text-[10px] text-cyan-600 dark:text-cyan-400 font-mono mt-1">
-                  RA {tgt.ra}° · Dec +{tgt.dec}°
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 5 Official NASA Challenge Targets with Honest Footprint & Test Query */}
-        <ChallengeTargetsBar
-          onSelectTarget={(ra: number, dec: number) => {
-            setCustomRa(ra.toString());
-            setCustomDec(dec.toString());
-            onSearchTarget(ra, dec, selectedFovSize);
-          }}
-          onLoadBenchmarkAnalogue={(benchId: string) => {
-            onSelectCase(benchId, { sizePix: selectedFovSize, epochPair: selectedEpochPair });
-          }}
-          language={language}
-        />
-      </section>
-
-      {/* =========================================================================
-          SECTION 02: STEP 2 — SELECT OBSERVATION DATES & BASELINE
-         ========================================================================= */}
-      <section id="explore-timeline-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-white/[0.06] pb-3">
-          <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-              {isRtl ? 'الخطوة 2' : 'STEP 2'}
-            </span>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-              {isRtl ? 'اختر مواعيد الرصدات الفلكية والفارق الزمني' : 'Select Observation Dates & Temporal Baseline'}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs font-mono">
-            <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-            <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-              {timeBaselineInfo ? `Δt = ${timeBaselineInfo.formattedTime}` : 'Pair Selected'}
-            </span>
-          </div>
-        </div>
-
-        {/* Interactive Observation Pickers */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Visit A Selector */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono uppercase font-bold text-cyan-600 dark:text-cyan-400 flex items-center gap-1.5">
-                <Calendar className="w-4 h-4" />
-                {isRtl ? 'الرصدة الأولى (Visit A - البداية)' : 'Observation 1 (Visit A - Earlier Baseline)'}
+          {/* Split Slider Control */}
+          {viewMode === 'split' && (
+            <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-3 text-xs font-mono animate-in fade-in">
+              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
+                {isRtl ? 'الرصدة 1 (يسار)' : 'Visit 1 (Left)'}
               </span>
-              <span className="text-[10px] font-mono text-slate-500">I₁(x,y)</span>
-            </div>
-
-            <select
-              value={epoch1Idx}
-              onChange={(e) => handleSelectEpoch('epoch1', parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer"
-            >
-              {timeBaselineInfo?.allEpochs.map((ep, idx) => (
-                <option key={`ep1-${idx}`} value={idx}>
-                  Epoch {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
-                </option>
-              ))}
-            </select>
-
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Timestamp: {timeBaselineInfo?.dateA || '2025-04-28 13:00:15 UTC'}
-            </div>
-          </div>
-
-          {/* Visit B Selector */}
-          <div className="p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.08] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-mono uppercase font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
-                <Clock className="w-4 h-4" />
-                {isRtl ? 'الرصدة الثانية (Visit B - المقارنة)' : 'Observation 2 (Visit B - Comparison)'}
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={sliderPos}
+                onChange={(e) => setSliderPos(parseFloat(e.target.value))}
+                className="w-full accent-indigo-500 cursor-ew-resize"
+              />
+              <span className="text-indigo-600 dark:text-indigo-300 font-bold whitespace-nowrap">
+                {isRtl ? 'الرصدة 2 (يمين)' : 'Visit 2 (Right)'}
               </span>
-              <span className="text-[10px] font-mono text-slate-500">I₂(x,y)</span>
             </div>
+          )}
 
-            <select
-              value={epoch2Idx}
-              onChange={(e) => handleSelectEpoch('epoch2', parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 rounded-xl text-xs font-mono bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
-            >
-              {timeBaselineInfo?.allEpochs.map((ep, idx) => (
-                <option key={`ep2-${idx}`} value={idx}>
-                  Epoch {idx + 1}: {ep.date || `Obs ${idx + 1}`} ({ep.obsId || 'SPHEREx Visit'})
-                </option>
+          {/* Fast Blink Cadence Control */}
+          {viewMode === 'blink' && (
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center justify-between gap-3 text-xs font-mono animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <span className="text-amber-400 font-bold">
+                  {blinkEpoch === 'epoch1' ? 'Showing: Visit 1 (Earlier)' : 'Showing: Visit 2 (Later)'}
+                </span>
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBlinking(!isBlinking)}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold cursor-pointer"
+                >
+                  {isBlinking ? 'Pause' : 'Play'}
+                </button>
+                <span className="text-slate-400">Cadence Speed:</span>
+                {[0.5, 1, 2].map((spd) => (
+                  <button
+                    key={spd}
+                    type="button"
+                    onClick={() => setBlinkSpeed(spd)}
+                    className={`px-2 py-0.5 rounded-md font-bold transition cursor-pointer ${
+                      blinkSpeed === spd
+                        ? 'bg-amber-400 text-slate-950'
+                        : 'bg-white/10 text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Display Adjustments: Stretch & Colormap Controls */}
+          <div className="pt-2 border-t border-slate-100 dark:border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-[11px] font-medium">{isRtl ? 'تمديد السطوع:' : 'Stretch:'}</span>
+              {(['asinh', 'sqrt', 'linear'] as StretchMode[]).map((st) => (
+                <button
+                  key={st}
+                  type="button"
+                  onClick={() => setStretch(st)}
+                  className={`px-2.5 py-1 rounded-lg uppercase text-[11px] font-bold transition cursor-pointer ${
+                    stretch === st
+                      ? 'bg-amber-500 text-slate-950'
+                      : 'bg-slate-100 dark:bg-white/[0.04] text-slate-500 hover:text-white'
+                  }`}
+                >
+                  {st}
+                </button>
               ))}
-            </select>
+            </div>
 
-            <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Timestamp: {timeBaselineInfo?.dateB || '2025-04-28 13:02:24 UTC'}
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-[11px] font-medium">{isRtl ? 'خريطة الألوان:' : 'Colormap:'}</span>
+              {(['diff_diverging', 'grayscale', 'viridis', 'magma'] as ColormapMode[]).map((cm) => (
+                <button
+                  key={cm}
+                  type="button"
+                  onClick={() => setColormap(cm)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer capitalize ${
+                    colormap === cm
+                      ? 'bg-cyan-500 text-slate-950'
+                      : 'bg-slate-100 dark:bg-white/[0.04] text-slate-500 hover:text-white'
+                  }`}
+                >
+                  {cm === 'diff_diverging' ? 'Diverging' : cm}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
-
-        {/* Warning if Identical Dates Selected */}
-        {timeBaselineInfo?.isSame && (
-          <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center gap-2 animate-in fade-in">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
-            <span>
-              {isRtl
-                ? 'تحذير: لقد اخترت نفس الرصدة في الزيارتين! سيكون ناتج الطرح صفراً (D = 0). يرجى اختيار رصدتين بموعدين مختلفين.'
-                : 'Identical observations selected: subtraction will be zero (D = 0). Please select two different observation dates to compare changes.'}
-            </span>
-          </div>
-        )}
-
-        {/* Why the Time Difference Matters (Astronomical Context) */}
-        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/[0.02] border border-slate-200 dark:border-white/[0.06] text-xs text-slate-600 dark:text-slate-300 leading-relaxed space-y-1.5">
-          <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>{isRtl ? 'لماذا يعد الفارق الزمني حاسماً في علم الفلك؟' : 'Why the Time Separation (Δt) Matters:'}</span>
-          </div>
-          <p>
-            {isRtl
-              ? '• الفواصل الزمنية القصيرة (دقائق إلى ساعات): تكشف التوهجات النجمية المفاجئة، والكويكبات السريعة، وتغيرات السطوع السريعة.'
-              : '• Short time baselines (minutes to hours): Detect rapid stellar flares, passing asteroids, and variable star pulsations.'}
-          </p>
-          <p>
-            {isRtl
-              ? '• الفواصل الزمنية الطويلة (أشهر إلى سنوات): تكشف الحركة الخاصة للنجوم القريبة (مثل نجم برنارد) حيث يظهر النجم متحركاً بالنسبة للنجوم البعيدة.'
-              : '• Long time baselines (months to years): Detect proper motion (stellar shift across the sky) for nearby cold stars like Barnard’s Star and brown dwarf WISE 0855.'}
-          </p>
-        </div>
-      </section>
+        </section>
+      </div>
 
       {/* =========================================================================
           SECTION 05 & 06 & 07: RESULTS, CANDIDATE EVIDENCE & SPEX COMPANION
@@ -1393,11 +1671,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           <section id="explore-results-step" className="rounded-3xl border border-slate-200 dark:border-white/[0.08] bg-white dark:bg-[#0c1220] p-4 sm:p-5 shadow-sm space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-white/[0.06] pb-3">
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-[10px] tracking-wider uppercase">
-                  {isRtl ? 'الخطوة 5' : 'STEP 5'}
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-mono font-bold text-[11px] tracking-wider uppercase">
+                  05
                 </span>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
-                  {isRtl ? 'ما هي النتائج؟ (What Did We Find?)' : 'What Did We Find?'}
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 font-['Outfit']">
+                  {isRtl ? '05 — ما هي النتائج؟ (What Did We Find?)' : '05 — What Did We Find?'}
                 </h3>
               </div>
             </div>
@@ -1547,8 +1825,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-white/[0.03] hover:bg-slate-100 dark:hover:bg-white/[0.06] border border-slate-200 dark:border-white/[0.08] text-xs font-mono text-slate-700 dark:text-slate-300 transition cursor-pointer"
             >
               <div className="flex items-center gap-2 font-bold">
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 font-mono font-bold text-[10px] tracking-wider uppercase">06</span>
                 <ShieldCheck className="w-4 h-4 text-cyan-500" />
-                <span>{isRtl ? 'الخطوة 6 — عرض التفاصيل العلمية وبيانات FITS' : 'STEP 6 — Raw Science & FITS Metadata'}</span>
+                <span>{isRtl ? '06 — افهم النتيجة وتفاصيل FITS العلمية' : '06 — Understand the Result & FITS Evidence'}</span>
               </div>
               {showScientificEvidenceDrawer ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>

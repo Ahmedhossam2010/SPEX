@@ -160,3 +160,63 @@ Based on your design decisions:
 - **Type Checking**: 0 errors (`tsc --noEmit`).
 - **Production Build**: Verified (`npm run build`).
 - **Linter & Compiler**: 0 warnings, 0 errors (`lint_applet` & `compile_applet`).
+
+---
+
+## 5. Completed: Final Human Experience Overhaul & Scientific Completeness
+
+### A. Two-Level Explanation Architecture
+- **Simple Explanation by Default**: Uses intuitive everyday words (buttons: 1–4 words, titles: 2–6 words, tooltips: 1 sentence, explanations: 1–3 short sentences).
+- **Deep Science on Demand**: Technical metrics ($\sigma$, WCS, variance propagation, IRSA Level-2B) preserved cleanly in expandable `<ScienceTerm />` micro-cards and drawer.
+- **Natural Egyptian Arabic & Clean English**: Warm, colloquial Egyptian Arabic ("بص يا بطل", "ولا تشيل هم خالص، هبسطهالك!") paired with friendly, non-academic English.
+
+### B. Smart, Context-Aware SPEX Assistant with Progressive Simplification
+- **Multi-Turn Simplification Memory**: Tracks explanation depth (Level 0: simple, Level 1: TV remote infrared analogy, Level 2: animal hearing / invisible colors analogy).
+- **Proactive Simplification**: Instant conversational response when users ask "مش فاهم" / "اشرح أبسط" / "مثال؟" / "I don't understand".
+- **3-Tier Explanation Pills**: Direct toggle between Simple, Normal, and Advanced Scientific explanation levels in the assistant header.
+
+### C. Explore Page: Exact 6-Section Visual Hierarchy in Linear Order
+1. **Section 01 — Explore the Sky**:
+   - Coordinate search (RA, Dec, FoV), preset starter regions (Interesting Variable Star, Calm Reference Region, Fast-Moving Star, Deep Calm Field).
+   - Visual Celestial Coordinates Explanation Card: Right Ascension (RA) = Sky Longitude ($0^\circ \to 360^\circ$); Declination (Dec) = Sky Latitude ($-90^\circ \to +90^\circ$).
+   - 5 Official NASA Challenge Targets bar (`<ChallengeTargetsBar />`).
+2. **Section 02 — Your Observations**:
+   - Visual timeline of ALL valid observations ($N \ge 1$) with Visit cards.
+   - Baseline interval suggestion pills (Short Interval ~128.9s, Medium Interval, Longest Interval full baseline).
+   - Earlier (Visit 1) and Later (Visit 2) observation pickers with timestamps.
+   - Sequential playback controls: Play/Pause, Prev/Next, Cadence Speed (0.5x, 1x, 2x), and Step Indicator (`Visit X of N`).
+   - Plain-language explanation of why the time difference matters (minutes vs months).
+3. **Section 03 — See the Image**:
+   - Clear 1–2 sentence label: *"This is an infrared image of the selected region taken by SPHEREx. Brighter areas indicate higher infrared energy from stars, gas, and cosmic dust."*
+   - Large astronomical sky viewport with pan, zoom, reset, crosshair reticle markers toggle, and smooth presentation vs raw detector pixels toggle.
+   - Live cursor readout: Sky position (RA, Dec) & Measured Brightness (MJy/sr or $\sigma$).
+   - Physical Brightness Colorbar with min, median / 0, max.
+4. **Section 04 — Compare Observations**:
+   - Earlier Snapshot ($I_1$), Later Snapshot ($I_2$), What Changed ($D = I_2 - I_1$), Signal Strength ($\sigma$), Split Slider, and Fast Blink.
+   - Display adjustments: stretch modes (`asinh`, `sqrt`, `linear`), colormaps (`diff_diverging`, `grayscale`, `viridis`, `magma`).
+5. **Section 05 — What Did We Find?**:
+   - Prominent 3-status discovery banner: `NO CLEAR CHANGE DETECTED`, `POSSIBLE CHANGE DETECTED`, or `INSUFFICIENT DATA`.
+   - Action buttons: Sky Coverage, 102 Bands, Compare Table, Data Ingestion.
+6. **Section 06 — Understand the Result**:
+   - Candidate Finding Cards answering the 4 questions (What happened?, How strong is the evidence? [visual meter Weak->Strong], Is it reliable?, What should I know?).
+   - Expandable Raw Science & FITS Metadata drawer.
+   - SPEX Companion panel with large expressive reaction avatar.
+
+### D. Game Redesign: 6 Beginner-Friendly Missions & Fixed 3D Controls
+- **6 Playable Missions in `PuzzleModal.tsx`**:
+  1. *Welcome to SPEX Station*: Powering subsystems (cryo-cooler 80K, LVF array, diff engine).
+  2. *The SPHEREx Journey*: Arranging 4 chronological milestones (2019 MIDEX, 2024 JPL testing, 2025 launch, 2025+ all-sky survey).
+  3. *See the Invisible*: Infrared lab, toggling visible vs IR to reveal hidden protostar behind dust.
+  4. *Find What Moved*: WCS spatial alignment to zero offset, blink comparison to catch proper motion.
+  5. *Match the Light*: 102-band spectral light matching for 3.05µm Water Ice, 4.27µm CO₂ Ice, and 2.30µm CO Gas.
+  6. *The Final Space Investigator*: Rejecting 1-pixel cosmic ray, verifying dipole, certifying FU Orionis flare with official certificate.
+- **Fixed 3D Camera & Movement (`GameEngine3D.ts` & `Spex3DGame.tsx`)**:
+  - Horizontal mouse drag turns camera yaw naturally.
+  - Invert Mouse X and Invert Mouse Y toggles added to Pause Menu.
+  - Directional movement strictly oriented to horizontal camera yaw with normalized diagonal speed.
+
+### E. Verification Summary
+- **Tests**: 60/60 passing (`npm test`).
+- **Type Checking**: 0 errors (`npx tsc --noEmit`).
+- **Compilation & Linting**: Co-executed and verified successful (`compile_applet` & `lint_applet`).
+- **HTTP Dev Server**: Verified HTTP 200 on port 3000.

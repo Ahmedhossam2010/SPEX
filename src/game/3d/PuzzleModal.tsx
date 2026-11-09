@@ -33,12 +33,14 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
     diffEngine: false,
   });
 
-  // Mission 2 State: The Journey of SPHEREx Timeline exhibits
+  // Mission 2 State: The Journey of SPHEREx Timeline & 4 Historical Milestones
   const [m2ExhibitsRead, setM2ExhibitsRead] = useState<{ [key: string]: boolean }>({
     origins: false,
     ices: false,
     galaxies: false,
   });
+  const [m2Milestones, setM2Milestones] = useState<number[]>([1, 2, 3, 4]);
+  const [m2ActiveTelescope, setM2ActiveTelescope] = useState<boolean>(false);
 
   // Mission 3 State: The Invisible Universe (Visible vs IR demo)
   const [m3Mode, setM3Mode] = useState<'visible' | 'infrared'>('visible');
@@ -50,9 +52,14 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
   const [m4BlinkFrame, setM4BlinkFrame] = useState<number>(0);
   const [m4IdentifiedMotion, setM4IdentifiedMotion] = useState<boolean>(false);
 
-  // Mission 5 State: The 102-Band Secret (Spectral Wavelength Slider & Ice Dip)
+  // Mission 5 State: Match the Light (3 Molecular Features: H2O 3.05µm, CO2 4.27µm, CO 2.30µm)
   const [m5Wavelength, setM5Wavelength] = useState<number>(0.75);
   const [m5SelectedDip, setM5SelectedDip] = useState<string | null>(null);
+  const [m5MatchedMolecules, setM5MatchedMolecules] = useState<{ [key: string]: boolean }>({
+    water_ice: false,
+    co2_ice: false,
+    co_gas: false,
+  });
 
   // Mission 6 State: The Investigation Report (Artifacts vs Real PSF + Final Report)
   const [m6SelectedCandidate, setM6SelectedCandidate] = useState<number>(0);
@@ -153,7 +160,15 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
   };
 
   const handleMission5Submit = () => {
-    if (m5SelectedDip === 'water_ice' || (m5Wavelength >= 2.95 && m5Wavelength <= 3.2)) {
+    if (
+      m5SelectedDip ||
+      m5MatchedMolecules.water_ice ||
+      m5MatchedMolecules.co2_ice ||
+      m5MatchedMolecules.co_gas ||
+      (m5Wavelength >= 2.95 && m5Wavelength <= 3.2) ||
+      (m5Wavelength >= 4.15 && m5Wavelength <= 4.35) ||
+      (m5Wavelength >= 2.20 && m5Wavelength <= 2.40)
+    ) {
       gameAudio.playSuccess();
       setIsSuccess(true);
       onCompleteMission(5, 250);
@@ -161,8 +176,8 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
       gameAudio.playError();
       setErrorMessage(
         isAr
-          ? 'حدد موقع امتصاص جليد الماء الكوني (3.05 ميكرومتر H₂O).'
-          : 'Locate the cosmic water ice absorption feature (3.05 µm H₂O dip).'
+          ? 'حدد موقع امتصاص جليد الماء الكوني (3.05µm H₂O) أو CO₂ أو CO بالنقر على الجزيء أو سحب المؤشر.'
+          : 'Match one of the cosmic molecular absorption features (3.05 µm H₂O, 4.27 µm CO₂, or 2.30 µm CO) to proceed.'
       );
     }
   };
@@ -353,11 +368,41 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
             <div className="space-y-4">
               <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200">
                 {isAr
-                  ? 'مهمة SPHEREx هي أول مسح طيفي بالأشعة تحت الحمراء لكامل السماء. انقر على الركائز العلمية الثلاث لتأكيد دراستها:'
-                  : 'SPHEREx is NASA’s first near-infrared all-sky spectral survey. Click each scientific pillar to review:'}
+                  ? 'رتب رحلة وتاريخ تلسكوب SPHEREx الزمني وافحص الركائز العلمية الثلاث لتفعيل نموذج التلسكوب الفضائي:'
+                  : 'Review the SPHEREx historical milestones in order and confirm the 3 scientific pillars to activate the space telescope:'}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* 4 Historical Milestones */}
+              <div className="space-y-2">
+                <span className="text-[11px] font-mono text-cyan-400 font-bold uppercase tracking-wider block">
+                  {isAr ? 'محطات الرحلة التاريخية لـ SPHEREx:' : 'SPHEREx Historical Milestones (Chronological Order):'}
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { year: '2019', title: isAr ? 'اختيار ناسا (MIDEX)' : 'NASA MIDEX Selection', sub: isAr ? 'اعتماد المهمة الرسمية' : 'Formal Mission Approval' },
+                    { year: '2024', title: isAr ? 'تجميع واختبار JPL' : 'JPL Cryo Testing', sub: isAr ? 'اختبار الغرفة المفرغة 80K' : 'Thermal Vacuum Chamber' },
+                    { year: '2025', title: isAr ? 'إطلاق Falcon 9' : 'Falcon 9 Launch', sub: isAr ? 'مدار قطبي متزامن مع الشمس' : 'Sun-Synchronous Orbit' },
+                    { year: '2025+', title: isAr ? 'مسح 102 نطاق' : '102-Band All-Sky Survey', sub: isAr ? 'مسح كامل السماء كل 6 أشهر' : 'Full Sky Every 6 Months' },
+                  ].map((ms, idx) => (
+                    <div
+                      key={ms.year}
+                      className="p-3 rounded-xl bg-slate-900 border border-cyan-500/30 text-left flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-[10px]">
+                          {ms.year}
+                        </span>
+                        <span className="text-emerald-400 font-mono text-[10px]">✓ STEP {idx + 1}</span>
+                      </div>
+                      <div className="font-semibold text-xs text-white mt-1.5">{ms.title}</div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{ms.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3 Scientific Pillars */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -581,11 +626,48 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
             <div className="space-y-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-mono text-cyan-400 font-bold uppercase">
-                  {isAr ? 'مسح الأطوال الموجية الـ 102 (0.75 إلى 5.0 µm):' : 'Sweep 102 Spectral Channels (0.75 to 5.0 µm):'}
+                  {isAr ? 'مسح الأطوال الموجية الـ 102 وبصمات الجزيئات:' : 'Sweep 102 Spectral Channels & Match Molecular Ices:'}
                 </span>
                 <span className="font-mono text-amber-300 font-bold">
                   λ = {m5Wavelength.toFixed(2)} µm
                 </span>
+              </div>
+
+              {/* 3 Molecular Matching Targets */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { id: 'water_ice', wave: 3.05, label: isAr ? 'جليد الماء (H₂O Ice)' : 'Water Ice (H₂O)', sub: '3.05 µm absorption dip' },
+                  { id: 'co2_ice', wave: 4.27, label: isAr ? 'جليد ثاني أكسيد الكربون (CO₂)' : 'Carbon Dioxide Ice (CO₂)', sub: '4.27 µm absorption dip' },
+                  { id: 'co_gas', wave: 2.30, label: isAr ? 'غاز أول أكسيد الكربون (CO)' : 'Carbon Monoxide Gas (CO)', sub: '2.30 µm overtone band' },
+                ].map((mol) => {
+                  const isNear = Math.abs(m5Wavelength - mol.wave) < 0.2;
+                  return (
+                    <button
+                      key={mol.id}
+                      type="button"
+                      onClick={() => {
+                        gameAudio.playClick();
+                        setM5Wavelength(mol.wave);
+                        setM5SelectedDip(mol.id);
+                        setM5MatchedMolecules(prev => ({ ...prev, [mol.id]: true }));
+                      }}
+                      className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                        isNear || m5SelectedDip === mol.id || m5MatchedMolecules[mol.id]
+                          ? 'bg-amber-500/15 border-amber-400 text-white shadow-sm'
+                          : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs">{mol.label}</span>
+                        <span className="font-mono text-[10px] text-amber-400">{mol.wave} µm</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-0.5">{mol.sub}</div>
+                      <div className="text-[9px] font-mono text-emerald-400 mt-1">
+                        {isNear || m5MatchedMolecules[mol.id] ? '✓ MATCHED' : 'CLICK TO MATCH'}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
               <input
@@ -597,8 +679,15 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
                 onChange={(e) => {
                   const val = parseFloat(e.target.value);
                   setM5Wavelength(val);
-                  if (val >= 2.95 && val <= 3.2) {
+                  if (val >= 2.95 && val <= 3.15) {
                     setM5SelectedDip('water_ice');
+                    setM5MatchedMolecules(prev => ({ ...prev, water_ice: true }));
+                  } else if (val >= 4.15 && val <= 4.35) {
+                    setM5SelectedDip('co2_ice');
+                    setM5MatchedMolecules(prev => ({ ...prev, co2_ice: true }));
+                  } else if (val >= 2.20 && val <= 2.40) {
+                    setM5SelectedDip('co_gas');
+                    setM5MatchedMolecules(prev => ({ ...prev, co_gas: true }));
                   }
                 }}
                 className="w-full accent-amber-500 cursor-ew-resize"
@@ -608,15 +697,23 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
               <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-2">
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
                   <span>Photometric Transmission Profile</span>
-                  <span>{m5SelectedDip === 'water_ice' ? (isAr ? '✓ تم رصد امتصاص جليد الماء H₂O عند 3.05µm' : '✓ Water Ice H₂O Absorption Found at 3.05 µm!') : 'Searching for Absorption Feature...'}</span>
+                  <span>
+                    {m5SelectedDip === 'water_ice' && (isAr ? '✓ تم رصد امتصاص جليد الماء H₂O عند 3.05µm' : '✓ Water Ice H₂O Absorption Found at 3.05 µm!')}
+                    {m5SelectedDip === 'co2_ice' && (isAr ? '✓ تم رصد امتصاص جليد CO₂ عند 4.27µm' : '✓ CO₂ Ice Absorption Found at 4.27 µm!')}
+                    {m5SelectedDip === 'co_gas' && (isAr ? '✓ تم رصد غاز CO عند 2.30µm' : '✓ Carbon Monoxide Gas Found at 2.30 µm!')}
+                    {!m5SelectedDip && (isAr ? 'اسحب المؤشر للعثور على بصمة الامتصاص' : 'Sweep slider or click a molecule above...')}
+                  </span>
                 </div>
 
                 <div className="h-24 w-full bg-black rounded-xl p-3 flex items-end gap-1 relative overflow-hidden border border-slate-800">
                   {Array.from({ length: 30 }).map((_, i) => {
                     const wave = 0.75 + (i / 29) * 4.25;
-                    // Absorption dip near 3.05 um
-                    const dip = Math.exp(-Math.pow((wave - 3.05) / 0.25, 2)) * 0.75;
-                    const heightPercent = Math.max(15, (1 - dip) * 85);
+                    // Absorption dips near 2.30, 3.05, and 4.27 um
+                    const dip1 = Math.exp(-Math.pow((wave - 3.05) / 0.22, 2)) * 0.75;
+                    const dip2 = Math.exp(-Math.pow((wave - 4.27) / 0.20, 2)) * 0.70;
+                    const dip3 = Math.exp(-Math.pow((wave - 2.30) / 0.18, 2)) * 0.55;
+                    const totalDip = Math.max(dip1, dip2, dip3);
+                    const heightPercent = Math.max(15, (1 - totalDip) * 85);
                     const isCurrent = Math.abs(wave - m5Wavelength) < 0.15;
                     return (
                       <div
