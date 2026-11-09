@@ -69,11 +69,11 @@ export const DataReleaseModal: React.FC<DataReleaseModalProps> = ({
                   {isAr ? 'دليل إدارة واستيراد بيانات SPHEREx' : 'SPHEREx Data Management & Ingestion Guide'}
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30">
-                  QR2 READY
+                  QR2 CACHE · QR3 READY
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                NASA IPAC IRSA Level-2B Calibrated Infrared Archive
+                NASA IPAC IRSA Level-2B Calibrated Infrared Archive (QR2 & QR3 Architecture)
               </p>
             </div>
           </div>
@@ -94,26 +94,31 @@ export const DataReleaseModal: React.FC<DataReleaseModalProps> = ({
             </span>
             <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold">
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isAr ? 'المجموعة نشطة وموثقة' : 'Verified & Operational'}</span>
+              <span>{isAr ? 'QR2 نشط محلياً · QR3 مهيأ للاستيراد' : 'QR2 Active Cache · QR3 Ingestion Ready'}</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-1">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 block">ARCHIVE RELEASE</span>
-              <span className="text-xs font-bold text-amber-500 font-mono">QR2 Quick Release 2</span>
+              <span className="text-[10px] font-mono text-slate-400 block">ACTIVE CACHE</span>
+              <span className="text-xs font-bold text-amber-500 font-mono">QR2 Level-2B</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 block">CACHED FITS FILES</span>
+              <span className="text-[10px] font-mono text-slate-400 block">QR3 SUPPORT</span>
+              <span className="text-xs font-bold text-emerald-400 font-mono">100% Ingestion Ready</span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              <span className="text-[10px] font-mono text-slate-400 block">CACHED FITS</span>
               <span className="text-xs font-bold text-cyan-400 font-mono">
                 {telemetry?.cachedFITSFiles ?? 6} Benchmark Cutouts
               </span>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 col-span-2 sm:col-span-1">
+            <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
               <span className="text-[10px] font-mono text-slate-400 block">WCS DISTORTION</span>
-              <span className="text-xs font-bold text-emerald-400 font-mono">TAN-SIP Gnomonic</span>
+              <span className="text-xs font-bold text-indigo-400 font-mono">TAN-SIP Gnomonic</span>
             </div>
           </div>
         </div>

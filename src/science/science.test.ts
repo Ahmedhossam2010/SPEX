@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { WCS } from './wcs';
 import { ScientificPipeline } from './pipeline';
 import { FITSReader } from './fitsReader';
@@ -2432,12 +2433,82 @@ test('Scientific Integrity Regression: Subpixel centroiding preserves integer pe
   assert.ok(centroid.uncertaintyPix > 0.05 && centroid.uncertaintyPix < 0.5);
 });
 
+test('FITSReader: parses and indexes all 6 MEF extensions (IMAGE, FLAGS, VARIANCE, ZODI, PSF, WCS-WAVE) on physical FITS files', () => {
+  const buffer = fs.readFileSync('data/spherex_cache/b6a1e605728059ea6b7def1e9683adb2.fits');
+  const parsed = FITSReader.parse(buffer);
 
+  assert.ok(parsed.hdus, 'Must parse HDUs list');
+  assert.equal(parsed.hdus.length, 7, 'Must find 7 HDUs (Primary + 6 extensions)');
 
+  const extnames = parsed.hdus.map((h: any) => h.name.trim());
+  assert.ok(extnames.includes('PRIMARY'));
+  assert.ok(extnames.includes('IMAGE'));
+  assert.ok(extnames.includes('FLAGS'));
+  assert.ok(extnames.includes('VARIANCE'));
+  assert.ok(extnames.includes('ZODI'));
+  assert.ok(extnames.includes('PSF'));
+  assert.ok(extnames.includes('WCS-WAVE'));
 
+  // Verify ZODI and PSF metadata preservation
+  assert.ok(parsed.zodi, 'Must preserve ZODI model array');
+  assert.equal(parsed.zodi.width, 64);
+  assert.equal(parsed.zodi.height, 64);
 
+  assert.ok(parsed.psfMetadata, 'Must preserve PSF 3D model metadata');
+  assert.equal(parsed.psfMetadata.is3DModel, true);
+  assert.deepEqual(parsed.psfMetadata.dimensions, [101, 101, 121]);
 
+  assert.ok(parsed.wcsWaveMetadata, 'Must preserve WCS-WAVE spectral table metadata');
+  assert.equal(parsed.wcsWaveMetadata.isTable, true);
+});
 
+test('Pipeline: checkCompatibility enforces release boundary (QR2 vs QR2 ok, QR3 vs QR3 ok, QR2 vs QR3 rejected)', () => {
+  const obsQr2_1: any = {
+    obs_id: 'SPX_QR2_01',
+    releaseId: 'SPHEREx-QR2-Level2B',
+    date_obs: '2025-04-28T13:00:15.755Z',
+    date_end: '2025-04-28T13:02:10.835Z',
+    wavelength_um: 0.93,
+    t_min: 60793.5418,
+    t_max: 60793.5431,
+  };
+  const obsQr2_2: any = {
+    obs_id: 'SPX_QR2_02',
+    releaseId: 'SPHEREx-QR2-Level2B',
+    date_obs: '2025-04-28T13:02:24.686Z',
+    date_end: '2025-04-28T13:04:19.766Z',
+    wavelength_um: 0.93,
+    t_min: 60793.5433,
+    t_max: 60793.5446,
+  };
+  const obsQr3: any = {
+    obs_id: 'SPX_QR3_01',
+    releaseId: 'SPHEREx-QR3-Level2B',
+    date_obs: '2026-09-15T10:00:00.000Z',
+    date_end: '2026-09-15T10:01:55.080Z',
+    wavelength_um: 0.93,
+    t_min: 61298.4166,
+    t_max: 61298.4179,
+  };
 
+  const dummyFits: any = {
+    wcs: { pixelScaleArcsec: 6.15 },
+    header: {},
+    stats: { robustNoise: 0.5 },
+  };
 
+  // 1. QR2 vs QR2
+  const checkQr2 = ScientificPipeline.checkCompatibility(obsQr2_1, obsQr2_2, dummyFits, dummyFits);
+  assert.equal(checkQr2.isCompatible, true, 'QR2 vs QR2 must be compatible');
 
+  // 2. QR3 vs QR3
+  const obsQr3_2 = { ...obsQr3, obs_id: 'SPX_QR3_02', date_obs: '2026-09-15T10:02:08.000Z' };
+  const checkQr3 = ScientificPipeline.checkCompatibility(obsQr3, obsQr3_2, dummyFits, dummyFits);
+  assert.equal(checkQr3.isCompatible, true, 'QR3 vs QR3 must be compatible');
+
+  // 3. QR2 vs QR3 Cross-release comparison
+  const checkCross = ScientificPipeline.checkCompatibility(obsQr2_1, obsQr3, dummyFits, dummyFits);
+  assert.equal(checkCross.isCompatible, false, 'QR2 vs QR3 cross-release must be rejected');
+  assert.ok(checkCross.reason?.includes('Cross-release comparison rejected'), 'Must provide clear rejection explanation');
+  assert.ok(checkCross.reason?.includes('photometric cross-calibration') || checkCross.reason?.includes('flux correction factors'));
+});

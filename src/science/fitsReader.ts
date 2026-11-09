@@ -1,4 +1,4 @@
-import { FITSImageData, SIPParams, SIPTerm, WCSParams } from './types';
+import { FITSImageData, HDUMetadata, SIPParams, SIPTerm, WCSParams } from './types';
 import { MAX_SIP_ORDER, WCS } from './wcs';
 
 export class FITSReader {
@@ -20,6 +20,11 @@ export class FITSReader {
     let width = 0;
     let height = 0;
     let bunit = 'MJy / sr';
+
+    const hdus: HDUMetadata[] = [];
+    let zodiData: Float32Array | null = null;
+    let psfMetadata: { dimensions: number[]; is3DModel: boolean; headerCards: Record<string, string | number | boolean> } | undefined;
+    let wcsWaveMetadata: { dimensions: number[]; isTable: boolean } | undefined;
 
     while (offset < uint8.length) {
       // Read 2880 byte blocks until END card
@@ -99,15 +104,20 @@ export class FITSReader {
       const naxis = Number(headerCards['NAXIS'] || 0);
       const naxis1 = Number(headerCards['NAXIS1'] || 0);
       const naxis2 = Number(headerCards['NAXIS2'] || 0);
+      const naxis3 = Number(headerCards['NAXIS3'] || 0);
       const pcount = Number(headerCards['PCOUNT'] || 0);
       const gcount = Number(headerCards['GCOUNT'] || 1);
       const extname = String(headerCards['EXTNAME'] || '').trim().toUpperCase();
+
+      const shape: number[] = [];
+      if (naxis >= 1 && naxis1 > 0) shape.push(naxis1);
+      if (naxis >= 2 && naxis2 > 0) shape.push(naxis2);
+      if (naxis >= 3 && naxis3 > 0) shape.push(naxis3);
 
       let dataBytes = 0;
       if (naxis > 0 && naxis1 > 0) {
         let nvals = naxis1;
         if (naxis >= 2 && naxis2 > 0) nvals *= naxis2;
-        const naxis3 = Number(headerCards['NAXIS3'] || 0);
         if (naxis >= 3 && naxis3 > 0) nvals *= naxis3;
 
         dataBytes = (Math.abs(bitpix) / 8) * (nvals + pcount) * gcount;
@@ -115,8 +125,11 @@ export class FITSReader {
         if (remainder > 0) dataBytes += 2880 - remainder;
       }
 
+      let readStatus: HDUMetadata['readStatus'] = 'SKIPPED_NOT_NEEDED';
+
       if (hduIndex === 0) {
         primaryHeader = headerCards;
+        readStatus = 'READ_AND_USED';
         if (naxis === 2 && naxis1 > 0 && naxis2 > 0 && !scienceData) {
           // Primary HDU contains the image
           width = naxis1;
@@ -133,12 +146,43 @@ export class FITSReader {
           scienceHeader = { ...primaryHeader, ...headerCards };
           bunit = String(headerCards['BUNIT'] || primaryHeader['BUNIT'] || bunit).replace(/'/g, '').trim();
           scienceData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = 'READ_AND_USED';
         } else if (extname === 'VARIANCE' || extname === 'VAR' || extname === 'UNCERTAINTY' || extname === 'UNC') {
           varianceData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = 'READ_AND_USED';
         } else if (extname === 'FLAGS' || extname === 'MASK' || extname === 'DQ') {
           flagsData = this.readInt32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = 'READ_AND_USED';
+        } else if (extname === 'ZODI') {
+          if (naxis === 2 && naxis1 > 0 && naxis2 > 0) {
+            zodiData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          }
+          readStatus = 'INGESTED_METADATA_PRESERVED';
+        } else if (extname === 'PSF') {
+          psfMetadata = {
+            dimensions: shape,
+            is3DModel: naxis >= 3,
+            headerCards,
+          };
+          readStatus = 'INGESTED_METADATA_PRESERVED';
+        } else if (extname === 'WCS-WAVE') {
+          wcsWaveMetadata = {
+            dimensions: shape,
+            isTable: headerCards['XTENSION'] === 'BINTABLE' || extname === 'WCS-WAVE',
+          };
+          readStatus = 'INGESTED_METADATA_PRESERVED';
         }
       }
+
+      hdus.push({
+        index: hduIndex,
+        name: extname || (hduIndex === 0 ? 'PRIMARY' : `HDU_${hduIndex}`),
+        bitpix,
+        dimensions: shape,
+        dataBytes,
+        readStatus,
+        headerSummary: headerCards,
+      });
 
       offset += dataBytes;
       hduIndex++;
@@ -162,6 +206,10 @@ export class FITSReader {
       header: mergedHeader,
       wcs,
       stats,
+      hdus,
+      zodi: zodiData ? { width, height, data: zodiData } : undefined,
+      psfMetadata,
+      wcsWaveMetadata,
     };
   }
 

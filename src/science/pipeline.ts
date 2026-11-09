@@ -221,6 +221,29 @@ export class ScientificPipeline {
       };
     }
 
+    // Check data release version boundary (reject uncalibrated QR2 vs QR3 subtraction)
+    const rel1 = (obs1 as any).releaseId || fits1.header?.['RELEASE'];
+    const rel2 = (obs2 as any).releaseId || fits2.header?.['RELEASE'];
+    const isQr2_1 = rel1 ? String(rel1).toUpperCase().includes('QR2') : false;
+    const isQr3_1 = rel1 ? String(rel1).toUpperCase().includes('QR3') : false;
+    const isQr2_2 = rel2 ? String(rel2).toUpperCase().includes('QR2') : false;
+    const isQr3_2 = rel2 ? String(rel2).toUpperCase().includes('QR3') : false;
+
+    if ((isQr2_1 && isQr3_2) || (isQr3_1 && isQr2_2)) {
+      return {
+        isCompatible: false,
+        reason: `Cross-release comparison rejected: Exposure 1 is from '${rel1 || 'QR2'}' and Exposure 2 is from '${rel2 || 'QR3'}'. Direct flux differencing across IPAC Quick Releases is scientifically invalid without unified flux correction factors, background zero-point matching, and ePSF homogenization.`,
+        timeBaselineDays,
+        wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman,
+        integrationDuration1Sec,
+        integrationDuration2Sec,
+        startToStartCadenceSec,
+        interExposureGapSec,
+      };
+    }
+
     return {
       isCompatible: true,
       timeBaselineDays,

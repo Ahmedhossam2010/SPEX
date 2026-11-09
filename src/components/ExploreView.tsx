@@ -545,6 +545,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="text-amber-300">
                   FOV {selectedFovSize}px (~{(selectedFovSize * 6.15 / 60).toFixed(1)}′)
                 </span>
+                <span className="text-slate-600 hidden sm:inline">·</span>
+                <button
+                  type="button"
+                  onClick={() => setShowDataRelease(true)}
+                  className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 hover:bg-emerald-500/25 transition cursor-pointer font-mono"
+                  title="Dataset Release: NASA/IPAC IRSA QR2 Level-2B (QR3 Ingestion Compatible)"
+                >
+                  <Database className="w-3 h-3 text-emerald-400" />
+                  <span>Release: {currentResult?.releaseId || 'SPHEREx QR2'} (QR3 Ready)</span>
+                </button>
               </div>
             </div>
           </div>

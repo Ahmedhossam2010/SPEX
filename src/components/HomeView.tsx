@@ -236,10 +236,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
               {/* Authentic SPEX Character */}
               <div className="relative group flex items-center justify-center">
                 <div className="absolute -inset-6 bg-gradient-to-r from-amber-500/20 via-cyan-500/20 to-purple-600/20 blur-3xl rounded-full opacity-60 group-hover:opacity-100 transition-opacity" />
-                <img
-                  src={SPEX_HERO_IMAGE}
+                <SpexPortrait
+                  size={280}
+                  showFullBody
+                  mood="greeting"
+                  className="relative z-10 transition-transform hover:scale-102"
                   alt="SPEX Egyptian Mech Cat Guardian"
-                  className="relative z-10 w-64 sm:w-72 h-auto drop-shadow-2xl transition-transform hover:scale-102"
                 />
               </div>
 

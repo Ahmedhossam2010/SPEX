@@ -626,13 +626,25 @@ export const Spex3DGame: React.FC<Spex3DGameProps> = ({
             <div className="mt-4 space-y-3 max-h-96 overflow-y-auto pr-1">
               {[1, 2, 3, 4, 5].map((mNum) => {
                 const done = completedMissions.includes(mNum);
+                const isUnlocked = mNum <= currentMissionNumber;
                 return (
                   <div
                     key={mNum}
-                    className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                    onClick={() => {
+                      if (isUnlocked) {
+                        gameAudio.playClick();
+                        setNotebookOpen(false);
+                        setActiveModalMission(mNum);
+                      }
+                    }}
+                    className={`p-3.5 rounded-xl border flex items-center justify-between transition ${
+                      isUnlocked ? 'cursor-pointer hover:border-cyan-400/60' : 'cursor-not-allowed opacity-60'
+                    } ${
                       done 
                         ? 'bg-slate-900/80 border-emerald-500/40 text-emerald-200' 
-                        : 'bg-slate-950/60 border-slate-800 text-slate-500'
+                        : isUnlocked
+                          ? 'bg-slate-900/50 border-cyan-500/30 text-cyan-200'
+                          : 'bg-slate-950/60 border-slate-800 text-slate-500'
                     }`}
                   >
                     <div className="flex items-center gap-3">

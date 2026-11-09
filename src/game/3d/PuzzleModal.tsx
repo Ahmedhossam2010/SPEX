@@ -256,13 +256,13 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
               </span>
               {missionNumber === 1 && (
                 isAr
-                  ? 'أهلاً بك في محطة SPEX المدارية! أنا رفيقك الفلكي. لتجهيز التلسكوب للرصد، قم بتشغيل مبرد الحساسات (80K)، وتفعيل كواشف المرشحات الطيفية الخطية (LVF)، وبدء تشغيل محرك الطرح الفلكي.'
-                  : 'Welcome aboard SPEX Station! I am your space exploration companion. To prepare SPHEREx for active sky discovery, power the cryogenic cooler (80K), initialize the 102 Linear Variable Filter channels, and boot the difference engine.'
+                  ? 'أهلاً بك في محطة SPEX المدارية! أنا رفيقك الفلكي. لتجهيز التلسكوب للرصد، قم بنشر نظام التبريد السلبي بالأخاديد V ثلاثية المراحل (<80K للبصريات و~55K للحساسات)، وتفعيل كواشف المرشحات الطيفية الخطية (LVF)، وبدء تشغيل محرك الطرح الفلكي.'
+                  : 'Welcome aboard SPEX Station! I am your space exploration companion. To prepare SPHEREx for active sky discovery, deploy the three-stage V-groove passive thermal radiative cooling system (<80K optics / ~55K detectors), initialize the 102 Linear Variable Filter channels, and boot the difference engine.'
               )}
               {missionNumber === 2 && (
                 isAr
-                  ? 'منذ 2025، يمسح تلسكوب SPHEREx التابع لناسا قبة السماء بالكامل كل ستة أشهر في 102 نطاق من الأشعة تحت الحمراء القريبة. افحص الركائز العلمية الثلاث للمهمة لفهم أهدافها الكونية.'
-                  : 'Since 2025, NASA’s SPHEREx mission has been mapping the entire sky every six months in 102 bands of near-infrared light across 6 detector arrays. Review its 3 scientific pillars to understand its cosmic journey.'
+                  ? 'أُطلق مرصد SPHEREx بنجاح في 11 مارس 2025 من قاعدة فاندنبرغ الفضائية وبدأت عملياته العلمية المنتظمة في 1 مايو 2025 لمسح قبة السماء بالكامل كل ستة أشهر عبر 102 نطاق من الأشعة تحت الحمراء. راجع الركائز العلمية الثلاث لفهم أهداف المهمة.'
+                  : 'SPHEREx launched on March 11, 2025, from Vandenberg Space Force Base aboard a SpaceX Falcon 9 and began regular science operations on May 1, 2025, mapping the sky every six months across 102 near-infrared bands. Review its 3 scientific pillars to understand its cosmic journey.'
               )}
               {missionNumber === 3 && (
                 isAr
@@ -308,11 +308,11 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
                 >
                   <div className="flex items-center justify-between mb-2">
                     <Activity className={`w-5 h-5 ${m1Subsystems.cryoCooler ? 'text-cyan-400' : 'text-slate-500'}`} />
-                    <span className="text-xs font-mono">{m1Subsystems.cryoCooler ? 'ONLINE (80K)' : 'OFFLINE'}</span>
+                    <span className="text-xs font-mono">{m1Subsystems.cryoCooler ? 'DEPLOYED (<80K)' : 'STOWED'}</span>
                   </div>
                   <div>
-                    <div className="font-semibold text-xs">{isAr ? 'المبرد فائق التبريد' : 'Cryogenic Cooler'}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">{isAr ? 'خفض حرارة الكواشف إلى 80 كلفن' : 'Chills sensors to 80K'}</div>
+                    <div className="font-semibold text-xs">{isAr ? 'نظام التبريد السلبي (V-Groove)' : 'Passive V-Groove Radiators'}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">{isAr ? 'تبريد سلبي: <80K للبصريات و55K للكواشف' : 'Passive: <80K optics, ~55K sensors'}</div>
                   </div>
                 </button>
 
@@ -379,10 +379,10 @@ export const PuzzleModal: React.FC<PuzzleModalProps> = ({
                 </span>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
-                    { year: '2019', title: isAr ? 'اختيار ناسا (MIDEX)' : 'NASA MIDEX Selection', sub: isAr ? 'اعتماد المهمة الرسمية' : 'Formal Mission Approval' },
-                    { year: '2024', title: isAr ? 'تجميع واختبار JPL' : 'JPL Cryo Testing', sub: isAr ? 'اختبار الغرفة المفرغة 80K' : 'Thermal Vacuum Chamber' },
-                    { year: '2025', title: isAr ? 'إطلاق Falcon 9' : 'Falcon 9 Launch', sub: isAr ? 'مدار قطبي متزامن مع الشمس' : 'Sun-Synchronous Orbit' },
-                    { year: '2025+', title: isAr ? 'مسح 102 نطاق' : '102-Band All-Sky Survey', sub: isAr ? 'مسح كامل السماء كل 6 أشهر' : 'Full Sky Every 6 Months' },
+                    { year: '2019', title: isAr ? 'اختيار وتطوير ناسا' : 'Mission Selection & Dev', sub: isAr ? 'اختيار برنامج MIDEX في فبراير 2019' : 'NASA MIDEX Selection (Feb 2019)' },
+                    { year: '2024', title: isAr ? 'بناء واختبار الجهاز' : 'Construction & Testing', sub: isAr ? 'اختبار الغرفة المفرغة (<80K) في JPL' : 'JPL Cryo Vacuum Testing (<80K)' },
+                    { year: 'Mar 11, 2025', title: isAr ? 'الإطلاق: 11 مارس 2025' : 'Launch: March 11, 2025', sub: isAr ? 'SpaceX Falcon 9 من قاعدة فاندنبرغ' : 'SpaceX Falcon 9 from Vandenberg SFB' },
+                    { year: 'May 1, 2025', title: isAr ? 'العمليات: 1 مايو 2025' : 'Science Ops: May 1, 2025', sub: isAr ? 'بدء المسح الشامل المنتظم (102 نطاق)' : 'Regular 102-Band All-Sky Survey' },
                   ].map((ms, idx) => (
                     <div
                       key={ms.year}

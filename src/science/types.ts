@@ -62,6 +62,16 @@ export interface WCSParams {
   sip?: SIPParams;
 }
 
+export interface HDUMetadata {
+  index: number;
+  name: string;
+  bitpix: number;
+  dimensions: number[];
+  dataBytes: number;
+  readStatus: 'READ_AND_USED' | 'INGESTED_METADATA_PRESERVED' | 'SKIPPED_NOT_NEEDED';
+  headerSummary?: Record<string, string | number | boolean>;
+}
+
 export interface FITSImageData {
   width: number;
   height: number;
@@ -78,6 +88,21 @@ export interface FITSImageData {
     median: number;
     std: number;
     robustNoise: number; // from median absolute deviation (MAD)
+  };
+  hdus?: HDUMetadata[];
+  zodi?: {
+    width: number;
+    height: number;
+    data?: Float32Array;
+  };
+  psfMetadata?: {
+    dimensions: number[];
+    is3DModel: boolean;
+    headerCards: Record<string, string | number | boolean>;
+  };
+  wcsWaveMetadata?: {
+    dimensions: number[];
+    isTable: boolean;
   };
 }
 

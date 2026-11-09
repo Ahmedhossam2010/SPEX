@@ -496,7 +496,7 @@ export class StationBuilder {
         subtitle,
         subtitleAr,
         position: new THREE.Vector3(x, 0, z),
-        interactionRadius: 2.8,
+        interactionRadius: 3.2,
         beaconColor: colorNum,
         screenMesh,
       });
@@ -556,7 +556,7 @@ export class StationBuilder {
       'Proper Motion, Blink Comparison & Difference Imaging',
       'الحركة الخاصة، الوميض البصري، وطرح الصورتين D = I2 - I1',
       32,
-      5.5,
+      4.0,
       Math.PI,
       '#10b981',
       0x10b981
@@ -571,7 +571,7 @@ export class StationBuilder {
       'Molecular Signatures: Water Ice & CO2 Fingerprints',
       'بصمات الجزيئات: جليد الماء وثاني أكسيد الكربون',
       -32,
-      -4.5,
+      -2.0,
       0,
       '#ec4899',
       0xec4899
