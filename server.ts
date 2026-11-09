@@ -516,6 +516,18 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
           canRetry: false,
         });
       }
+
+      const coordCheck = checkCoordinatesInQR2(ra, dec);
+      if (!coordCheck.inside) {
+        return res.status(422).json({
+          error: `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`,
+          status: 'OUTSIDE_COVERAGE',
+          distanceDegToFootprint: coordCheck.distanceDeg,
+          sourceMode: 'live',
+          canRetry: true,
+          suggestedCaseId: 'case-nep-var-01',
+        });
+      }
     }
 
     // Validate cutout size (FOV in pixels, default: 64 pix ~ 6.6 arcmin)
@@ -784,8 +796,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       candidates: diffResult.candidates,
       evidence: diffResult.evidence,
       provenance,
-      datasetSource: isCustomSearch ? 'OFFICIAL_CHALLENGE_RELEASE' : 'DEVELOPMENT_BENCHMARK',
-      releaseId: isCustomSearch ? 'RELEASE_2026_OFFICIAL' : 'SPHEREx-QR2-Level2B',
+      datasetSource: 'DEVELOPMENT_BENCHMARK',
+      releaseId: 'SPHEREx-QR2-Level2B',
       observationIds: [obs1.obs_id, obs2.obs_id],
       fileIdentifiers: [ep1.fits_url, ep2.fits_url],
       observationTimestamps: [obs1.date_obs || ep1.date, obs2.date_obs || ep2.date],
@@ -794,8 +806,15 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
 
     return res.json(responseData);
   } catch (err: any) {
-    console.error('Scientific pipeline execution failed:', err);
-    const isCoverageError = err.message?.includes('422') || err.message?.includes('footprint');
+    const isCoverageError =
+      err.message?.includes('422') ||
+      err.message?.includes('footprint') ||
+      err.message?.includes('survey coverage');
+    if (isCoverageError) {
+      console.warn('[Coverage Notice]', err.message);
+    } else {
+      console.error('Scientific pipeline execution failed:', err);
+    }
     const statusCode = isCoverageError ? 422 : 500;
     return res.status(statusCode).json({
       error: err.message || 'Scientific pipeline execution error',

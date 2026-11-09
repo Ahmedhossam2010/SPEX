@@ -73,6 +73,8 @@ interface ExploreViewProps {
   onSelectCase: (caseId: string, options?: { sizePix?: number; epochPair?: string }) => void;
   cases: Array<{ id: string; title: string; category?: string; ra: number; dec: number }>;
   language: Language;
+  fallbackQuery?: { ra: number; dec: number } | null;
+  onClearFallback?: () => void;
 }
 
 export type ViewMode = 'difference' | 'significance' | 'epoch1' | 'epoch2' | 'split' | 'blink' | 'sequence';
@@ -86,6 +88,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onSelectCase,
   cases,
   language,
+  fallbackQuery,
+  onClearFallback,
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
@@ -550,10 +554,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   type="button"
                   onClick={() => setShowDataRelease(true)}
                   className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 hover:bg-emerald-500/25 transition cursor-pointer font-mono"
-                  title="Dataset Release: NASA/IPAC IRSA QR2 Level-2B (QR3 Ingestion Compatible)"
+                  title="Dataset: NASA/IPAC IRSA QR2 Level-2B Benchmark Cutouts · QR3 Ingestion Engine Ready"
                 >
                   <Database className="w-3 h-3 text-emerald-400" />
-                  <span>Release: {currentResult?.releaseId || 'SPHEREx QR2'} (QR3 Ready)</span>
+                  <span>Release: {currentResult?.releaseId || 'SPHEREx-QR2-Level2B'} (Benchmark Cutouts)</span>
                 </button>
               </div>
             </div>
@@ -667,6 +671,38 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Reference Benchmark Fallback Banner */}
+      {fallbackQuery && (
+        <div className="p-4 rounded-3xl bg-amber-500/10 border-2 border-amber-500/40 text-xs shadow-lg space-y-3 backdrop-blur-md animate-in fade-in">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-500/20 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-slate-950 font-bold uppercase tracking-wider text-[10px]">
+                {t.referenceBenchmarkBadge}
+              </span>
+              <span className="font-mono text-amber-300 font-semibold">
+                {isRtl ? 'إحداثيات الهدف المطلوب:' : 'Requested target coordinates:'}{' '}
+                RA {fallbackQuery.ra.toFixed(4)}°, Dec {fallbackQuery.dec.toFixed(4)}°
+              </span>
+            </div>
+            {onClearFallback && (
+              <button
+                type="button"
+                onClick={onClearFallback}
+                className="px-3 py-1 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer flex items-center gap-1.5"
+              >
+                <span>{t.btnReturnToSearch}</span>
+              </button>
+            )}
+          </div>
+          <p className="text-amber-200/90 leading-relaxed font-sans">
+            {t.referenceBenchmarkNotice}
+          </p>
+          <div className="text-[11px] font-mono text-amber-300/70 flex items-center gap-2">
+            <span>{isRtl ? 'حقل المقارنة المعروض حالياً: مسح القطب الشمالي لمسار الشمس (NEP Benchmark)' : 'Currently displayed reference field: North Ecliptic Pole survey benchmark (RA ~276.15°, Dec ~64.85°)'}</span>
+          </div>
         </div>
       )}
 
@@ -1772,8 +1808,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </button>
             </div>
 
-            {/* Candidate Filter & Findings List */}
+              {/* Candidate Filter & Findings List */}
             <div className="pt-2 border-t border-slate-100 dark:border-white/[0.06] space-y-3">
+              {fallbackQuery && (
+                <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>{t.referenceCandidatesNotice}</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">
                   {isRtl ? 'قائمة المرشحين والأدلة:' : 'Candidate Findings List:'}

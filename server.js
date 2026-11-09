@@ -477,6 +477,10 @@ var FITSReader = class {
     let width = 0;
     let height = 0;
     let bunit = "MJy / sr";
+    const hdus = [];
+    let zodiData = null;
+    let psfMetadata;
+    let wcsWaveMetadata;
     while (offset < uint8.length) {
       const headerCards = {};
       let isEnd = false;
@@ -544,21 +548,27 @@ var FITSReader = class {
       const naxis = Number(headerCards["NAXIS"] || 0);
       const naxis1 = Number(headerCards["NAXIS1"] || 0);
       const naxis2 = Number(headerCards["NAXIS2"] || 0);
+      const naxis3 = Number(headerCards["NAXIS3"] || 0);
       const pcount = Number(headerCards["PCOUNT"] || 0);
       const gcount = Number(headerCards["GCOUNT"] || 1);
       const extname = String(headerCards["EXTNAME"] || "").trim().toUpperCase();
+      const shape = [];
+      if (naxis >= 1 && naxis1 > 0) shape.push(naxis1);
+      if (naxis >= 2 && naxis2 > 0) shape.push(naxis2);
+      if (naxis >= 3 && naxis3 > 0) shape.push(naxis3);
       let dataBytes = 0;
       if (naxis > 0 && naxis1 > 0) {
         let nvals = naxis1;
         if (naxis >= 2 && naxis2 > 0) nvals *= naxis2;
-        const naxis3 = Number(headerCards["NAXIS3"] || 0);
         if (naxis >= 3 && naxis3 > 0) nvals *= naxis3;
         dataBytes = Math.abs(bitpix) / 8 * (nvals + pcount) * gcount;
         const remainder = dataBytes % 2880;
         if (remainder > 0) dataBytes += 2880 - remainder;
       }
+      let readStatus = "SKIPPED_NOT_NEEDED";
       if (hduIndex === 0) {
         primaryHeader = headerCards;
+        readStatus = "READ_AND_USED";
         if (naxis === 2 && naxis1 > 0 && naxis2 > 0 && !scienceData) {
           width = naxis1;
           height = naxis2;
@@ -573,12 +583,42 @@ var FITSReader = class {
           scienceHeader = { ...primaryHeader, ...headerCards };
           bunit = String(headerCards["BUNIT"] || primaryHeader["BUNIT"] || bunit).replace(/'/g, "").trim();
           scienceData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = "READ_AND_USED";
         } else if (extname === "VARIANCE" || extname === "VAR" || extname === "UNCERTAINTY" || extname === "UNC") {
           varianceData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = "READ_AND_USED";
         } else if (extname === "FLAGS" || extname === "MASK" || extname === "DQ") {
           flagsData = this.readInt32Array(view, offset, naxis1 * naxis2, bitpix);
+          readStatus = "READ_AND_USED";
+        } else if (extname === "ZODI") {
+          if (naxis === 2 && naxis1 > 0 && naxis2 > 0) {
+            zodiData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
+          }
+          readStatus = "INGESTED_METADATA_PRESERVED";
+        } else if (extname === "PSF") {
+          psfMetadata = {
+            dimensions: shape,
+            is3DModel: naxis >= 3,
+            headerCards
+          };
+          readStatus = "INGESTED_METADATA_PRESERVED";
+        } else if (extname === "WCS-WAVE") {
+          wcsWaveMetadata = {
+            dimensions: shape,
+            isTable: headerCards["XTENSION"] === "BINTABLE" || extname === "WCS-WAVE"
+          };
+          readStatus = "INGESTED_METADATA_PRESERVED";
         }
       }
+      hdus.push({
+        index: hduIndex,
+        name: extname || (hduIndex === 0 ? "PRIMARY" : `HDU_${hduIndex}`),
+        bitpix,
+        dimensions: shape,
+        dataBytes,
+        readStatus,
+        headerSummary: headerCards
+      });
       offset += dataBytes;
       hduIndex++;
     }
@@ -597,7 +637,11 @@ var FITSReader = class {
       bunit,
       header: mergedHeader,
       wcs,
-      stats
+      stats,
+      hdus,
+      zodi: zodiData ? { width, height, data: zodiData } : void 0,
+      psfMetadata,
+      wcsWaveMetadata
     };
   }
   static readFloat32Array(view, offset, count, bitpix) {
@@ -954,6 +998,26 @@ var ScientificPipeline = class {
       return {
         isCompatible: false,
         reason: `Pixel scale mismatch: Exposure 1 is ${fits1.wcs.pixelScaleArcsec.toFixed(2)}"/px while Exposure 2 is ${fits2.wcs.pixelScaleArcsec.toFixed(2)}"/px.`,
+        timeBaselineDays,
+        wavelengthDiffUm,
+        timeBaselineType,
+        timeBaselineHuman,
+        integrationDuration1Sec,
+        integrationDuration2Sec,
+        startToStartCadenceSec,
+        interExposureGapSec
+      };
+    }
+    const rel1 = obs1.releaseId || fits1.header?.["RELEASE"];
+    const rel2 = obs2.releaseId || fits2.header?.["RELEASE"];
+    const isQr2_1 = rel1 ? String(rel1).toUpperCase().includes("QR2") : false;
+    const isQr3_1 = rel1 ? String(rel1).toUpperCase().includes("QR3") : false;
+    const isQr2_2 = rel2 ? String(rel2).toUpperCase().includes("QR2") : false;
+    const isQr3_2 = rel2 ? String(rel2).toUpperCase().includes("QR3") : false;
+    if (isQr2_1 && isQr3_2 || isQr3_1 && isQr2_2) {
+      return {
+        isCompatible: false,
+        reason: `Cross-release comparison rejected: Exposure 1 is from '${rel1 || "QR2"}' and Exposure 2 is from '${rel2 || "QR3"}'. Direct flux differencing across IPAC Quick Releases is scientifically invalid without unified flux correction factors, background zero-point matching, and ePSF homogenization.`,
         timeBaselineDays,
         wavelengthDiffUm,
         timeBaselineType,
@@ -2304,26 +2368,305 @@ var SPHEREX_QR2_FOOTPRINT = {
   dataRelease: "SPHEREx Quick Release 2 (QR2, Level 2B)",
   archiveSource: "NASA/IPAC Infrared Science Archive (IRSA)"
 };
+var QR2_BENCHMARK_OBSERVATIONS = [
+  {
+    obsId: "2025W18_1B_0001_1",
+    fileName: "b6a1e605728059ea6b7def1e9683adb2.fits",
+    width: 64,
+    height: 64,
+    wcs: {
+      crval1: 276.261385453,
+      crval2: 64.825774875,
+      crpix1: 32.5,
+      crpix2: 31.5,
+      cdelt1: 1,
+      cdelt2: 1,
+      cd1_1: -0.00114381918219,
+      cd1_2: -0.0012263998154,
+      cd2_1: -0.00127347184824,
+      cd2_2: 0.00119028634191,
+      ctype1: "RA---TAN-SIP",
+      ctype2: "DEC--TAN-SIP",
+      equinox: 2e3,
+      radesys: "ICRS",
+      pixelScaleArcsec: 6.155113609631569,
+      sip: {
+        aOrder: 3,
+        bOrder: 3,
+        apOrder: 3,
+        bpOrder: 3,
+        aTerms: [
+          { p: 0, q: 0, coeff: 0.32053197961 },
+          { p: 0, q: 1, coeff: 770454663755e-15 },
+          { p: 0, q: 2, coeff: -140567674619e-17 },
+          { p: 0, q: 3, coeff: -803473554893e-23 },
+          { p: 1, q: 0, coeff: -702634278197e-15 },
+          { p: 1, q: 1, coeff: 416126544494e-17 },
+          { p: 1, q: 2, coeff: 629853987403e-21 },
+          { p: 2, q: 0, coeff: -158398966592e-17 },
+          { p: 2, q: 1, coeff: -119895631104e-21 },
+          { p: 3, q: 0, coeff: 535700280529e-21 }
+        ],
+        bTerms: [
+          { p: 0, q: 0, coeff: -1.18308696523 },
+          { p: 0, q: 1, coeff: -878400893029e-16 },
+          { p: 0, q: 2, coeff: 198334285935e-17 },
+          { p: 0, q: 3, coeff: 436819752594e-21 },
+          { p: 1, q: 0, coeff: -517450885659e-15 },
+          { p: 1, q: 1, coeff: -68400234244e-17 },
+          { p: 1, q: 2, coeff: -655401003621e-22 },
+          { p: 2, q: 0, coeff: 666910407214e-17 },
+          { p: 2, q: 1, coeff: 63698167619e-20 },
+          { p: 3, q: 0, coeff: -51958242909e-21 }
+        ],
+        apTerms: [
+          { p: 0, q: 0, coeff: -0.319704597454 },
+          { p: 0, q: 1, coeff: -766188638621e-15 },
+          { p: 0, q: 2, coeff: 140644687815e-17 },
+          { p: 0, q: 3, coeff: -27895991292e-22 },
+          { p: 1, q: 0, coeff: 695831602666e-15 },
+          { p: 1, q: 1, coeff: -415086081554e-17 },
+          { p: 1, q: 2, coeff: -596739055488e-21 },
+          { p: 2, q: 0, coeff: 158286988586e-17 },
+          { p: 2, q: 1, coeff: 790809839492e-22 },
+          { p: 3, q: 0, coeff: -502504901844e-21 }
+        ],
+        bpTerms: [
+          { p: 0, q: 0, coeff: 1.17802470489 },
+          { p: 0, q: 1, coeff: 81681185754e-15 },
+          { p: 0, q: 2, coeff: -197174264027e-17 },
+          { p: 0, q: 3, coeff: -426661155856e-21 },
+          { p: 1, q: 0, coeff: 523178538555e-15 },
+          { p: 1, q: 1, coeff: 684789256383e-18 },
+          { p: 1, q: 2, coeff: 393475035943e-22 },
+          { p: 2, q: 0, coeff: -665879276212e-17 },
+          { p: 2, q: 1, coeff: -552286286424e-21 },
+          { p: 3, q: 0, coeff: 254211436202e-22 }
+        ]
+      }
+    }
+  },
+  {
+    obsId: "2025W18_1B_0001_2",
+    fileName: "569dafa911ec60ff30abb1807d719fef.fits",
+    width: 64,
+    height: 64,
+    wcs: {
+      crval1: 275.923851155,
+      crval2: 64.9607176422,
+      crpix1: 34.5,
+      crpix2: 146.5,
+      cdelt1: 1,
+      cdelt2: 1,
+      cd1_1: -0.00113597038948,
+      cd1_2: -0.00123299607749,
+      cd2_1: -0.00127892892038,
+      cd2_2: 0.00118274690581,
+      ctype1: "RA---TAN-SIP",
+      ctype2: "DEC--TAN-SIP",
+      equinox: 2e3,
+      radesys: "ICRS",
+      pixelScaleArcsec: 6.152188088708227,
+      sip: {
+        aOrder: 3,
+        bOrder: 3,
+        apOrder: 3,
+        bpOrder: 3,
+        aTerms: [
+          { p: 0, q: 0, coeff: 0.460012528281 },
+          { p: 0, q: 1, coeff: 228511269025e-16 },
+          { p: 0, q: 2, coeff: -140479039339e-17 },
+          { p: 0, q: 3, coeff: -311512472593e-22 },
+          { p: 1, q: 0, coeff: -12281846162e-15 },
+          { p: 1, q: 1, coeff: 417396816526e-17 },
+          { p: 1, q: 2, coeff: 654340877716e-21 },
+          { p: 2, q: 0, coeff: -16049287457e-16 },
+          { p: 2, q: 1, coeff: -121897736403e-21 },
+          { p: 3, q: 0, coeff: 536462354797e-21 }
+        ],
+        bTerms: [
+          { p: 0, q: 0, coeff: -1.34096951066 },
+          { p: 0, q: 1, coeff: 165440953162e-15 },
+          { p: 0, q: 2, coeff: 197029969075e-17 },
+          { p: 0, q: 3, coeff: 437848415492e-21 },
+          { p: 1, q: 0, coeff: -765408798729e-16 },
+          { p: 1, q: 1, coeff: -692754961579e-18 },
+          { p: 1, q: 2, coeff: -654274148358e-22 },
+          { p: 2, q: 0, coeff: 667819519451e-17 },
+          { p: 2, q: 1, coeff: 639897883284e-21 },
+          { p: 3, q: 0, coeff: -253542109768e-22 }
+        ],
+        apTerms: [
+          { p: 0, q: 0, coeff: -0.457973223035 },
+          { p: 0, q: 1, coeff: -169308384328e-16 },
+          { p: 0, q: 2, coeff: 13989915465e-16 },
+          { p: 0, q: 3, coeff: 194985190017e-22 },
+          { p: 1, q: 0, coeff: 423783365446e-17 },
+          { p: 1, q: 1, coeff: -415493243438e-17 },
+          { p: 1, q: 2, coeff: -619681217706e-21 },
+          { p: 2, q: 0, coeff: 159740637791e-17 },
+          { p: 2, q: 1, coeff: 794979513749e-22 },
+          { p: 3, q: 0, coeff: -501631527562e-21 }
+        ],
+        bpTerms: [
+          { p: 0, q: 0, coeff: 1.33568519368 },
+          { p: 0, q: 1, coeff: -171873864575e-15 },
+          { p: 0, q: 2, coeff: -195743081136e-17 },
+          { p: 0, q: 3, coeff: -427296036899e-21 },
+          { p: 1, q: 0, coeff: 83781154317e-15 },
+          { p: 1, q: 1, coeff: 686525409847e-18 },
+          { p: 1, q: 2, coeff: 391506174258e-22 },
+          { p: 2, q: 0, coeff: -665806926727e-17 },
+          { p: 2, q: 1, coeff: -554057148117e-21 },
+          { p: 3, q: 0, coeff: -963338931354e-24 }
+        ]
+      }
+    }
+  },
+  {
+    obsId: "2025W18_1B_0001_3",
+    fileName: "75b2c2369c175060576bec8d2e5333c0.fits",
+    width: 64,
+    height: 64,
+    wcs: {
+      crval1: 275.58152397,
+      crval2: 65.0934469687,
+      crpix1: 36.5,
+      crpix2: 261.5,
+      cdelt1: 1,
+      cdelt2: 1,
+      cd1_1: -0.00112936147968,
+      cd1_2: -0.00123879520159,
+      cd2_1: -0.00128482841705,
+      cd2_2: 0.00117627478847,
+      ctype1: "RA---TAN-SIP",
+      ctype2: "DEC--TAN-SIP",
+      equinox: 2e3,
+      radesys: "ICRS",
+      pixelScaleArcsec: 6.15176561056101,
+      sip: {
+        aOrder: 3,
+        bOrder: 3,
+        apOrder: 3,
+        bpOrder: 3,
+        aTerms: [
+          { p: 0, q: 0, coeff: 0.253411983969 },
+          { p: 0, q: 1, coeff: 113698272662e-15 },
+          { p: 0, q: 2, coeff: -139509026615e-17 },
+          { p: 0, q: 3, coeff: -135933029799e-22 },
+          { p: 1, q: 0, coeff: -337276787342e-16 },
+          { p: 1, q: 1, coeff: 416572337495e-17 },
+          { p: 1, q: 2, coeff: 649551255794e-21 },
+          { p: 2, q: 0, coeff: -159573412506e-17 },
+          { p: 2, q: 1, coeff: -133382435692e-21 },
+          { p: 3, q: 0, coeff: 528496364954e-21 }
+        ],
+        bTerms: [
+          { p: 0, q: 0, coeff: -1.20333674297 },
+          { p: 0, q: 1, coeff: 311968426731e-15 },
+          { p: 0, q: 2, coeff: 197584571356e-17 },
+          { p: 0, q: 3, coeff: 443293618096e-21 },
+          { p: 1, q: 0, coeff: -604891628415e-16 },
+          { p: 1, q: 1, coeff: -677811679519e-18 },
+          { p: 1, q: 2, coeff: -506128729529e-22 },
+          { p: 2, q: 0, coeff: 665931677632e-17 },
+          { p: 2, q: 1, coeff: 659724665305e-21 },
+          { p: 3, q: 0, coeff: -73006767231e-21 }
+        ],
+        apTerms: [
+          { p: 0, q: 0, coeff: -0.251524459121 },
+          { p: 0, q: 1, coeff: -109033015322e-15 },
+          { p: 0, q: 2, coeff: 138955616926e-17 },
+          { p: 0, q: 3, coeff: 218071420916e-23 },
+          { p: 1, q: 0, coeff: 269344137998e-16 },
+          { p: 1, q: 1, coeff: -414650686545e-17 },
+          { p: 1, q: 2, coeff: -614951211916e-21 },
+          { p: 2, q: 0, coeff: 158860817643e-17 },
+          { p: 2, q: 1, coeff: 915308823412e-22 },
+          { p: 3, q: 0, coeff: -493933390388e-21 }
+        ],
+        bpTerms: [
+          { p: 0, q: 0, coeff: 1.19783497955 },
+          { p: 0, q: 1, coeff: -317691617367e-15 },
+          { p: 0, q: 2, coeff: -196184026217e-17 },
+          { p: 0, q: 3, coeff: -432430637493e-21 },
+          { p: 1, q: 0, coeff: 649132724886e-16 },
+          { p: 1, q: 1, coeff: 672213189677e-18 },
+          { p: 1, q: 2, coeff: 247538964028e-22 },
+          { p: 2, q: 0, coeff: -663813189712e-17 },
+          { p: 2, q: 1, coeff: -573974801798e-21 },
+          { p: 3, q: 0, coeff: 468022811778e-22 }
+        ]
+      }
+    }
+  }
+];
 function checkCoordinatesInQR2(ra, dec) {
-  const inside = ra >= SPHEREX_QR2_FOOTPRINT.raMin && ra <= SPHEREX_QR2_FOOTPRINT.raMax && dec >= SPHEREX_QR2_FOOTPRINT.decMin && dec <= SPHEREX_QR2_FOOTPRINT.decMax;
+  if (typeof ra !== "number" || typeof dec !== "number" || !Number.isFinite(ra) || !Number.isFinite(dec) || dec < -90 || dec > 90) {
+    return {
+      inside: false,
+      coverageType: "INVALID_COORDINATES",
+      coveredObservations: [],
+      coverageCount: 0,
+      isInsideBoundingBox: false,
+      distanceDeg: NaN,
+      distanceArcsec: NaN,
+      reason: "Coordinates are non-finite, out of physical range (Dec must be within [-90\xB0, +90\xB0]), or invalid."
+    };
+  }
+  const normRa = (ra % 360 + 360) % 360;
+  const isInsideBoundingBox = normRa >= SPHEREX_QR2_FOOTPRINT.raMin && normRa <= SPHEREX_QR2_FOOTPRINT.raMax && dec >= SPHEREX_QR2_FOOTPRINT.decMin && dec <= SPHEREX_QR2_FOOTPRINT.decMax;
   const separationArcsec = WCS.angularSeparationArcsec(
-    ra,
+    normRa,
     dec,
     SPHEREX_QR2_FOOTPRINT.centerRa,
     SPHEREX_QR2_FOOTPRINT.centerDec
   );
   const distanceDeg = separationArcsec / 3600;
-  if (inside) {
-    return {
-      inside: true,
-      distanceDeg,
-      reason: "Coordinates fall inside the high-cadence SPHEREx QR2 North Ecliptic Pole deep footprint."
-    };
+  const EPSILON = 1e-7;
+  const coveredObservations = [];
+  for (const obs of QR2_BENCHMARK_OBSERVATIONS) {
+    try {
+      const pix = WCS.skyToPix(normRa, dec, obs.wcs);
+      if (Number.isFinite(pix.x) && Number.isFinite(pix.y) && pix.x >= -0.5 - EPSILON && pix.x <= obs.width - 0.5 + EPSILON && pix.y >= -0.5 - EPSILON && pix.y <= obs.height - 0.5 + EPSILON) {
+        coveredObservations.push(obs.obsId);
+      }
+    } catch {
+    }
+  }
+  const coverageCount = coveredObservations.length;
+  let coverageType = "OUTSIDE_FOOTPRINT";
+  if (coverageCount === 3) {
+    coverageType = "FULL_TRIPLE_OVERLAP";
+  } else if (coverageCount === 2) {
+    coverageType = "TEMPORAL_PAIR_COVERAGE";
+  } else if (coverageCount === 1) {
+    coverageType = "SINGLE_EPOCH_ONLY";
+  } else {
+    coverageType = "OUTSIDE_FOOTPRINT";
+  }
+  const inside = coverageCount > 0;
+  let reason = "";
+  if (coverageCount === 3) {
+    reason = "Coordinates fall inside the verified WCS footprint of all 3 SPHEREx QR2 benchmark exposures (full temporal overlap for difference imaging).";
+  } else if (coverageCount === 2) {
+    reason = `Coordinates fall inside the verified WCS footprint of 2 SPHEREx QR2 benchmark exposures (${coveredObservations.join(", ")}). Sufficient for two-epoch differencing.`;
+  } else if (coverageCount === 1) {
+    reason = `Coordinates fall inside only 1 SPHEREx QR2 benchmark exposure (${coveredObservations[0]}; single-epoch photometric coverage without temporal baseline).`;
+  } else if (isInsideBoundingBox) {
+    reason = "Coordinates fall within the nominal rectangular NEP bounding box (RA 275.5\xB0\u2013276.8\xB0, Dec +64.5\xB0\u201365.2\xB0) but lie outside the actual rotated diamond WCS image footprints of the SPHEREx QR2 observations.";
+  } else {
+    reason = `Coordinates (RA ${normRa.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0) lie ${distanceDeg.toFixed(1)}\xB0 away from the SPHEREx QR2 North Ecliptic Pole deep strip. Full all-sky coverage will expand in subsequent NASA/IPAC data releases.`;
   }
   return {
-    inside: false,
+    inside,
+    coverageType,
+    coveredObservations,
+    coverageCount,
+    isInsideBoundingBox,
     distanceDeg,
-    reason: `Coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0) lie ${distanceDeg.toFixed(1)}\xB0 away from the currently published SPHEREx QR2 North Ecliptic Pole deep strip (RA 275.5\xB0\u2013276.8\xB0, Dec +64.5\xB0\u201365.2\xB0). Full all-sky coverage will expand in subsequent NASA/IPAC data releases.`
+    distanceArcsec: separationArcsec,
+    reason
   };
 }
 var OFFICIAL_CHALLENGE_TARGETS = [
@@ -3588,20 +3931,39 @@ app.post("/api/spherex/process", async (req, res) => {
           canRetry: false
         });
       }
+      const coordCheck = checkCoordinatesInQR2(ra, dec);
+      if (!coordCheck.inside) {
+        return res.status(422).json({
+          error: `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec >= 0 ? "+" : ""}${dec.toFixed(4)}\xB0) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5\xB0\u2013276.8\xB0, Dec ~64.5\xB0\u201365.2\xB0).`,
+          status: "OUTSIDE_COVERAGE",
+          distanceDegToFootprint: coordCheck.distanceDeg,
+          sourceMode: "live",
+          canRetry: true,
+          suggestedCaseId: "case-nep-var-01"
+        });
+      }
     }
     const validSizes = [32, 64, 112, 160];
     const sizePix = validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
     const fovArcmin = Number((sizePix * 6.2 / 60).toFixed(1));
     let ep1 = selectedCase.epoch1;
     let ep2 = selectedCase.epoch2;
-    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
-      if (epochPair === "1-2") {
+    if (selectedCase.epochs && selectedCase.epochs.length >= 2) {
+      const match = typeof epochPair === "string" ? epochPair.match(/^(\d+)-(\d+)$/) : null;
+      if (match) {
+        const idx1 = parseInt(match[1], 10) - 1;
+        const idx2 = parseInt(match[2], 10) - 1;
+        if (selectedCase.epochs[idx1] && selectedCase.epochs[idx2]) {
+          ep1 = selectedCase.epochs[idx1];
+          ep2 = selectedCase.epochs[idx2];
+        }
+      } else if (epochPair === "1-2" && selectedCase.epochs.length >= 2) {
         ep1 = selectedCase.epochs[0];
         ep2 = selectedCase.epochs[1];
-      } else if (epochPair === "2-3") {
+      } else if (epochPair === "2-3" && selectedCase.epochs.length >= 3) {
         ep1 = selectedCase.epochs[1];
         ep2 = selectedCase.epochs[2];
-      } else {
+      } else if (selectedCase.epochs.length >= 3) {
         ep1 = selectedCase.epochs[0];
         ep2 = selectedCase.epochs[2];
       }
@@ -3774,8 +4136,8 @@ app.post("/api/spherex/process", async (req, res) => {
       candidates: diffResult.candidates,
       evidence: diffResult.evidence,
       provenance,
-      datasetSource: isCustomSearch ? "OFFICIAL_CHALLENGE_RELEASE" : "DEVELOPMENT_BENCHMARK",
-      releaseId: isCustomSearch ? "RELEASE_2026_OFFICIAL" : "SPHEREx-QR2-Level2B",
+      datasetSource: "DEVELOPMENT_BENCHMARK",
+      releaseId: "SPHEREx-QR2-Level2B",
       observationIds: [obs1.obs_id, obs2.obs_id],
       fileIdentifiers: [ep1.fits_url, ep2.fits_url],
       observationTimestamps: [obs1.date_obs || ep1.date, obs2.date_obs || ep2.date],
@@ -3783,8 +4145,12 @@ app.post("/api/spherex/process", async (req, res) => {
     };
     return res.json(responseData);
   } catch (err) {
-    console.error("Scientific pipeline execution failed:", err);
-    const isCoverageError = err.message?.includes("422") || err.message?.includes("footprint");
+    const isCoverageError = err.message?.includes("422") || err.message?.includes("footprint") || err.message?.includes("survey coverage");
+    if (isCoverageError) {
+      console.warn("[Coverage Notice]", err.message);
+    } else {
+      console.error("Scientific pipeline execution failed:", err);
+    }
     const statusCode = isCoverageError ? 422 : 500;
     return res.status(statusCode).json({
       error: err.message || "Scientific pipeline execution error",
@@ -3808,15 +4174,41 @@ app.post("/api/spex/chat", async (req, res) => {
       lang: rawLang,
       language,
       currentResult,
-      selectedCandidate
+      selectedCandidate,
+      simplificationLevel = 0,
+      explanationLevel = "simple"
     } = req.body;
-    const userMessage = rawUserMessage ?? message;
+    const userMessage = (rawUserMessage ?? message ?? "").trim();
     const evidence = rawEvidence ?? currentResult?.evidence;
     const topCandidate = rawTopCandidate ?? selectedCandidate ?? currentResult?.candidates?.[0] ?? null;
     const provenance = rawProvenance ?? currentResult?.provenance;
     const compatibility = rawCompatibility ?? currentResult?.compatibility;
     const targetCoords = rawTargetCoords ?? currentResult?.targetCoords;
     const lang = rawLang ?? language ?? "en";
+    const isArabic = lang === "ar" || /[\u0600-\u06FF]/.test(userMessage || "");
+    const lowerQuery = userMessage.toLowerCase();
+    const isSimplerRequest = lowerQuery.includes("\u0645\u0634 \u0641\u0627\u0647\u0645") || lowerQuery.includes("\u0627\u0634\u0631\u062D \u0623\u0628\u0633\u0637") || lowerQuery.includes("\u0627\u0628\u0633\u0637") || lowerQuery.includes("\u0645\u062B\u0627\u0644") || lowerQuery.includes("\u0644\u064A\u0647") || lowerQuery.includes("don't understand") || lowerQuery.includes("dont understand") || lowerQuery.includes("simpler") || lowerQuery.includes("example") || lowerQuery.includes("eli5") || lowerQuery.includes("easy");
+    const effectiveSimpLevel = isSimplerRequest ? Math.max(1, simplificationLevel + 1) : simplificationLevel;
+    if (effectiveSimpLevel === 1 || lowerQuery.includes("remote") || lowerQuery.includes("\u0631\u064A\u0645\u0648\u062A")) {
+      const tvReplyAr = "\u0641\u0643\u0631 \u0641\u064A \u0631\u064A\u0645\u0648\u062A \u0627\u0644\u062A\u0644\u0641\u0632\u064A\u0648\u0646! \u0644\u0645\u0627 \u0628\u062A\u062F\u0648\u0633 \u0639\u0644\u0649 \u0632\u0631\u0627\u0631\u060C \u0628\u064A\u0628\u0639\u062A \u0648\u0645\u064A\u0636 \u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u062D\u0645\u0631\u0627\u0621 \u0645\u062E\u0641\u064A\u0629 \u0644\u0644\u0634\u0627\u0634\u0629 \u0645\u0634 \u0628\u0646\u0634\u0648\u0641\u0647 \u0628\u0639\u0646\u064A\u0646\u0627 \u0628\u0633 \u0627\u0644\u062A\u0644\u0641\u0632\u064A\u0648\u0646 \u0628\u064A\u0644\u0642\u0637\u0647 \u0639\u0644\u0637\u0648\u0644. \u062A\u0644\u0633\u0643\u0648\u0628 SPHEREx \u0639\u0627\u0645\u0644 \u0632\u064A \u0631\u064A\u0645\u0648\u062A \u0643\u0648\u0646\u064A \u0639\u0645\u0644\u0627\u0642\u060C \u0628\u064A\u0644\u0642\u0637 \u062D\u0631\u0627\u0631\u0629 \u0627\u0644\u0646\u062C\u0648\u0645 \u0648\u0633\u062D\u0628 \u0627\u0644\u063A\u0628\u0627\u0631 \u0627\u0644\u0644\u064A \u0639\u0646\u064A\u0646\u0627 \u0645\u0628\u062A\u0634\u0648\u0641\u0647\u0627\u0634!";
+      const tvReplyEn = "Think of your TV remote control! When you press a button, it sends an invisible pulse of infrared light that your eyes cannot see, but your TV detects instantly. SPHEREx is like a giant cosmic TV receiver, catching the invisible heat radiated by stars and dust clouds!";
+      return res.json({
+        reply: isArabic ? tvReplyAr : tvReplyEn,
+        mood: "explaining",
+        engine: "pedagogical_analogy",
+        simplificationLevel: 1
+      });
+    }
+    if (effectiveSimpLevel >= 2 || lowerQuery.includes("animal") || lowerQuery.includes("\u0643\u0644\u0627\u0628") || lowerQuery.includes("\u0635\u0648\u062A")) {
+      const animalReplyAr = "\u0632\u064A \u0645\u0627 \u0627\u0644\u0643\u0644\u0627\u0628 \u0648\u0627\u0644\u0642\u0637\u0637 \u0628\u062A\u0633\u0645\u0639 \u062A\u0631\u062F\u062F\u0627\u062A \u0635\u0648\u062A\u064A\u0629 \u0639\u0627\u0644\u064A\u0629 \u0648\u062F\u0627\u0646 \u0627\u0644\u0625\u0646\u0633\u0627\u0646 \u0645\u0634 \u0628\u062A\u0633\u0645\u0639\u0647\u0627 \u062E\u0627\u0644\u0635\u060C \u0627\u0644\u0643\u0648\u0646 \u0641\u064A\u0647 \u0623\u0644\u0648\u0627\u0646 \u0636\u0648\u0621 \u0639\u0646\u064A\u0646\u0627 \u0643\u0628\u0634\u0631 \u0645\u0628\u062A\u0634\u0648\u0641\u0647\u0627\u0634. \u0627\u0644\u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u0627\u0644\u062D\u0645\u0631\u0627\u0621 \u0644\u0648\u0646 \u0645\u0646 \u0627\u0644\u0623\u0644\u0648\u0627\u0646 \u0627\u0644\u0633\u0631\u064A\u0629 \u062F\u064A\u060C \u0648\u062A\u0644\u0633\u0643\u0648\u0628 SPHEREx \u0647\u0648 \u0627\u0644\u0646\u0638\u0627\u0631\u0629 \u0627\u0644\u0633\u062D\u0631\u064A\u0629 \u0627\u0644\u0644\u064A \u0628\u062A\u062E\u0644\u064A\u0646\u0627 \u0646\u0634\u0648\u0641\u0647\u0627!";
+      const animalReplyEn = "Just like dogs can hear high-frequency dog whistles that human ears cannot hear at all, the universe is full of light colors our eyes cannot see. Infrared is one of those hidden colors, and SPHEREx is our telescope that makes the invisible visible!";
+      return res.json({
+        reply: isArabic ? animalReplyAr : animalReplyEn,
+        mood: "eureka",
+        engine: "pedagogical_analogy",
+        simplificationLevel: 2
+      });
+    }
     const structuredContext = {
       classification: evidence?.classification ?? "UNKNOWN",
       timeBaselineDays: evidence?.timeBaselineDays ?? 0,
@@ -3850,7 +4242,6 @@ app.post("/api/spex/chat", async (req, res) => {
       },
       coords: targetCoords
     };
-    const isArabic = lang === "ar" || /[\u0600-\u06FF]/.test(userMessage || "");
     const systemPromptArabic = `You are SPEX, the witty, sharp Egyptian feline-themed astrophysics guide for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
 1. Respond in EXACTLY 1 to 2 short sentences in warm, witty Egyptian Arabic (\u0627\u0644\u0644\u0647\u062C\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0630\u0643\u064A\u0629).

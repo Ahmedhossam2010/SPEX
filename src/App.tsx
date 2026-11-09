@@ -6,6 +6,7 @@ import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { InvestigationResult } from './science/types';
+import { checkCoordinatesInQR2 } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 
 export function App() {
@@ -55,6 +56,7 @@ export function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
+  const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -136,6 +138,24 @@ export function App() {
     setIsLoading(true);
     setErrorMsg(null);
     setFailedQuery(null);
+
+    // Client-side survey footprint boundary check to avoid uncaught network/pipeline errors
+    if (customCoords) {
+      const coordCheck = checkCoordinatesInQR2(customCoords.ra, customCoords.dec);
+      if (!coordCheck.inside) {
+        setIsLoading(false);
+        const coverageMsg = `IRSA IBE: Celestial coordinates (RA ${customCoords.ra.toFixed(4)}°, Dec ${customCoords.dec >= 0 ? '+' : ''}${customCoords.dec.toFixed(4)}°) do not overlap with available SPHEREx QR2 survey coverage. Query within the North Ecliptic Pole footprint (RA ~275.5°–276.8°, Dec ~64.5°–65.2°).`;
+        setErrorMsg(coverageMsg);
+        setFailedQuery({ caseId, customCoords });
+        setFallbackQuery({ ra: customCoords.ra, dec: customCoords.dec });
+        // Automatically open verified NEP benchmark so the user can inspect a reference field
+        loadCase('case-nep-var-01');
+        return;
+      } else {
+        setFallbackQuery(null);
+      }
+    }
+
     try {
       const res = await fetch('/api/spherex/process', {
         method: 'POST',
@@ -149,13 +169,26 @@ export function App() {
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
+        if (res.status === 422) {
+          setErrorMsg(errorData.error || 'Coordinates lie outside SPHEREx QR2 survey coverage.');
+          setFailedQuery({ caseId, customCoords });
+          if (customCoords) {
+            setFallbackQuery({ ra: customCoords.ra, dec: customCoords.dec });
+            loadCase('case-nep-var-01');
+          }
+          return;
+        }
         throw new Error(errorData.error || `Pipeline returned HTTP status ${res.status}`);
       }
       const data: InvestigationResult = await res.json();
       setCurrentResult(data);
     } catch (err: any) {
-      console.error('Case processing failed:', err);
       const msg = err.message || 'Failed to process SPHEREx observation';
+      if (msg.includes('coverage') || msg.includes('footprint') || msg.includes('422')) {
+        console.warn('[Coverage Notice]', msg);
+      } else {
+        console.error('Case processing failed:', err);
+      }
       setErrorMsg(msg);
       setFailedQuery({ caseId, customCoords });
     } finally {
@@ -164,6 +197,7 @@ export function App() {
   };
 
   const handleStartExplore = (caseId?: string) => {
+    setFallbackQuery(null);
     if (caseId) {
       loadCase(caseId);
     }
@@ -171,8 +205,13 @@ export function App() {
   };
 
   const handleSelectCase = (caseId: string, options?: { sizePix?: number; epochPair?: string }) => {
+    setFallbackQuery(null);
     loadCase(caseId, undefined, options);
     setActiveTab('explore');
+  };
+
+  const handleClearFallback = () => {
+    setFallbackQuery(null);
   };
 
   const handleSearchTarget = (ra: number, dec: number, sizePix?: number) => {
@@ -260,6 +299,8 @@ export function App() {
             onSelectCase={handleSelectCase}
             cases={cases}
             language={language}
+            fallbackQuery={fallbackQuery}
+            onClearFallback={handleClearFallback}
           />
         )}
 

@@ -786,6 +786,82 @@ test('ChallengeTargets: checkCoordinatesInQR2 accurately classifies NEP footprin
   const rDraCheck = checkCoordinatesInQR2(rDra.ra, rDra.dec);
   assert.equal(rDraCheck.inside, false);
   assert.ok(rDraCheck.distanceDeg < 15.0);
+
+  // RW Aurigae (RA 77.4583, Dec +30.4014) is outside the QR2 footprint (~83.6 deg offset)
+  const rwAur = OFFICIAL_CHALLENGE_TARGETS.find(t => t.id === 'target-rw-aurigae')!;
+  const rwAurCheck = checkCoordinatesInQR2(rwAur.ra, rwAur.dec);
+  assert.equal(rwAurCheck.inside, false);
+  assert.ok(rwAurCheck.distanceDeg > 80.0 && rwAurCheck.distanceDeg < 86.0);
+});
+
+test('Coverage Audit: WCS detector polygon footprint vs rectangular approximation', async () => {
+  const { checkCoordinatesInQR2, QR2_BENCHMARK_OBSERVATIONS } = await import('./challengeTargets');
+  const { WCS } = await import('./wcs');
+
+  // 1. Coordinates covered by all three authentic benchmark observations
+  const tripleCovered = checkCoordinatesInQR2(276.2614, 64.8258);
+  assert.equal(tripleCovered.inside, true);
+  assert.equal(tripleCovered.coverageType, 'FULL_TRIPLE_OVERLAP');
+  assert.equal(tripleCovered.coverageCount, 3);
+  assert.equal(tripleCovered.coveredObservations.length, 3);
+  assert.deepEqual(tripleCovered.coveredObservations, ['2025W18_1B_0001_1', '2025W18_1B_0001_2', '2025W18_1B_0001_3']);
+
+  // 2. Coordinates covered by only ONE of the three observations (due to dither offsets near boundary)
+  const singleCovered = checkCoordinatesInQR2(276.08445864, 64.82238805);
+  assert.equal(singleCovered.inside, true);
+  assert.equal(singleCovered.coverageType, 'SINGLE_EPOCH_ONLY');
+  assert.equal(singleCovered.coverageCount, 1);
+  assert.equal(singleCovered.coveredObservations[0], '2025W18_1B_0001_1');
+
+  // 3. Coordinate inside the bounding box [275.5, 276.8] x [64.5, 65.2],
+  // but OUTSIDE the actual diamond-shaped rotated WCS detector footprint
+  const rotatedDiamondCorner = checkCoordinatesInQR2(276.085, 64.747);
+  assert.equal(rotatedDiamondCorner.isInsideBoundingBox, true, 'Should be inside naive bounding rectangle');
+  assert.equal(rotatedDiamondCorner.inside, false, 'Must be outside authentic WCS detector polygon');
+  assert.equal(rotatedDiamondCorner.coverageType, 'OUTSIDE_FOOTPRINT');
+  assert.equal(rotatedDiamondCorner.coverageCount, 0);
+
+  // 4. Boundary coordinates:
+  // Sky position corresponding exactly to pixel (1.0, 31.5) on Exp 1
+  const boundarySky = WCS.pixToSky(1.0, 31.5, QR2_BENCHMARK_OBSERVATIONS[0].wcs);
+  const boundaryCheck = checkCoordinatesInQR2(boundarySky.ra, boundarySky.dec);
+  assert.equal(boundaryCheck.inside, true, 'Astrometrically inside pixel (1, 31.5)');
+
+  // Sky position corresponding to pixel (-5.0, 31.5) - clearly outside detector array
+  const outsideSky = WCS.pixToSky(-5.0, 31.5, QR2_BENCHMARK_OBSERVATIONS[0].wcs);
+  const outsideCheck = checkCoordinatesInQR2(outsideSky.ra, outsideSky.dec);
+  assert.equal(outsideCheck.inside, false, 'Outside pixel (-5, 31.5)');
+
+  // 5. RA wrap-around near 0° / 360° and modulo handling
+  const wrapPlus360 = checkCoordinatesInQR2(276.2614 + 360, 64.8258);
+  const wrapMinus360 = checkCoordinatesInQR2(276.2614 - 360, 64.8258);
+  const wrapPlus720 = checkCoordinatesInQR2(276.2614 + 720, 64.8258);
+  assert.equal(wrapPlus360.inside, true);
+  assert.equal(wrapPlus360.coverageType, 'FULL_TRIPLE_OVERLAP');
+  assert.equal(wrapMinus360.inside, true);
+  assert.equal(wrapMinus360.coverageType, 'FULL_TRIPLE_OVERLAP');
+  assert.equal(wrapPlus720.inside, true);
+
+  // 6. Invalid and non-finite coordinates
+  const nanCheck = checkCoordinatesInQR2(NaN, 64.85);
+  assert.equal(nanCheck.inside, false);
+  assert.equal(nanCheck.coverageType, 'INVALID_COORDINATES');
+
+  const infCheck = checkCoordinatesInQR2(276.15, Infinity);
+  assert.equal(infCheck.inside, false);
+  assert.equal(infCheck.coverageType, 'INVALID_COORDINATES');
+
+  const negInfCheck = checkCoordinatesInQR2(-Infinity, 64.85);
+  assert.equal(negInfCheck.inside, false);
+  assert.equal(negInfCheck.coverageType, 'INVALID_COORDINATES');
+
+  const decOver90 = checkCoordinatesInQR2(276.15, 95.0);
+  assert.equal(decOver90.inside, false);
+  assert.equal(decOver90.coverageType, 'INVALID_COORDINATES');
+
+  const decUnderMinus90 = checkCoordinatesInQR2(276.15, -95.0);
+  assert.equal(decUnderMinus90.inside, false);
+  assert.equal(decUnderMinus90.coverageType, 'INVALID_COORDINATES');
 });
 
 test('SpectralBands: 102 channels across 6 detector arrays span 0.75um to 5.0um', async () => {

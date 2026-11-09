@@ -352,7 +352,7 @@ export interface InvestigationResult {
   processingVersion?: string;
 }
 
-export type DatasetSourceType = 'DEVELOPMENT_BENCHMARK' | 'OFFICIAL_CHALLENGE_RELEASE';
+export type DatasetSourceType = 'DEVELOPMENT_BENCHMARK' | 'OFFICIAL_CHALLENGE_RELEASE' | 'SYNTHETIC_INGESTION_FIXTURE';
 
 export interface ReleaseValidationReport {
   timestamp: string;

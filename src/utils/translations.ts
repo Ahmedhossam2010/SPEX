@@ -154,6 +154,10 @@ export interface TranslationDictionary {
   noticeGeneral: string;
   btnInspectNepBenchmark: string;
   btnDismissNotice: string;
+  referenceBenchmarkNotice: string;
+  referenceBenchmarkBadge: string;
+  referenceCandidatesNotice: string;
+  btnReturnToSearch: string;
 
   // Homepage
   homeMissionBadge: string;
@@ -384,6 +388,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     noticeGeneral: 'Notice:',
     btnInspectNepBenchmark: 'Inspect Verified NEP Benchmark',
     btnDismissNotice: 'Dismiss',
+    referenceBenchmarkNotice:
+      "Your requested coordinates are outside the currently available QR2 benchmark coverage. You're viewing a separate reference field.",
+    referenceBenchmarkBadge: 'Separate Reference Field',
+    referenceCandidatesNotice:
+      'Candidate detections shown below belong to the North Ecliptic Pole reference field, NOT your requested coordinates.',
+    btnReturnToSearch: 'Return to Search',
 
     // Homepage
     homeMissionBadge: 'NASA SPHEREx Mission · All-Sky Infrared Survey QR2',
@@ -618,6 +628,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     noticeGeneral: 'تنبيه:',
     btnInspectNepBenchmark: 'معاينة رصدة NEP المعتمدة',
     btnDismissNotice: 'إغلاق التنبيه',
+    referenceBenchmarkNotice:
+      'الإحداثيات المطلوبة تقع خارج نطاق تغطية معيار QR2 المتاح حالياً. أنت تعرض حقلاً مرجعياً منفصلاً.',
+    referenceBenchmarkBadge: 'حقل مرجعي منفصل',
+    referenceCandidatesNotice:
+      'المرشحات المعروضة أدناه خاصة بحقل القطب الشمالي لمسار الشمس المرجعي وليست رصداً للإحداثيات المطلوبة.',
+    btnReturnToSearch: 'العودة للبحث',
 
     // Homepage
     homeMissionBadge: 'مهمة NASA SPHEREx · مسح السماء الشامل بالأشعة تحت الحمراء QR2',

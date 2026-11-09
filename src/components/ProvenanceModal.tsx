@@ -118,6 +118,7 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
                   <span className="text-slate-200">{compatibility.interExposureGapSec.toFixed(3)}s</span>
                 </div>
               )}
+              <div>Cadence Regime: <span className="text-amber-300 font-semibold">Intra-Visit (consecutive exposures, not 6 months)</span></div>
             </div>
           </div>
 
