@@ -364,6 +364,11 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-700 dark:text-slate-200 mt-1">{gaiaMatch.identifier}</div>
                 <div className="text-[10px] text-slate-500 mt-0.5">{gaiaMatch.photometry || 'Optical G-band phot'}</div>
+                {gaiaMatch.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' && (
+                  <div className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                    {translations[language].catalogStaticBadge}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-3 rounded-xl bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] text-slate-400">
@@ -379,6 +384,11 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
                 </div>
                 <div className="text-[11px] text-slate-700 dark:text-slate-200 mt-1">{allwiseMatch.identifier}</div>
                 <div className="text-[10px] text-slate-500 mt-0.5">{allwiseMatch.photometry || 'W1/W2 infrared phot'}</div>
+                {allwiseMatch.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' && (
+                  <div className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                    {translations[language].catalogStaticBadge}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="p-3 rounded-xl bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.06] text-slate-400">
