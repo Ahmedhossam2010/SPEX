@@ -133,7 +133,14 @@ export const CandidateComparisonModal: React.FC<CandidateComparisonModalProps> =
                     </td>
                     <td className="py-3 px-3 text-[11px]">
                       {gaiaMatch ? (
-                        <span className="text-amber-600 dark:text-amber-300">Gaia DR3 ({gaiaMatch.separationArcsec.toFixed(1)}″)</span>
+                        <span className="text-amber-600 dark:text-amber-300">
+                          Gaia DR3 ({gaiaMatch.separationArcsec.toFixed(1)}″)
+                          {gaiaMatch.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' && (
+                            <span className="ml-1 rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                              {translations[language].catalogStaticBadge}
+                            </span>
+                          )}
+                        </span>
                       ) : (
                         <span className="text-slate-400">None in cone</span>
                       )}
