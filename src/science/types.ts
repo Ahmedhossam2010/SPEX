@@ -251,8 +251,10 @@ export interface ChallengeTarget {
   pmDecMasYr?: number;
   /** Julian epoch of the listed ra/dec coordinates (J2000.0 = 2000.0). */
   coordinateEpochYear?: number;
-  /** How the coordinates were verified against an authoritative catalog. */
-  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
+  /** How the coordinates were verified against an authoritative catalog.
+   * 'SECONDARY_GAIA_DR3' = value is Gaia DR3 astrometry as relayed by a secondary
+   * source (e.g. a Wikipedia infobox), not queried from the Gaia archive directly. */
+  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'SECONDARY_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
   /** Source the verified coordinates came from (set when coordinateVerification is set). */
   coordinateSource?: string;
   /** Whether the epoch of the stored ra/dec is known. When false, proper-motion propagation is provisional. */
@@ -261,6 +263,11 @@ export interface ChallengeTarget {
   coordinateEpochNote?: string;
   /** Role of this entry in the challenge target list. */
   role?: 'challenge_target' | 'reference_star';
+  /** Exact origin of the astrometric values on this entry (URL and what was taken from it). */
+  source?: string;
+  /** True while a value came from a secondary source and has not been confirmed by
+   * querying SIMBAD or the Gaia archive directly. UIs must treat such values as provisional. */
+  needsPrimaryCheck?: boolean;
 }
 
 export interface SpectralBandInfo {
