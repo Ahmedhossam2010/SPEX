@@ -5,6 +5,7 @@ import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
+import { SkySphereEntry } from './components/TimeLens/SkySphereEntry';
 import { InvestigationResult } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
@@ -314,7 +315,15 @@ export function App() {
           />
         )}
 
-        {activeTab === 'explore' && (
+        {activeTab === 'explore' && !currentResult && !isLoading && (
+          <SkySphereEntry
+            language={language}
+            onLaunchTarget={(_targetId, ra, dec) => handleSearchTarget(ra, dec)}
+            onLaunchCoords={(ra, dec) => handleSearchTarget(ra, dec)}
+          />
+        )}
+
+        {activeTab === 'explore' && (currentResult || isLoading) && (
           <ExploreView
             currentResult={currentResult}
             isLoading={isLoading}
