@@ -772,11 +772,13 @@ test('ChallengeTargets: checkCoordinatesInQR2 accurately classifies NEP footprin
   assert.equal(barnard.inside, false);
   assert.ok(barnard.distanceDeg > 59.0 && barnard.distanceDeg < 61.0);
 
-  // Verify all 5 official challenge targets exist with accurate astrometric coordinates
-  assert.equal(OFFICIAL_CHALLENGE_TARGETS.length, 5);
+  // OFFICIAL_CHALLENGE_TARGETS holds the 5 official challenge targets plus the
+  // verified reference star target-epsilon-indi-a (role: 'reference_star').
+  assert.equal(OFFICIAL_CHALLENGE_TARGETS.length, 6);
   const ids = OFFICIAL_CHALLENGE_TARGETS.map(t => t.id);
   assert.ok(ids.includes('target-barnards-star'));
-  assert.ok(ids.includes('target-epsilon-indi-b'));
+  assert.ok(ids.includes('target-epsilon-indi-bab'));
+  assert.ok(ids.includes('target-epsilon-indi-a'));
   assert.ok(ids.includes('target-wise-0855'));
   assert.ok(ids.includes('target-rw-aurigae'));
   assert.ok(ids.includes('target-r-draconis'));
@@ -787,7 +789,7 @@ test('ChallengeTargets: checkCoordinatesInQR2 accurately classifies NEP footprin
   assert.equal(rDraCheck.inside, false);
   assert.ok(rDraCheck.distanceDeg < 15.0);
 
-  // RW Aurigae (RA 77.4583, Dec +30.4014) is outside the QR2 footprint (~83.6 deg offset)
+  // RW Aurigae (RA 76.9561, Dec +30.4013, Gaia DR3) is outside the QR2 footprint (~83.6 deg offset)
   const rwAur = OFFICIAL_CHALLENGE_TARGETS.find(t => t.id === 'target-rw-aurigae')!;
   const rwAurCheck = checkCoordinatesInQR2(rwAur.ra, rwAur.dec);
   assert.equal(rwAurCheck.inside, false);
@@ -2638,15 +2640,19 @@ test('Task 1: Sexagesimal conversion, exact WISE 0855 coordinates, and 5 targets
   assert.equal(targetBarnard.qr2Coverage, 'covered');
   assert.equal(targetBarnard.observationsCount, 39);
 
-  const targetEpsIndi = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-b')!;
-  assert.equal(targetEpsIndi.ra, 330.84042);
-  assert.equal(targetEpsIndi.dec, -56.78601);
-  assert.equal(targetEpsIndi.qr2Coverage, 'covered');
-  assert.equal(targetEpsIndi.observationsCount, 27);
+  // Eps Ind Ba/Bb carries a deliberate placeholder position (= epsilon Indi A) until
+  // SIMBAD / Gaia-archive output for 'eps Ind B' is pasted in; it must stay UNVERIFIED.
+  const targetEpsIndiBab = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-bab')!;
+  assert.equal(targetEpsIndiBab.ra, 330.84042);
+  assert.equal(targetEpsIndiBab.dec, -56.78601);
+  assert.equal(targetEpsIndiBab.coordinateVerification, 'UNVERIFIED');
+  assert.equal(targetEpsIndiBab.qr2Coverage, 'covered');
+  assert.equal(targetEpsIndiBab.observationsCount, 27);
+  // NOTE: the 27-row count was probed at the placeholder (= epsilon Indi A) position.
 
   const targetRwAur = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-rw-aurigae')!;
-  assert.equal(targetRwAur.ra, 77.45833);
-  assert.equal(targetRwAur.dec, 30.40142);
+  assert.equal(targetRwAur.ra, 76.95606750);
+  assert.equal(targetRwAur.dec, 30.40132611);
   assert.equal(targetRwAur.qr2Coverage, 'covered');
   assert.equal(targetRwAur.observationsCount, 19);
 
@@ -2655,6 +2661,15 @@ test('Task 1: Sexagesimal conversion, exact WISE 0855 coordinates, and 5 targets
   assert.equal(targetRDra.dec, 66.70281);
   assert.equal(targetRDra.qr2Coverage, 'covered');
   assert.equal(targetRDra.observationsCount, 55);
+});
+
+test('Phase 1: Eps Ind Ba/Bb carries verified Gaia DR3 proper motion while its sky position stays UNVERIFIED', async () => {
+  const { OFFICIAL_CHALLENGE_TARGETS } = await import('./challengeTargets');
+  const bab = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-bab')!;
+  assert.equal(bab.coordinateVerification, 'UNVERIFIED');
+  assert.ok(bab.pmRaMasYr != null && bab.pmDecMasYr != null, 'proper motion must be present');
+  assert.ok(Math.abs(bab.pmRaMasYr! - 3981.977) < 0.001, 'Gaia DR3 PM RA (mas/yr)');
+  assert.ok(Math.abs(bab.pmDecMasYr! - -2466.832) < 0.001, 'Gaia DR3 PM Dec (mas/yr)');
 });
 
 test('Task 2: TAP query produces two distinct fits_urls for two different rows (no hardcoded identical URL bug)', async () => {

@@ -17,11 +17,13 @@ This diagnostic investigation directly queried NASA/IPAC IRSA for the 5 challeng
 | **Barnard's Star (GJ 699)** | \`269.45208\` | \`+4.69339\` | \`17h57m48.50s +04d41m36.2s\` | **39** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
 | **Epsilon Indi B & C** | \`330.84042\` | \`-56.78601\` | \`22h03m21.70s -56d47m09.6s\` | **27** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
 | **WISE 0855-0714** | \`133.79513\` | \`-7.24515\` | \`08h55m10.831s -07d14m42.53s\` | **4** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **RW Aurigae** | \`77.45833\` | \`+30.40142\` | \`05h09m50.00s +30d24m05.0s\` | **19** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
+| **RW Aurigae** | \`76.95607\` | \`+30.40133\` | \`05h07m49.4562s +30d24m04.774s\` | 19* (stale center; re-probe required) | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
 | **R Draconis** | \`248.33004\` | \`+66.70281\` | \`16h33m19.21s +66d42m10.1s\` | **55** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
 | **NEP Deep Field (Benchmark)** | \`276.26140\` | \`+64.82580\` | \`18h25m02.74s +64d49m32.88s\` | **200+** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
 
 ---
+
+> **Correction (2026-11-10):** The RW Aurigae row and Section 4 previously quoted RA \`77.45833°\` / \`05h09m50.00s\` — a stale value ~26 arcmin off in RA. The shipped code (\`src/science/challengeTargets.ts\`) carries the correct Gaia DR3 position \`76.95606750°, +30.40132611°\` (\`05h07m49.4562s +30d24m04.774s\`); \`scripts/probe_irsa.ts\` has been aligned to it. Re-run the probe at the corrected center to refresh the RW Aurigae row count marked with * above.
 
 ## Groundbreaking Architectural Findings
 
@@ -83,9 +85,9 @@ This diagnostic investigation directly queried NASA/IPAC IRSA for the 5 challeng
 - **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
 
 ### 4. RW Aurigae
-- **Coordinates**: RA 77.45833°, Dec +30.40142° (\`05h09m50.00s +30d24m05.0s\`)
+- **Coordinates**: RA 76.95607°, Dec +30.40133° (\`05h07m49.4562s +30d24m04.774s\`, Gaia DR3)
 - **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 19
+- **Total Rows Found (r=0.5°)**: 19 — **measured at the stale pre-correction center (77.45833°, +30.40142°, ~26 arcmin away in RA); re-verify with \`npx tsx scripts/probe_irsa.ts\` at the corrected position before quoting it as RW Aurigae coverage.**
 - **Sample Obs ID**: \`2025W38_2C_0023_1\`
 - **Detector**: D3 (Wavelength ~2.00 µm)
 - **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W38_2C_0023_1/D3\`

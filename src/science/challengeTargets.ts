@@ -441,6 +441,11 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     name: 'Epsilon Indi Ba/Bb (challenge target)',
     ra: 330.84042,
     dec: -56.78601,
+    // Proper motion IS verified (Gaia DR3, reference epoch 2016.0, via the Wikipedia
+    // Epsilon Indi infobox citing Gaia DR3): RA +3981.977 mas/yr, Dec -2466.832 mas/yr.
+    // The sky POSITION below is still the epsilon Indi A placeholder.
+    pmRaMasYr: 3981.977,
+    pmDecMasYr: -2466.832,
     sexagesimal: '22h03m21.70s -56d47m09.6s (PLACEHOLDER = epsilon Indi A position)',
     constellation: 'Indus',
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
@@ -455,9 +460,11 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
       'Coverage counts above were verified for the PLACEHOLDER position (= epsilon Indi A). Coverage at the true Ba/Bb position must be re-verified with scripts/probe_irsa.ts once SIMBAD coordinates are pasted.',
     role: 'challenge_target',
     coordinateEpochKnown: false,
-    coordinateEpochNote: 'Coordinates pending SIMBAD output; epoch unknown until then.',
+    coordinateEpochNote:
+      'Sky position pending SIMBAD (eps Ind B) / Gaia DR3 archive output; position epoch unknown until then. Proper motion above is verified Gaia DR3 (reference epoch 2016.0).',
     coordinateVerification: 'UNVERIFIED',
-    coordinateSource: 'PLACEHOLDER = epsilon Indi A position. Paste SIMBAD TAP output for Eps Ind Ba here.',
+    coordinateSource:
+      'PLACEHOLDER sky position = epsilon Indi A position. Paste SIMBAD (eps Ind B) or Gaia DR3 archive output for Eps Ind Ba here. Proper motion is verified Gaia DR3 (reference epoch 2016.0).',
   },
   {
     // Reference star in the same field (verified). Not the challenge target.
