@@ -122,6 +122,8 @@ export interface TimeSeriesResult {
   catalogOverlays: CatalogOverlayItem[];
   releaseId: string;
   message?: string;
+  /** 'sky' (default): common fixed grid so the mover drifts; 'target': each cutout re-centered on the mover. */
+  frameMode?: 'sky' | 'target';
   /** Proper-motion propagation applied for per-exposure cutout centering. */
   properMotion?: {
     targetId?: string;
