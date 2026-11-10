@@ -19,6 +19,13 @@ export interface TranslationDictionary {
   catalogStaticBadge: string;
   catalogStaticHint: string;
 
+  // Time Lens sky-sphere entry (Phase 4)
+  skyEntryTitle: string;
+  skyEntrySubtitle: string;
+  skyEntryCoordPlaceholder: string;
+  skyEntryGo: string;
+  skyEntryUnverifiedTag: string;
+
   // 10-Second Explainer Banner
   explainerTitle: string;
   explainerBadge: string;
@@ -247,6 +254,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     catalogStaticBadge: 'Saved local catalog, not live',
     catalogStaticHint:
       'This match comes from a saved local benchmark list, not a live Gaia/AllWISE query. Treat the identity as a hint, not a confirmation.',
+    skyEntryTitle: 'The Time Lens',
+    skyEntrySubtitle:
+      'Pick a target on the spinning sky, or enter coordinates - real SPHEREx images of that patch over time.',
+    skyEntryCoordPlaceholder: 'e.g. 17h57m48.5s +04d41m36.1s or 269.452, 4.693',
+    skyEntryGo: 'Open in SPHEREx Lab',
+    skyEntryUnverifiedTag: 'Unverified position - pending SIMBAD check',
 
     // 10-Second Explainer Banner
     explainerTitle: 'Comparing SPHEREx Observations Over Time',
@@ -490,6 +503,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     catalogStaticBadge: 'فهرس محلي محفوظ، غير مباشر',
     catalogStaticHint:
       'هذه المطابقة من قائمة محلية محفوظة للمعايرة، وليست استعلامًا مباشرًا من Gaia أو AllWISE. اعتبرها تلميحًا للهوية لا تأكيدًا.',
+    skyEntryTitle: 'عدسة الزمن',
+    skyEntrySubtitle:
+      'اختر هدفًا من السماء الدوارة أو أدخل الإحداثيات - صور SPHEREx الحقيقية لتلك الرقعة عبر الزمن.',
+    skyEntryCoordPlaceholder: 'مثال: 17h57m48.5s +04d41m36.1s أو 269.452, 4.693',
+    skyEntryGo: 'افتح في مختبر SPHEREx',
+    skyEntryUnverifiedTag: 'إحداثيات غير متحقق منها - بانتظار التحقق من SIMBAD',
 
     // 10-Second Explainer Banner
     explainerTitle: 'مقارنة رصدات SPHEREx عبر الزمن',
