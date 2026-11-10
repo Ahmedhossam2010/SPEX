@@ -5,8 +5,9 @@ import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
-import { SkySphereEntry } from './components/TimeLens/SkySphereEntry';
-import { InvestigationResult } from './science/types';
+import { Screen1Sky } from './components/Screen1Sky';
+import { ScientistExplore } from './components/ScientistExplore';
+import { InvestigationResult, ChallengeTarget } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 
@@ -58,6 +59,27 @@ export function App() {
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
   const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
+
+  // Scientist Mode toggle (defaults to false for clean user flow)
+  const [scientistMode, setScientistMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('spex_scientist_mode') === 'true';
+    }
+    return false;
+  });
+
+  const handleToggleScientistMode = () => {
+    setScientistMode((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('spex_scientist_mode', String(next));
+      }
+      return next;
+    });
+  };
+
+  // Explore flow: Screen 1 ('sky') vs Screen 2 ('hunt')
+  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>('sky');
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -131,10 +153,12 @@ export function App() {
         setCases(data);
         if (parsedCoords) {
           loadCase(data[0]?.id || 'case-nep-var-01', parsedCoords, { sizePix: sizePixParam, epochPair });
+          setExploreScreen('hunt');
         } else if (caseParam && data.some((c: any) => c.id === caseParam)) {
           loadCase(caseParam, undefined, { sizePix: sizePixParam, epochPair });
-        } else if (data && data.length > 0) {
-          loadCase(data[0].id, undefined, { sizePix: sizePixParam, epochPair });
+          setExploreScreen('hunt');
+        } else {
+          setExploreScreen('sky');
         }
       })
       .catch((err) => {
@@ -242,6 +266,22 @@ export function App() {
     loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec }, { sizePix });
   };
 
+  const handleSelectOfficialTarget = (target: ChallengeTarget) => {
+    if (target.id === 'target-barnards-star') {
+      loadCase('case-barnards-star');
+    } else if (target.id === 'target-wise-0855') {
+      loadCase('case-wise-0855');
+    } else {
+      handleSearchTarget(target.ra, target.dec);
+    }
+    setExploreScreen('hunt');
+  };
+
+  const handleSelectCoords = (ra: number, dec: number) => {
+    handleSearchTarget(ra, dec);
+    setExploreScreen('hunt');
+  };
+
   const handleToggleLanguage = () => {
     setLanguage((prev) => {
       const next = prev === 'en' ? 'ar' : 'en';
@@ -255,7 +295,7 @@ export function App() {
   return (
     <div
       className={`min-h-screen flex flex-col ${
-        theme === 'dark' ? 'bg-[#07090e] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
+        theme === 'dark' ? 'bg-[#02040A] text-slate-100' : 'bg-[#f8fafc] text-slate-900'
       } selection:bg-amber-500/30 selection:text-amber-200 ${
         language === 'ar' ? 'font-cairo' : 'font-sans'
       }`}
@@ -269,6 +309,8 @@ export function App() {
         onToggleLanguage={handleToggleLanguage}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        scientistMode={scientistMode}
+        onToggleScientistMode={handleToggleScientistMode}
       />
 
       <main className="flex-1 w-full relative">
@@ -306,7 +348,15 @@ export function App() {
 
         {activeTab === 'home' && (
           <HomeView
-            onStartExplore={handleStartExplore}
+            onStartExplore={(caseId) => {
+              if (caseId) {
+                handleStartExplore(caseId);
+                setExploreScreen('hunt');
+              } else {
+                setExploreScreen('sky');
+                setActiveTab('explore');
+              }
+            }}
             onOpenAbout={() => setActiveTab('about')}
             onOpenCases={() => setActiveTab('cases')}
             onPlayGame={() => setActiveTab('game')}
@@ -315,15 +365,31 @@ export function App() {
           />
         )}
 
-        {activeTab === 'explore' && !currentResult && !isLoading && (
-          <SkySphereEntry
+        {/* Explore: Scientist Mode full toolset */}
+        {activeTab === 'explore' && scientistMode && (
+          <ScientistExplore
+            currentResult={currentResult}
+            isLoading={isLoading}
+            onSearchTarget={handleSearchTarget}
+            onSelectCase={handleSelectCase}
+            cases={cases}
             language={language}
-            onLaunchTarget={(_targetId, ra, dec) => handleSearchTarget(ra, dec)}
-            onLaunchCoords={(ra, dec) => handleSearchTarget(ra, dec)}
+            fallbackQuery={fallbackQuery}
+            onClearFallback={handleClearFallback}
           />
         )}
 
-        {activeTab === 'explore' && (currentResult || isLoading) && (
+        {/* Explore: Screen 1 - Sky (entry with full-screen rotating sphere) */}
+        {activeTab === 'explore' && !scientistMode && exploreScreen === 'sky' && (
+          <Screen1Sky
+            language={language}
+            onSelectTarget={handleSelectOfficialTarget}
+            onSelectCoords={handleSelectCoords}
+          />
+        )}
+
+        {/* Explore: Screen 2 - Hunt */}
+        {activeTab === 'explore' && !scientistMode && exploreScreen === 'hunt' && (
           <ExploreView
             currentResult={currentResult}
             isLoading={isLoading}
@@ -333,6 +399,8 @@ export function App() {
             language={language}
             fallbackQuery={fallbackQuery}
             onClearFallback={handleClearFallback}
+            onBackToSky={() => setExploreScreen('sky')}
+            onToggleScientistMode={handleToggleScientistMode}
           />
         )}
 

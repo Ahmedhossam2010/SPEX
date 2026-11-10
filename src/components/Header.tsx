@@ -12,6 +12,7 @@ import {
   X,
   Home,
   CheckCircle2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { SpherexLogo } from './SpherexLogo';
 import { Language, translations } from '../utils/translations';
@@ -25,6 +26,8 @@ interface HeaderProps {
   onToggleLanguage: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  scientistMode?: boolean;
+  onToggleScientistMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,6 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleLanguage,
   theme,
   onToggleTheme,
+  scientistMode = false,
+  onToggleScientistMode,
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
@@ -136,6 +141,24 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Desktop Quick Controls */}
         <div className="hidden md:flex items-center gap-2">
+          {/* Scientist Mode Toggle */}
+          {onToggleScientistMode && (
+            <button
+              type="button"
+              onClick={onToggleScientistMode}
+              title={scientistMode ? t.explorerMode : t.scientistMode}
+              aria-label="Toggle Scientist Mode"
+              className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl border transition-all text-xs font-mono cursor-pointer shadow-xs active:scale-95 ${
+                scientistMode
+                  ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 font-bold shadow-[0_0_12px_rgba(0,211,243,0.25)]'
+                  : 'border-slate-200 dark:border-white/[0.1] bg-slate-100 dark:bg-white/[0.04] text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <SlidersHorizontal className={`h-3.5 w-3.5 ${scientistMode ? 'text-cyan-400' : 'text-slate-400'}`} />
+              <span>{scientistMode ? t.scientistMode : t.explorerMode}</span>
+            </button>
+          )}
+
           {/* Theme Toggle */}
           <button
             type="button"
@@ -253,8 +276,33 @@ export const Header: React.FC<HeaderProps> = ({
               })}
             </div>
 
-            {/* Quick Actions Footer: Theme and Language */}
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200 dark:border-white/10">
+            {/* Quick Actions Footer: Scientist Mode, Theme and Language */}
+            {onToggleScientistMode && (
+              <div className="pt-2 border-t border-slate-200 dark:border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleScientistMode();
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`w-full flex items-center justify-between p-3 min-h-[46px] rounded-xl border transition-all text-xs font-mono font-semibold cursor-pointer active:scale-95 ${
+                    scientistMode
+                      ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 shadow-[0_0_12px_rgba(0,211,243,0.2)]'
+                      : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-400'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className={`h-4 w-4 ${scientistMode ? 'text-cyan-400' : 'text-slate-400'}`} />
+                    <span>{scientistMode ? t.scientistMode : t.explorerMode}</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-sans">
+                    {scientistMode ? 'Active' : 'Guided'}
+                  </span>
+                </button>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-2">
               <button
                 type="button"
                 onClick={onToggleTheme}

@@ -25,6 +25,11 @@ export interface TranslationDictionary {
   skyEntryCoordPlaceholder: string;
   skyEntryGo: string;
   skyEntryUnverifiedTag: string;
+  screen1BigTitle: string;
+  screen1EnterCoords: string;
+  screen1EnterCoordsCollapse: string;
+  scientistMode: string;
+  explorerMode: string;
 
   // 10-Second Explainer Banner
   explainerTitle: string;
@@ -271,6 +276,32 @@ export interface TranslationDictionary {
   modeBeginner: string;
   modeExplorer: string;
   modeScientist: string;
+  backToSky: string;
+  moreTools: string;
+  hideTools: string;
+  coachPlayTitle: string;
+  coachTapTitle: string;
+  coachSpexTitle: string;
+  coachSkip: string;
+  coachNext: string;
+  coachGotIt: string;
+  curtainMode: string;
+  playerMode: string;
+  resetCurtain: string;
+  doubtGlitchFound: string;
+  doubtGlitchExplain: string;
+  doubtCleanPixel: string;
+  doubtCleanExplain: string;
+  neighborsCatalogMatch: string;
+  neighborsNoMatch: string;
+  hiddenColorsExplain: string;
+  timeCadenceHonesty: string;
+  spexVerdictMoved: string;
+  spexVerdictFlared: string;
+  spexVerdictGlitch: string;
+  spexVerdictSteady: string;
+  spexExploreScience: string;
+  confidenceMeterLabel: string;
 
   // 2D Game Station
   gameStationTitle: string;
@@ -315,6 +346,11 @@ export const translations: Record<Language, TranslationDictionary> = {
     skyEntryCoordPlaceholder: 'e.g. 17h57m48.5s +04d41m36.1s or 269.452, 4.693',
     skyEntryGo: 'Open in SPHEREx Lab',
     skyEntryUnverifiedTag: 'Unverified position - pending SIMBAD check',
+    screen1BigTitle: 'Tap a star to start the hunt.',
+    screen1EnterCoords: 'Enter coordinates',
+    screen1EnterCoordsCollapse: 'Hide coordinates',
+    scientistMode: 'Scientist Mode',
+    explorerMode: 'Explorer Mode',
 
     // 10-Second Explainer Banner
     explainerTitle: 'Comparing SPHEREx Observations Over Time',
@@ -577,6 +613,32 @@ export const translations: Record<Language, TranslationDictionary> = {
     modeBeginner: 'Beginner',
     modeExplorer: 'Explorer',
     modeScientist: 'Scientist',
+    backToSky: 'Back to Sky',
+    moreTools: 'More tools',
+    hideTools: 'Hide tools',
+    coachPlayTitle: 'Press play and watch the sky.',
+    coachTapTitle: 'Tap anything that seems to jump or move.',
+    coachSpexTitle: 'Ask SPEX what it found.',
+    coachSkip: 'Skip guide',
+    coachNext: 'Next',
+    coachGotIt: 'Got it!',
+    curtainMode: 'Curtain Compare',
+    playerMode: 'Time Video',
+    resetCurtain: 'Reset Divider',
+    doubtGlitchFound: 'Detector Glitch (Quality Flag Raised)',
+    doubtGlitchExplain: 'This pixel is flagged in the official SPHEREx quality mask. Instrumental glitches and cosmic rays can mimic variable stars.',
+    doubtCleanPixel: 'Clean Pixel Signal (Photometrically Sound)',
+    doubtCleanExplain: 'Zero quality flags raised for this coordinate. The infrared photometric measurement is authentic and verified.',
+    neighborsCatalogMatch: 'Known Catalog Neighbor',
+    neighborsNoMatch: 'No prior catalog match at this position',
+    hiddenColorsExplain: 'Infrared is invisible heat glow. We map long wavelengths to red and short to cyan to make them visible to human eyes.',
+    timeCadenceHonesty: 'These pictures were taken 4 minutes apart during the same slew pass. Motion across minutes is tiny; trails are enlarged for illustration.',
+    spexVerdictMoved: 'This dot moved between the pictures!',
+    spexVerdictFlared: 'This celestial source flared and changed brightness!',
+    spexVerdictGlitch: 'Warning: Instrument glitch detected in quality mask. Do not trust this difference.',
+    spexVerdictSteady: 'A steady reference star with no detected changes.',
+    spexExploreScience: 'Explore the science',
+    confidenceMeterLabel: 'Confidence Level',
 
     // 2D Game Station
     gameStationTitle: 'SPHEREx Observatory Station',
@@ -619,6 +681,11 @@ export const translations: Record<Language, TranslationDictionary> = {
     skyEntryCoordPlaceholder: 'مثال: 17h57m48.5s +04d41m36.1s أو 269.452, 4.693',
     skyEntryGo: 'افتح في مختبر SPHEREx',
     skyEntryUnverifiedTag: 'إحداثيات غير متحقق منها - بانتظار التحقق من SIMBAD',
+    screen1BigTitle: 'المس نجمًا لبدء رحلة البحث.',
+    screen1EnterCoords: 'إدخال الإحداثيات',
+    screen1EnterCoordsCollapse: 'إخفاء الإحداثيات',
+    scientistMode: 'وضع الباحث',
+    explorerMode: 'وضع المستكشف',
 
     // 10-Second Explainer Banner
     explainerTitle: 'مقارنة رصدات SPHEREx عبر الزمن',
@@ -881,6 +948,32 @@ export const translations: Record<Language, TranslationDictionary> = {
     modeBeginner: 'مبتدئ',
     modeExplorer: 'مستكشف',
     modeScientist: 'عالم فلك',
+    backToSky: 'العودة إلى السماء',
+    moreTools: 'أدوات إضافية',
+    hideTools: 'إخفاء الأدوات',
+    coachPlayTitle: 'اضغط تشغيل وراقب السماء.',
+    coachTapTitle: 'المس أي نقطة تقفز أو تتحرك.',
+    coachSpexTitle: 'اسأل سبيكس عما اكتشفه.',
+    coachSkip: 'تخطي الدليل',
+    coachNext: 'التالي',
+    coachGotIt: 'فهمت!',
+    curtainMode: 'ستارة المقارنة',
+    playerMode: 'فيديو الزمن',
+    resetCurtain: 'إعادة ضبط الفاصل',
+    doubtGlitchFound: 'خلل في الكاشف (علم تحذير مفعل)',
+    doubtGlitchExplain: 'هذا البكسل مؤشر في قناع جودة SPHEREx الرسمي. الأشعة الكونية وعيوب الكاشف قد تحاكي نجوماً متغيرة.',
+    doubtCleanPixel: 'إشارة نقية (قياس ضوئي سليم)',
+    doubtCleanExplain: 'لا توجد أي أعلام تحذيرية في قناع الجودة لهذا الموقع. القياس الضوئي تحت الأحمر موثوق ومحقق.',
+    neighborsCatalogMatch: 'جرم فلكي مسجل في الفهارس',
+    neighborsNoMatch: 'غير مسجل في أي فهرس سابق في هذا الموقع',
+    hiddenColorsExplain: 'الأشعة تحت الحمراء هي توهج حراري غير مرئي. نربط الأطوال الموجية الطويلة بالأحمر والقصيرة بالسماوي لتتمكن عين الإنسان من رؤيتها.',
+    timeCadenceHonesty: 'التقطت هذه الصور بفارق 4 دقائق فقط أثناء نفس التمريرة. الحركة خلال دقائق ضئيلة جداً، وتم تكبير المسار للتوضيح التعليمي.',
+    spexVerdictMoved: 'هذه النقطة تحركت وتغير موقعها بين اللقطتين!',
+    spexVerdictFlared: 'هذا الجرم ومض وازداد سطوعه بشكل ملحوظ!',
+    spexVerdictGlitch: 'احذر: هذا بكسل مشوش أو خلل في الكاشف، وليس جرماً حقيقياً.',
+    spexVerdictSteady: 'نجم مرجعي ثابت لم يطرأ عليه أي تغير ملحوظ.',
+    spexExploreScience: 'استكشف التفاصيل العلمية',
+    confidenceMeterLabel: 'مستوى الثقة',
 
     // 2D Game Station
     gameStationTitle: 'محطة مرصد سفيركس الفضائي',
