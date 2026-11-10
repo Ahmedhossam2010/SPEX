@@ -120,18 +120,72 @@ export interface TimeSeriesResult {
   message?: string;
 }
 
+/** How the final FITS URL was obtained. */
+export type FitsResolutionMethod = 'datalink' | 'fallback';
+
+export interface ResolvedFitsUrl {
+  url: string;
+  resolvedBy: FitsResolutionMethod;
+}
+
 // In-memory cache for resolved DataLink FITS URLs
-const datalinkUrlCache = new Map<string, string>();
+const datalinkUrlCache = new Map<string, ResolvedFitsUrl>();
+
+/**
+ * Verifies that a resolved FITS URL is actually downloadable using a small
+ * ranged GET (first FITS block). Throws when the request fails or the server
+ * returns a non-success status, so a broken URL never reaches the pipeline
+ * silently.
+ */
+async function verifyFitsUrl(url: string): Promise<void> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Range: 'bytes=0-2879',
+        'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0',
+      },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      throw new Error(
+        `FITS URL verification failed (HTTP ${res.status} ${res.statusText}) for ${url}`
+      );
+    }
+    try {
+      await res.arrayBuffer();
+    } catch {
+      // Body read issues do not invalidate a 2xx response; the status check above is authoritative.
+    }
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.message.startsWith('FITS URL verification failed')) {
+      throw err;
+    }
+    throw new Error(`FITS URL verification failed for ${url}: ${String(err)}`);
+  }
+}
 
 /**
  * Resolves an IRSA DataLink access_url to its authentic calibrated Level-2B FITS cutout URL.
+ * Returns which method produced the URL ('datalink' from the DataLink document, 'fallback'
+ * from the deterministic IBE builder), verifies the result with a real request, and logs a
+ * warning whenever the fallback path is used.
  */
-export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector?: string): Promise<string> {
+export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector?: string): Promise<ResolvedFitsUrl> {
   if (!accessUrl) {
-    return buildFallbackFitsUrl(obsId, detector);
+    const fallback = buildFallbackFitsUrl(obsId, detector);
+    console.warn(`[resolveFitsUrl] No access_url provided for ${obsId ?? 'unknown obs'}; using fallback URL`);
+    await verifyFitsUrl(fallback);
+    const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
+    return resolved;
   }
-  if (datalinkUrlCache.has(accessUrl)) {
-    return datalinkUrlCache.get(accessUrl)!;
+
+  const cached = datalinkUrlCache.get(accessUrl);
+  if (cached) {
+    return cached;
   }
 
   // Attempt resolving from DataLink XML
@@ -147,17 +201,29 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
       const xml = await res.text();
       const match = xml.match(/<TD>(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^<]+\.fits)<\/TD>/);
       if (match && match[1]) {
-        datalinkUrlCache.set(accessUrl, match[1]);
-        return match[1];
+        await verifyFitsUrl(match[1]);
+        const resolved: ResolvedFitsUrl = { url: match[1], resolvedBy: 'datalink' };
+        datalinkUrlCache.set(accessUrl, resolved);
+        return resolved;
       }
     }
-  } catch {
-    // Graceful fallback
+  } catch (verifyErr) {
+    if (verifyErr instanceof Error && verifyErr.message.startsWith('FITS URL verification failed')) {
+      // The URL the archive itself advertised is broken: surface the error, never
+      // pretend the fallback is the archive's real product.
+      throw verifyErr;
+    }
+    // Network/XML failure: graceful fallback below
   }
 
   const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
-  datalinkUrlCache.set(accessUrl, fallback);
-  return fallback;
+  console.warn(
+    `[resolveFitsUrl] DataLink resolution failed for ${obsId ?? accessUrl}; using fallback URL: ${fallback}`
+  );
+  await verifyFitsUrl(fallback);
+  const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
+  datalinkUrlCache.set(accessUrl, resolved);
+  return resolved;
 }
 
 /**
