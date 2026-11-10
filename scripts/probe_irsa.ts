@@ -263,6 +263,18 @@ This diagnostic investigation directly queries NASA/IPAC IRSA for the 5 challeng
     md += `| **${t.name}** | \`${t.ra}\` | \`${t.dec}\` | \`${t.sexagesimal}\` | **${p.count}** | ${cutoutStatus} | ${sha} | ${cont} | **${coverage}** |\n`;
   }
 
+  md += '\n## Coordinate Verification Against SIMBAD\n\n' +
+    'The target table in `src/science/challengeTargets.ts` carries `coordinateVerification` metadata.\n' +
+    'RW Aurigae RA was corrected by ~26 arcmin (SIMBAD/Gaia DR3: 05h07m49.4562s +30d24m04.774s).\n' +
+    'R Draconis remains UNVERIFIED. Verify/refresh all five targets from SIMBAD TAP locally:\n\n' +
+    '```bash\n' +
+    "curl 'https://simbad.cds.unistra.fr/simbad/sim-tap/sync?QUERY=SELECT%20main_id,ra,dec,pmra,pmdec%20FROM%20basic%20WHERE%20main_id%20IN%20(%27R%20Dra%27,%27Eps%20Ind%20Ba%27,%27RW%20Aur%27,%27GJ%20699%27,%27Eps%20Ind%27,%27WISE%20J085510.83-071442.5%27)&FORMAT=json'\n" +
+    '```\n\n' +
+    'Note: pmra from SIMBAD is mu_alpha*cos(dec) - the same convention as src/science/properMotion.ts.\n' +
+    'The epsilon Indi entry stores the position of epsilon Indi A; the Ba/Bb pair orbits ~402" away -\n' +
+    "check SIMBAD for 'Eps Ind Ba' if the challenge intends the brown-dwarf pair itself.\n" +
+    '\n';
+
   md += `\n## Key Architectural Findings & Design Implications
 
 1. **SPHEREx Quick Release 2 (QR2) Is NOT Limited to the North Ecliptic Pole!**  
