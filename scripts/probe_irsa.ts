@@ -360,6 +360,79 @@ This diagnostic investigation directly queries NASA/IPAC IRSA for the 5 challeng
     md += `\n---\n\n`;
   }
 
+  // ---- FIXED-SKY DRIFT CHECK (Barnard's Star, real frames) ----
+  // In "fixed sky" frame mode every cutout is centered on the same sky
+  // position (the target at a reference epoch) and frames are reprojected
+  // onto that common grid, so a high-proper-motion target visibly moves.
+  // This check downloads REAL Barnard's Star frames cut out at one fixed
+  // position and verifies the PREDICTED target pixel position changes.
+  const driftResults: Array<{ obsId: string; epochYear: number; x: number; y: number }> = [];
+  try {
+    const barnard = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-barnards-star')!;
+    if (barnard.pmRaMasYr != null && barnard.pmDecMasYr != null && barnard.coordinateEpochYear != null) {
+      console.log(`\n=== FIXED-SKY DRIFT CHECK (Barnard's Star, real frames) ===`);
+      const driftTap = await queryTAP(barnard.ra, barnard.dec, 0.1);
+      const seen = new Set<string>();
+      const picks: any[] = [];
+      for (const row of driftTap.rows) {
+        const id = String(row[0]);
+        if (!seen.has(id)) {
+          seen.add(id);
+          picks.push(row);
+        }
+        if (picks.length >= 4) break;
+      }
+      if (picks.length >= 2) {
+        const refEpochYear = julianYearFromMjd(parseFloat(picks[0][4]));
+        const refProp = propagatePosition(barnard.ra, barnard.dec, barnard.pmRaMasYr, barnard.pmDecMasYr, barnard.coordinateEpochYear, refEpochYear);
+        console.log(`Fixed-sky reference epoch ${refEpochYear.toFixed(2)}: center (${refProp.ra.toFixed(5)}, ${refProp.dec.toFixed(5)})`);
+        for (const row of picks) {
+          const obsId = String(row[0]);
+          const accessUrl = String(row[8]);
+          const epochYear = julianYearFromMjd(parseFloat(row[4]));
+          const prop = propagatePosition(barnard.ra, barnard.dec, barnard.pmRaMasYr, barnard.pmDecMasYr, barnard.coordinateEpochYear, epochYear);
+          const direct = await resolveDataLinkToFits(accessUrl);
+          if (!direct) {
+            console.warn(`  ${obsId}: DataLink resolution failed; skipping`);
+            continue;
+          }
+          const cut = await probeCutout(direct, refProp.ra, refProp.dec);
+          if (!cut.buffer) {
+            console.warn(`  ${obsId}: download failed (HTTP ${cut.status})`);
+            continue;
+          }
+          const parsed = FITSReader.parse(cut.buffer);
+          const pix = WCS.skyToPix(prop.ra, prop.dec, parsed.wcs);
+          driftResults.push({ obsId, epochYear, x: pix.x, y: pix.y });
+          console.log(`  ${obsId} (epoch ${epochYear.toFixed(2)}): predicted pixel (${pix.x.toFixed(1)}, ${pix.y.toFixed(1)}) in ${parsed.width}x${parsed.height}`);
+        }
+        if (driftResults.length >= 2) {
+          const first = driftResults[0];
+          const last = driftResults[driftResults.length - 1];
+          const driftPix = Math.hypot(last.x - first.x, last.y - first.y);
+          console.log(`  -> Predicted target pixel moved ${driftPix.toFixed(2)} px across ${driftResults.length} real frames in fixed-sky mode`);
+        }
+      } else {
+        console.log('  -> Fewer than 2 unique exposures found; drift check skipped');
+      }
+    }
+  } catch (e: any) {
+    console.warn('Fixed-sky drift check failed:', e.message);
+  }
+
+  if (driftResults.length >= 2) {
+    md += `\n## Fixed-Sky Drift Check (Barnard's Star, real frames)\n\n`;
+    md += `| obs_id | Epoch (Julian yr) | Predicted pixel X | Predicted pixel Y |\n`;
+    md += `| :--- | :--- | :--- | :--- |\n`;
+    for (const d of driftResults) {
+      md += `| \`${d.obsId}\` | ${d.epochYear.toFixed(2)} | ${d.x.toFixed(2)} | ${d.y.toFixed(2)} |\n`;
+    }
+    const driftFirst = driftResults[0];
+    const driftLast = driftResults[driftResults.length - 1];
+    const driftPixTotal = Math.hypot(driftLast.x - driftFirst.x, driftLast.y - driftFirst.y);
+    md += `\nPredicted target pixel moved **${driftPixTotal.toFixed(2)} px** across ${driftResults.length} real frames in fixed-sky mode (center held fixed, target propagated per exposure).\n`;
+  }
+
   const outPath = path.join(process.cwd(), 'docs', 'IRSA_PROBE.md');
   fs.writeFileSync(outPath, md, 'utf-8');
   console.log(`\nSuccessfully saved probe findings to ${outPath}`);
