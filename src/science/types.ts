@@ -245,6 +245,16 @@ export interface ChallengeTarget {
   observationsCount?: number;
   sampleObsId?: string;
   sexagesimal?: string;
+  /** RA proper motion in mas/yr (alpha component, no cos(dec) factor). Absent = unknown. */
+  pmRaMasYr?: number;
+  /** Dec proper motion in mas/yr. Absent = unknown. */
+  pmDecMasYr?: number;
+  /** Julian epoch of the listed ra/dec coordinates (J2000.0 = 2000.0). */
+  coordinateEpochYear?: number;
+  /** How the coordinates were verified against an authoritative catalog. */
+  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
+  /** Source the verified coordinates came from (set when coordinateVerification is set). */
+  coordinateSource?: string;
 }
 
 export interface SpectralBandInfo {
