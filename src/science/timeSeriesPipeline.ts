@@ -104,6 +104,8 @@ export interface CatalogOverlayItem {
   pmRaMasYr?: number;
   pmDecMasYr?: number;
   sourceType: string;
+  /** True when the entry comes from the saved local benchmark fixture instead of a live catalog query. */
+  isStaticFixture?: boolean;
 }
 
 export interface TimeSeriesResult {
