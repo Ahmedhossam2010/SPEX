@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { FITSReader } from '../src/science/fitsReader';
+import { ScientificPipeline } from '../src/science/pipeline';
 import { WCS } from '../src/science/wcs';
 import { OFFICIAL_CHALLENGE_TARGETS } from '../src/science/challengeTargets';
 import { propagatePosition, julianYearFromMjd } from '../src/science/properMotion';
@@ -23,8 +24,15 @@ const TARGETS: TargetInfo[] = [
     sexagesimal: '17h57m48.50s +04d41m36.2s',
   },
   {
-    id: 'target-epsilon-indi-b',
-    name: 'Epsilon Indi B & C',
+    id: 'target-epsilon-indi-bab',
+    name: 'Epsilon Indi Ba/Bb (challenge target - PLACEHOLDER coords = A until SIMBAD)',
+    ra: 330.84042,
+    dec: -56.78601,
+    sexagesimal: '22h03m21.70s -56d47m09.6s (PLACEHOLDER)',
+  },
+  {
+    id: 'target-epsilon-indi-a',
+    name: 'Epsilon Indi A (reference star)',
     ra: 330.84042,
     dec: -56.78601,
     sexagesimal: '22h03m21.70s -56d47m09.6s',
@@ -209,6 +217,44 @@ async function main() {
               passes20pxMargin: pxFromEdge >= 20,
             };
             console.log(`  -> Containment: pixel (${containment.x}, ${containment.y}) in ${parsed.width}x${parsed.height}, ${containment.pxFromEdge} px from edge, ${containment.passes20pxMargin ? 'PASS' : 'FAIL'} (20 px margin)`);
+
+            // Empirical epoch check: centroid the actual source near the predicted
+            // pixel and compare with the prediction. Offsets above ~6 arcsec
+            // (about one 6.2" pixel) indicate an epoch/proper-motion problem.
+            let epochCheck: any = null;
+            try {
+              const winR = 8;
+              const px0 = Math.max(0, Math.round(pix.x) - winR);
+              const py0 = Math.max(0, Math.round(pix.y) - winR);
+              const px1 = Math.min(parsed.width - 1, Math.round(pix.x) + winR);
+              const py1 = Math.min(parsed.height - 1, Math.round(pix.y) + winR);
+              let bestVal = -Infinity;
+              let bestX = Math.round(pix.x);
+              let bestY = Math.round(pix.y);
+              for (let yy = py0; yy <= py1; yy++) {
+                for (let xx = px0; xx <= px1; xx++) {
+                  const v = parsed.data[yy * parsed.width + xx];
+                  if (Number.isFinite(v) && v > bestVal) {
+                    bestVal = v;
+                    bestX = xx;
+                    bestY = yy;
+                  }
+                }
+              }
+              const cen = ScientificPipeline.computeSubpixelCentroid(parsed.data, parsed.width, parsed.height, bestX, bestY, 3);
+              const offsetPix = Math.hypot(cen.cx - pix.x, cen.cy - pix.y);
+              const offsetArcsec = offsetPix * (parsed.wcs.pixelScaleArcsec || 6.155);
+              epochCheck = {
+                predictedPixel: { x: Number(pix.x.toFixed(2)), y: Number(pix.y.toFixed(2)) },
+                measuredCentroid: { x: cen.cx, y: cen.cy, valid: cen.valid },
+                offsetPix: Number(offsetPix.toFixed(2)),
+                offsetArcsec: Number(offsetArcsec.toFixed(2)),
+                flagged: offsetArcsec > 6,
+              };
+              console.log(`  -> Epoch check: predicted (${epochCheck.predictedPixel.x}, ${epochCheck.predictedPixel.y}) vs measured centroid (${cen.cx}, ${cen.cy}) -> ${epochCheck.offsetArcsec}\u0022 offset ${epochCheck.flagged ? 'FLAGGED (>6\u0022)' : 'ok'}`);
+            } catch (e2: any) {
+              console.warn(`  -> Epoch check failed: ${e2.message}`);
+            }
           } catch (e: any) {
             console.warn(`  -> Containment check failed: ${e.message}`);
           }
@@ -222,6 +268,7 @@ async function main() {
           centerRa,
           centerDec,
           containment,
+          epochCheck,
         };
       }
     } else {
