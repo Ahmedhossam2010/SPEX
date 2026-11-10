@@ -2671,9 +2671,9 @@ test('Task 2: TAP query produces two distinct fits_urls for two different rows (
   const url1 = await resolveFitsUrl(row1AccessUrl, row1ObsId, row1Detector);
   const url2 = await resolveFitsUrl(row2AccessUrl, row2ObsId, row2Detector);
 
-  assert.notEqual(url1, url2, 'Two distinct rows MUST produce two distinct FITS URLs');
-  assert.ok(url1.includes('2025W18_1B_0001_1D1'), `URL 1 must contain observation 1: ${url1}`);
-  assert.ok(url2.includes('2025W35_1A_0444_3D2'), `URL 2 must contain observation 2: ${url2}`);
+  assert.notEqual(url1.url, url2.url, 'Two distinct rows MUST produce two distinct FITS URLs');
+  assert.ok(url1.url.includes('2025W18_1B_0001_1D1'), `URL 1 must contain observation 1: ${url1.url}`);
+  assert.ok(url2.url.includes('2025W35_1A_0444_3D2'), `URL 2 must contain observation 2: ${url2.url}`);
 
   const fallback1 = buildFallbackFitsUrl(row1ObsId, row1Detector);
   const fallback2 = buildFallbackFitsUrl(row2ObsId, row2Detector);

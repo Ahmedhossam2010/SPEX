@@ -261,6 +261,8 @@ export interface ChallengeTarget {
   coordinateEpochNote?: string;
   /** Role of this entry in the challenge target list. */
   role?: 'challenge_target' | 'reference_star';
+  /** Flag to indicate if primary check is required before relying on proper-motion or coordinates. */
+  needsPrimaryCheck?: boolean;
 }
 
 export interface SpectralBandInfo {

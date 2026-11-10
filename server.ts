@@ -28,6 +28,7 @@ import {
   generateCandidateSED,
 } from './src/science/spectralBands';
 import { DataReleaseAdapter } from './src/science/dataReleaseAdapter';
+import { ArchiveAdapter } from './src/science/archiveAdapter';
 import {
   resolveFitsUrl,
   extractVisitKey,
@@ -461,66 +462,61 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
     dec = 64.8258;
   }
 
-  const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, dataproduct_type FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radius}))=1 ORDER BY t_min ASC`;
-  const url = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
-
   try {
-    const resp = await fetch(url, { headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' } });
-    if (!resp.ok) {
-      return res.status(resp.status).json({ error: `IRSA TAP query returned status ${resp.status}` });
+    const tapRes = await ArchiveAdapter.queryTap({ ra, dec, radiusDeg: radius });
+
+    if (tapRes.state === 'NETWORK_ERROR') {
+      return res.status(503).json({
+        state: 'NETWORK_ERROR',
+        status: 'NETWORK_ERROR',
+        error: tapRes.error || 'Network error communicating with NASA IRSA TAP archive.',
+        canRetry: true,
+        target: { ra, dec, radius },
+      });
     }
-    const json: any = await resp.json();
-    const rows: any[] = json?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
+
+    if (tapRes.state === 'HTTP_ERROR') {
+      return res.status(tapRes.statusCode || 500).json({
+        state: 'HTTP_ERROR',
+        status: 'HTTP_ERROR',
+        error: tapRes.error || 'NASA IRSA TAP archive returned HTTP error.',
+        statusCode: tapRes.statusCode,
+        target: { ra, dec, radius },
+      });
+    }
+
+    if (tapRes.state === 'ARCHIVE_ZERO_ROWS') {
+      return res.status(200).json({
+        state: 'ARCHIVE_ZERO_ROWS',
+        status: 'ARCHIVE_ZERO_ROWS',
+        target: { ra, dec, radius },
+        count: 0,
+        observations: [],
+        message: `IRSA TAP: 0 observations found for requested coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°). This celestial field has not yet been observed in ${tapRes.dataRelease}.`,
+        dataRelease: tapRes.dataRelease,
+      });
+    }
 
     const observations: any[] = await Promise.all(
-      rows.map(async (row) => {
-        const obsId = String(row[0]);
-        const sRa = parseFloat(row[1]);
-        const sDec = parseFloat(row[2]);
-        const instrument = String(row[3] || 'SPHEREx');
-        const tMin = parseFloat(row[4]);
-        const tMax = parseFloat(row[5]);
-        const emMin = parseFloat(row[6]);
-        const emMax = parseFloat(row[7]);
-        const accessUrl = String(row[8]);
-        const dataproduct = String(row[9] || 'image');
-
-        const mjd = Number(((tMin + tMax) / 2).toFixed(6));
-        const dateMs = (mjd - 40587) * 86400 * 1000;
-        const date = new Date(dateMs).toISOString();
-        const wavelengthUm = Number((((emMin + emMax) / 2) * 1e6).toFixed(2));
-
-        const detMatch = accessUrl.match(/\/D([1-6])$/);
-        const detector = detMatch ? `D${detMatch[1]}` : (instrument.includes('D') ? instrument : 'D1');
-        const detNum = parseInt(detector.replace(/\D/g, ''), 10) || 1;
-        const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
-        const band = detArray ? detArray.name : `Band ${detector}`;
-        const visitKey = extractVisitKey(obsId);
-
-        // Build unique FITS URL per row from that row's own access_url / obs_id
-        const resolvedFits = await resolveFitsUrl(accessUrl, obsId, detector);
-        const fitsUrl = resolvedFits.url;
-
+      tapRes.records.map(async (rec) => {
+        const resolvedFits = await resolveFitsUrl(rec.access_url, rec.obs_id, rec.detector);
         return {
-          obs_id: obsId,
-          s_ra: sRa,
-          s_dec: sDec,
-          instrument,
-          t_min: tMin,
-          t_max: tMax,
-          mjd,
-          date,
-          wavelength_um: wavelengthUm,
-          wavelength: wavelengthUm,
-          band,
-          detector,
-          visitKey,
-          dataproduct_type: dataproduct,
-          access_url: accessUrl,
-          fits_url: fitsUrl,
+          obs_id: rec.obs_id,
+          s_ra: rec.s_ra,
+          s_dec: rec.s_dec,
+          mjd: rec.mjd,
+          date: rec.date,
+          wavelength_um: rec.wavelength_um,
+          wavelength: rec.wavelength,
+          band: rec.band,
+          detector: rec.detector,
+          visitKey: rec.visitKey,
+          access_url: rec.access_url,
+          fits_url: resolvedFits.url,
           fits_resolved_by: resolvedFits.resolvedBy,
-          access_format: 'application/fits',
-          survey: SPHEREX_DATA_RELEASE,
+          s_region: rec.s_region,
+          sourceLabel: rec.sourceLabel,
+          survey: tapRes.dataRelease,
         };
       })
     );
@@ -533,15 +529,24 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
     }
 
     return res.json({
+      state: 'OK',
+      status: 'OK',
       target: { ra, dec, radius },
       count: observations.length,
       observations,
       groupedByDetector,
       groupedByVisit,
+      isOfflineMode: tapRes.isOfflineMode,
+      isSavedCopy: tapRes.isSavedCopy,
+      dataRelease: tapRes.dataRelease,
     });
   } catch (err: any) {
     console.error('IRSA TAP query failure:', err);
-    return res.status(500).json({ error: 'Failed to contact NASA/IPAC IRSA TAP service: ' + err.message });
+    return res.status(500).json({
+      state: 'HTTP_ERROR',
+      status: 'FAILED',
+      error: 'Failed to contact NASA/IPAC IRSA TAP service: ' + err.message,
+    });
   }
 });
 

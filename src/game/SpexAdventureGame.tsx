@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Spex3DGame } from './3d/Spex3DGame';
+import { SpexTaskStationGame } from './SpexTaskStationGame';
 import { CosmicDetectiveGame } from './CosmicDetectiveGame';
 import { Language } from '../utils/translations';
-import { Box, BookOpen, Compass, ArrowLeft } from 'lucide-react';
+import { Gamepad2, BookOpen, Compass, ArrowLeft } from 'lucide-react';
 import { gameAudio } from './utils/gameAudio';
 
 interface SpexAdventureGameProps {
@@ -17,13 +17,13 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
   onBackToHome,
 }) => {
   const isAr = language === 'ar';
-  // Mode: '3d' for the 3D Third-Person Station Adventure, 'cases' for Detective Case files
-  const [viewMode, setViewMode] = useState<'3d' | '2d_detective'>('3d');
+  // Mode: 'station' for the 2D Top-Down Task Station Game, 'cases' for Detective Case files
+  const [viewMode, setViewMode] = useState<'station' | 'cases'>('station');
 
   return (
     <div className="relative w-full max-w-7xl mx-auto px-2 sm:px-4 py-3" dir={isAr ? 'rtl' : 'ltr'}>
       {/* Mode Switcher Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3 bg-[#0b1120] p-2.5 rounded-2xl border border-cyan-500/30">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3 bg-[#070C18] p-2.5 rounded-2xl border border-obs-border-highlight">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -31,10 +31,10 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-mono transition border border-slate-700 cursor-pointer"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>{isAr ? 'الرئيسية' : 'Mission Control'}</span>
+            <span>{isAr ? 'الرئيسية' : 'Home'}</span>
           </button>
 
-          <div className="h-4 w-px bg-slate-700 mx-1 hidden sm:block" />
+          <div className="h-4 w-px bg-slate-800 mx-1 hidden sm:block" />
 
           {/* Mode Toggles */}
           <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
@@ -42,32 +42,32 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
               type="button"
               onClick={() => {
                 gameAudio.playClick();
-                setViewMode('3d');
+                setViewMode('station');
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                viewMode === '3d'
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                viewMode === 'station'
+                  ? 'bg-obs-amber text-slate-950 shadow-[0_0_12px_rgba(245,166,35,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
-              <Box className="w-3.5 h-3.5" />
-              <span>{isAr ? 'مغامرة 3D غامرة' : '3D Adventure'}</span>
+              <Gamepad2 className="w-3.5 h-3.5" />
+              <span>{isAr ? 'محطة المهام 2D' : 'Task Station'}</span>
             </button>
 
             <button
               type="button"
               onClick={() => {
                 gameAudio.playClick();
-                setViewMode('2d_detective');
+                setViewMode('cases');
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                viewMode === '2d_detective'
-                  ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.4)]'
+                viewMode === 'cases'
+                  ? 'bg-obs-cyan text-slate-950 shadow-[0_0_12px_rgba(0,229,255,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>{isAr ? 'ملفات قضايا المحقق' : 'Detective Cases'}</span>
+              <span>{isAr ? 'ملفات القضايا' : 'Detective Cases'}</span>
             </button>
           </div>
         </div>
@@ -85,10 +85,10 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
       </div>
 
       {/* Main View Area */}
-      {viewMode === '3d' ? (
-        <Spex3DGame
+      {viewMode === 'station' ? (
+        <SpexTaskStationGame
           language={language}
-          onBackToExplore={() => onExitToExplore()}
+          onExitToExplore={onExitToExplore}
           onBackToHome={onBackToHome}
         />
       ) : (

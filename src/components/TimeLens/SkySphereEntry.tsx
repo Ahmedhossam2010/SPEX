@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OFFICIAL_CHALLENGE_TARGETS } from '../../science/challengeTargets';
 import { parseCoordinateInput } from '../../science/coordinates';
 import { Language, translations } from '../../utils/translations';
@@ -276,7 +276,7 @@ export const SkySphereEntry: React.FC<SkySphereEntryProps> = ({
       const angle = rotationRef.current;
       const tilt = 0.55;
       let best: { idx: number; d: number } | null = null;
-      targetVectors.forEach((v, idx) => {
+      targetVectors.forEach((v: { x: number; y: number; z: number }, idx: number) => {
         const cosA = Math.cos(angle);
         const sinA = Math.sin(angle);
         const x1 = v.x * cosA - v.z * sinA;
@@ -341,10 +341,13 @@ export const SkySphereEntry: React.FC<SkySphereEntryProps> = ({
           className="w-full h-[300px] sm:h-[420px] block touch-none cursor-pointer"
           aria-label={t.skyEntryTitle}
         />
-        <div className="absolute bottom-2 left-0 right-0 flex justify-center pointer-events-none">
-          <span className="inline-flex items-center gap-1.5 text-[10px] text-slate-500 bg-slate-950/70 rounded-full px-2.5 py-1 border border-slate-800">
-            <MousePointerClick className="w-3 h-3" />
+        <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center gap-1 pointer-events-none">
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-[#94A3B8] bg-[#0C0E14]/85 backdrop-blur-md rounded-full px-3 py-1 border border-white/10 shadow-lg">
+            <MousePointerClick className="w-3 h-3 text-[#FFB900]" />
             {isRtl ? 'انقر على نجم وامض للتحليق إليه' : 'Tap a pulsing star to zoom in'}
+          </span>
+          <span className="text-[9px] text-slate-500 font-mono">
+            {isRtl ? 'نجوم الخلفية تزيينية · الأهداف المضيئة موضوعة بإحداثيات RA/Dec الحقيقية' : 'Background stars are decorative · Benchmark targets placed at verified RA/Dec'}
           </span>
         </div>
       </div>

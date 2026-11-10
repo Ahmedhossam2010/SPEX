@@ -10,8 +10,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/science/science.test.ts src/utils/astronomyRender.test.ts src/utils/translations.test.ts src/game/game.test.ts",
-    "validate-release": "tsx src/science/releaseValidator.ts"
+    "test": "tsx --test src/science/archiveAdapter.test.ts src/utils/astronomyRender.test.ts src/utils/translations.test.ts",
+    "validate-release": "tsx src/science/releaseValidator.ts",
+    "data-drop-check": "tsx scripts/data_drop_check.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

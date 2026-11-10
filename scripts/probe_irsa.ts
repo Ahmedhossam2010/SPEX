@@ -202,6 +202,7 @@ async function main() {
         // Footprint containment: is the propagated target inside the downloaded
         // cutout, and more than 20 px from the edge?
         let containment: any = null;
+        let epochCheck: any = null;
         if (cutout.buffer) {
           try {
             const parsed = FITSReader.parse(cutout.buffer);
@@ -221,7 +222,6 @@ async function main() {
             // Empirical epoch check: centroid the actual source near the predicted
             // pixel and compare with the prediction. Offsets above ~6 arcsec
             // (about one 6.2" pixel) indicate an epoch/proper-motion problem.
-            let epochCheck: any = null;
             try {
               const winR = 8;
               const px0 = Math.max(0, Math.round(pix.x) - winR);

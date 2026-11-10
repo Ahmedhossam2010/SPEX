@@ -1,8 +1,37 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+:root {
+  --bg-space: #02040A;
+  --bg-panel: #0C0E14;
+  --bg-panel-elevated: rgba(16, 19, 28, 0.85);
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --border-hairline-bright: rgba(255, 255, 255, 0.15);
+  --amber-primary: #FFB900;
+  --amber-secondary: #FB9600;
+  --amber-deep: #EB7F00;
+  --cyan-data: #00D3F3;
+  --rose-warning: #FF637E;
+  --text-headline: #F1F5F9;
+  --text-slate: #94A3B8;
+  --font-serif: 'Playfair Display', Georgia, serif;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-arabic: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+body {
+  background-color: #02040A;
+  color: #F1F5F9;
+  font-family: var(--font-sans);
+}
+
+.font-serif-hero {
+  font-family: var(--font-serif);
+}
+
 .font-cairo, [dir="rtl"], [lang="ar"] {
-  font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;
+  font-family: var(--font-arabic) !important;
 }
 
 input, textarea, button, select {
@@ -10,7 +39,7 @@ input, textarea, button, select {
 }
 
 input::placeholder, textarea::placeholder {
-  font-family: 'Cairo', 'Noto Sans Arabic', system-ui, sans-serif !important;
+  font-family: inherit;
 }
 
 .image-rendering-pixelated {
@@ -18,6 +47,113 @@ input::placeholder, textarea::placeholder {
   image-rendering: crisp-edges;
 }
 
+/* Glass & observatory panels */
+.obs-panel {
+  background: #0C0E14;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.obs-glass {
+  background: rgba(12, 14, 20, 0.78);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 30px rgba(255, 185, 0, 0.02);
+}
+
+.obs-glass-glow {
+  background: rgba(14, 17, 26, 0.82);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(255, 185, 0, 0.18);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 24px rgba(255, 185, 0, 0.04);
+}
+
+/* Detector Grid Overlay Motif */
+.detector-grid {
+  background-size: 24px 24px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+.detector-grid-dense {
+  background-size: 12px 12px;
+  background-image: 
+    linear-gradient(to right, rgba(0, 211, 243, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 211, 243, 0.04) 1px, transparent 1px);
+}
+
+/* Scanline Sweep Motif */
+@keyframes scanline-sweep {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(1000%); }
+}
+
+.animate-scanline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 211, 243, 0.6), transparent);
+  animation: scanline-sweep 3s ease-in-out infinite;
+}
+
+/* Focus Rings */
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid #FFB900;
+  outline-offset: 2px;
+}
+
+/* Crop Marks Motif for image viewports */
+.crop-mark-tl {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid rgba(255, 185, 0, 0.6);
+  border-left: 1px solid rgba(255, 185, 0, 0.6);
+  pointer-events: none;
+}
+.crop-mark-tr {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid rgba(255, 185, 0, 0.6);
+  border-right: 1px solid rgba(255, 185, 0, 0.6);
+  pointer-events: none;
+}
+.crop-mark-bl {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  width: 8px;
+  height: 8px;
+  border-bottom: 1px solid rgba(255, 185, 0, 0.6);
+  border-left: 1px solid rgba(255, 185, 0, 0.6);
+  pointer-events: none;
+}
+.crop-mark-br {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-bottom: 1px solid rgba(255, 185, 0, 0.6);
+  border-right: 1px solid rgba(255, 185, 0, 0.6);
+  pointer-events: none;
+}
+
+/* Tabular Numerals */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -26,9 +162,22 @@ input::placeholder, textarea::placeholder {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 185, 0, 0.3);
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-scanline {
+    display: none !important;
+  }
 }

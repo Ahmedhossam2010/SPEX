@@ -446,18 +446,18 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
     description:
       "The challenge target: a benchmark binary methane-dwarf system at ~11.8 ly (Ba T1 + Bb T6, ~0.6\u0022 apart), orbiting ~402\u0022 (~6.7') from epsilon Indi A. Its methane absorption at 1.6 and 3.3 µm makes it a key SPHEREx 102-band target. Coordinates are PENDING SIMBAD verification.",
-    qr2Coverage: 'covered',
-    observationsCount: 27,
+    qr2Coverage: 'outside_footprint',
     sampleObsId: '2025W18_1B_0175_1',
     angularDistanceDegToNEP: 125.8,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Coverage counts above were verified for the PLACEHOLDER position (= epsilon Indi A). Coverage at the true Ba/Bb position must be re-verified with scripts/probe_irsa.ts once SIMBAD coordinates are pasted.',
+      'Position pending verification. Coverage count suppressed until true coordinates are verified.',
     role: 'challenge_target',
     coordinateEpochKnown: false,
     coordinateEpochNote: 'Coordinates pending SIMBAD output; epoch unknown until then.',
     coordinateVerification: 'UNVERIFIED',
     coordinateSource: 'PLACEHOLDER = epsilon Indi A position. Paste SIMBAD TAP output for Eps Ind Ba here.',
+    needsPrimaryCheck: true,
   },
   {
     // Reference star in the same field (verified). Not the challenge target.
@@ -516,6 +516,7 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
       'Verified in IRSA TAP with 4 real exposures in SPHEREx QR2. Key substellar target for detecting cold brown dwarf atmospheric features.',
+    needsPrimaryCheck: true,
   },
   {
     id: 'target-rw-aurigae',
@@ -544,6 +545,7 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
       'Verified in IRSA TAP with 19 real exposures in Taurus-Auriga. Time series captures young stellar variability and accretion dynamics.',
+    needsPrimaryCheck: true,
   },
   {
     id: 'target-r-draconis',
@@ -564,12 +566,11 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     scienceType: 'Mira-Type Pulsating Variable Giant (M5e-M9e)',
     description:
       'A long-period asymptotic giant branch (AGB) pulsating variable star with a 245-day period, varying by over 6 magnitudes between maximum and minimum as circumstellar dust cools and condensates.',
-    qr2Coverage: 'covered',
-    observationsCount: 55,
+    qr2Coverage: 'outside_footprint',
     sampleObsId: '2025W24_2D_0534_1',
     angularDistanceDegToNEP: 11.3,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Verified in IRSA TAP with 55 real exposures in Draco. Rich multi-epoch temporal series ideal for tracing giant star pulsation amplitudes.',
+      'Position pending verification. Coverage count suppressed until true coordinates are verified.',
   },
 ];

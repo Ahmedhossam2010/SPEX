@@ -1,6 +1,9 @@
-import React from 'react';
-import { ArrowRight, ShieldCheck, Telescope } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowRight, ShieldCheck, Telescope, Sparkles, Filter, Compass } from 'lucide-react';
 import { Language, translations } from '../utils/translations';
+import { GlassPanel } from '../design/components/GlassPanel';
+import { Badge } from '../design/components/Badge';
+import { Button } from '../design/components/Button';
 
 interface CaseItem {
   id: string;
@@ -13,6 +16,8 @@ interface CaseItem {
   description: string;
   isSimulated?: boolean;
   simulatedLabel?: string;
+  difficulty?: 'Beginner' | 'Explorer' | 'Scientist';
+  isUnverified?: boolean;
 }
 
 interface CasesViewProps {
@@ -22,106 +27,132 @@ interface CasesViewProps {
 }
 
 export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, language }) => {
-  const t = translations[language];
   const isRtl = language === 'ar';
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+
+  const filteredCases = cases.filter((c) => {
+    if (filterCategory === 'all') return true;
+    if (filterCategory === 'variable') return c.category === 'Variable Candidate';
+    if (filterCategory === 'reference') return c.category === 'Stability Reference';
+    if (filterCategory === 'artifact') return c.category === 'Artifact Rejection';
+    return true;
+  });
 
   return (
-    <div
-      className={`mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12 ${
-        isRtl ? 'font-cairo' : 'font-sans'
-      }`}
-    >
+    <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12 select-none" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 pb-6 border-b border-slate-200 dark:border-white/[0.08]">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-8 pb-6 border-b border-obs-border">
         <div>
-          <div className="flex items-center gap-2 text-xs font-mono tracking-widest text-amber-600 dark:text-amber-400 uppercase mb-2 font-semibold">
-            <span>NASA/IPAC IRSA SPHEREx QR2</span>
-            <span aria-hidden="true" className="text-slate-400 dark:text-slate-600">·</span>
-            <span>Ground Truth Investigations</span>
+          <div className="flex items-center gap-2 text-xs font-mono tracking-widest text-obs-amber uppercase mb-2 font-bold">
+            <Sparkles className="w-4 h-4" />
+            <span>NASA/IPAC IRSA SPHEREx QR2 & QR3</span>
+            <span className="text-slate-600">·</span>
+            <span>{isRtl ? 'ملفات قضايا المرصد' : 'Observatory Case Board'}</span>
           </div>
-          <h2 className="font-['Outfit'] text-3xl sm:text-4xl font-bold text-slate-900 dark:text-slate-100">
-            {language === 'ar' ? 'ملفات الحالات الفلكية الموثقة' : 'Verified Astronomical Case Files'}
-          </h2>
+          <h1 className="font-serif text-3xl sm:text-4xl font-bold text-white tracking-wide">
+            {isRtl ? 'ملفات الحالات الفلكية الموثقة' : 'Verified Astronomical Case Files'}
+          </h1>
         </div>
-        <p className="text-xs text-slate-600 dark:text-slate-400 max-w-md font-mono">
-          {language === 'ar'
-            ? 'تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل النجوم المتغيرة، نجم برنارد فائق الحركة الخاصة، قزم بني بارد، ومعايير الثبات وتصفية أعلام الجودة.'
+        <p className="text-xs text-obs-text-dim max-w-md font-mono leading-relaxed">
+          {isRtl
+            ? 'تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل النجوم المتغيرة، نجم برنارد فائق الحركة، وقزم بني بارد، ومعايير الثبات وتصفية أعلام الجودة.'
             : 'Authentic multi-epoch SPHEREx investigations across verified targets including Barnard’s Star, WISE 0855, North Ecliptic Pole deep surveys, and photometric calibration standards.'}
         </p>
       </div>
 
-      {/* Grid of Case Cards */}
+      {/* Category Filter Pills */}
+      <div className="flex flex-wrap items-center gap-2 mb-6 font-mono text-xs">
+        <span className="text-slate-500 mr-1 flex items-center gap-1">
+          <Filter className="w-3.5 h-3.5" />
+          {isRtl ? 'تصفية القضايا:' : 'Filter:'}
+        </span>
+        {[
+          { id: 'all', labelEn: 'All Dossiers', labelAr: 'جميع القضايا' },
+          { id: 'variable', labelEn: 'Variables & Transients', labelAr: 'نجوم متغيرة وتوهجات' },
+          { id: 'reference', labelEn: 'Calibration Standards', labelAr: 'معايير المعايرة' },
+          { id: 'artifact', labelEn: 'Flagged Glitches', labelAr: 'أعلام الكواشف' },
+        ].map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setFilterCategory(f.id)}
+            className={`px-3 py-1.5 rounded-xl border transition cursor-pointer ${
+              filterCategory === f.id
+                ? 'bg-obs-amber text-slate-950 border-obs-amber font-bold shadow-[0_0_12px_rgba(245,166,35,0.3)]'
+                : 'bg-obs-panel border-obs-border text-obs-text-dim hover:text-white hover:border-obs-border-highlight'
+            }`}
+          >
+            {isRtl ? f.labelAr : f.labelEn}
+          </button>
+        ))}
+      </div>
+
+      {/* Dossier Board Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {cases.map((c) => {
-          let categoryColor = 'text-amber-600 dark:text-amber-400';
-          if (c.expectedClassification.includes('NO SIGNIFICANT CHANGE')) {
-            categoryColor = 'text-cyan-600 dark:text-cyan-400';
-          } else if (c.expectedClassification.includes('ARTIFACT')) {
-            categoryColor = 'text-rose-600 dark:text-rose-400';
-          } else if (c.expectedClassification.includes('INSUFFICIENT')) {
-            categoryColor = 'text-purple-600 dark:text-purple-400';
-          }
+        {filteredCases.map((c, idx) => {
+          const isReal = !c.isSimulated;
+          const isUnverified = c.id.includes('epsilon-indi') || c.id.includes('r-draconis') || c.isUnverified;
 
           return (
-            <div
+            <GlassPanel
               key={c.id}
-              className={`group relative flex flex-col justify-between rounded-3xl border ${
-                c.isSimulated
-                  ? 'border-amber-500/40 bg-amber-500/[0.02]'
-                  : 'border-slate-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.02]'
-              } hover:bg-slate-50 dark:hover:bg-white/[0.04] p-6 transition-all duration-300 hover:border-amber-400/50 shadow-sm hover:shadow-md`}
+              hasCropMarks
+              glow
+              className="flex flex-col justify-between p-6 group transition-all duration-300 hover:border-obs-amber/60"
             >
               <div>
-                {/* Simulated Data Transparency Badge (Task 4) */}
-                {c.isSimulated && (
-                  <div className="mb-3 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-[10px] font-mono font-bold uppercase tracking-wider">
-                    <span>⚠️</span>
-                    <span>{c.simulatedLabel || 'Simulated / Demonstration Data'}</span>
+                {/* Header row: Status badges & Coordinates */}
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isUnverified ? (
+                      <Badge variant="UNVERIFIED" size="sm" />
+                    ) : isReal ? (
+                      <Badge variant="REAL" size="sm" />
+                    ) : (
+                      <Badge variant="TRAINING" size="sm" />
+                    )}
+                    <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-obs-cyan">
+                      {c.category}
+                    </span>
                   </div>
-                )}
 
-                {/* Category & Astrometric Coordinates */}
-                <div className="flex items-center justify-between text-xs mb-3 font-mono">
-                  <span className={`text-[11px] font-bold uppercase tracking-wider ${categoryColor}`}>
-                    {c.category}
-                  </span>
-                  <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+                  <span className="font-mono text-[11px] text-obs-text-dim">
                     RA {c.ra.toFixed(4)}° · Dec {c.dec >= 0 ? `+${c.dec.toFixed(4)}°` : `${c.dec.toFixed(4)}°`}
                   </span>
                 </div>
 
                 {/* Title */}
-                <h3 className="font-['Outfit'] text-xl font-bold text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-300 transition-colors mb-2">
+                <h3 className="font-serif text-xl font-bold text-white group-hover:text-obs-amber transition-colors mb-2">
                   {c.title}
                 </h3>
 
                 {/* Subtitle */}
-                <p className="text-xs font-mono text-slate-700 dark:text-slate-300 mb-3 font-medium">
+                <p className="text-xs font-mono text-obs-cyan mb-3 font-semibold">
                   {c.subtitle}
                 </p>
 
                 {/* Description */}
-                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-6 font-sans">
+                <p className="text-xs text-obs-text-dim leading-relaxed mb-6 font-sans">
                   {c.description}
                 </p>
 
-                {/* Metadata */}
-                <div className="flex items-center gap-2 text-xs font-mono text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-white/[0.06] pt-3 mb-6">
-                  <span>Classification:</span>
-                  <span className="text-slate-800 dark:text-slate-200 font-semibold">{c.expectedClassification}</span>
+                {/* Classification info */}
+                <div className="flex items-center justify-between text-xs font-mono border-t border-obs-border pt-3 mb-6">
+                  <span className="text-slate-400">{isRtl ? 'التصنيف المتوقع:' : 'Expected Verdict:'}</span>
+                  <span className="text-white font-bold">{c.expectedClassification}</span>
                 </div>
               </div>
 
               {/* Action Button */}
-              <button
-                type="button"
+              <Button
+                variant="primary"
+                icon={<Compass className="w-4 h-4" />}
                 onClick={() => onSelectCase(c.id)}
-                className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs uppercase tracking-wider transition-all active:scale-95 shadow-xs cursor-pointer"
+                className="w-full justify-center"
               >
-                <span>{language === 'ar' ? 'افحص هذه الحالة الفلكية' : 'Investigate Case'}</span>
-                <ArrowRight className="w-4 h-4" />
-              </button>
-            </div>
+                {isRtl ? 'افحص هذه الحالة الفلكية في الكاشف' : 'Investigate in Time Lens'}
+              </Button>
+            </GlassPanel>
           );
         })}
       </div>

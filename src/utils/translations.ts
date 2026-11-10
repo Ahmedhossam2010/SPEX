@@ -234,6 +234,61 @@ export interface TranslationDictionary {
   labelFov: string;
   labelEpochPair: string;
   labelMultiEpochTimeline: string;
+
+  // Cinematic Redesign & Observatory System
+  homeHeroPlayfair: string;
+  homeHeroInter: string;
+  homeBtnEnterSky: string;
+  homeBtnPlayCase: string;
+  homeLiveTicker: string;
+  homeCatGreeting: string;
+  homeCard1Title: string;
+  homeCard1Desc: string;
+  homeCard2Title: string;
+  homeCard2Desc: string;
+  homeCard3Title: string;
+  homeCard3Desc: string;
+  homeHonestyTitle: string;
+  homeHonestyDesc: string;
+
+  // Lenses & Frame Player
+  lensTime: string;
+  lensTimeSub: string;
+  lensColors: string;
+  lensColorsSub: string;
+  lensDoubt: string;
+  lensDoubtSub: string;
+  lensNeighbors: string;
+  lensNeighborsSub: string;
+  framePlayerPlay: string;
+  framePlayerPause: string;
+  framePlayerStep: string;
+  framePlayerSpeed: string;
+  frameModeSky: string;
+  frameModeTarget: string;
+  curtainDragPrompt: string;
+  btnExportPostcard: string;
+  modeBeginner: string;
+  modeExplorer: string;
+  modeScientist: string;
+
+  // 2D Game Station
+  gameStationTitle: string;
+  gameStationSubtitle: string;
+  gameTaskComparatorTitle: string;
+  gameTaskComparatorDesc: string;
+  gameTaskCleaningTitle: string;
+  gameTaskCleaningDesc: string;
+  gameTaskColorTitle: string;
+  gameTaskColorDesc: string;
+  gameTaskStackingTitle: string;
+  gameTaskStackingDesc: string;
+  gameTaskTimeTitle: string;
+  gameTaskTimeDesc: string;
+  gameTaskIdTitle: string;
+  gameTaskIdDesc: string;
+  gameReviewTitle: string;
+  gameReviewPrompt: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -485,6 +540,61 @@ export const translations: Record<Language, TranslationDictionary> = {
     labelFov: 'Field of View (FOV):',
     labelEpochPair: 'Difference Pair:',
     labelMultiEpochTimeline: 'Chronological Multi-Epoch Sequence:',
+
+    // Cinematic Redesign & Observatory System
+    homeHeroPlayfair: 'The sky is never still.',
+    homeHeroInter: 'Spot what moves. Join the hunt.',
+    homeBtnEnterSky: 'Enter the sky',
+    homeBtnPlayCase: 'Play the case',
+    homeLiveTicker: '102 hidden colors · 6 detectors · whole sky every 6 months · 96M galaxies · 0.75-5.0 µm infrared',
+    homeCatGreeting: 'Greetings! I am SPEX, your astronomical guide. Look closely—nothing in the cosmos stays still.',
+    homeCard1Title: 'See it move',
+    homeCard1Desc: 'Blink two real infrared exposures and spot celestial targets jumping across space.',
+    homeCard2Title: 'Read the hidden colors',
+    homeCard2Desc: 'Sweep 102 spectral bands to decode chemical fingerprints and cold planetary atmospheres.',
+    homeCard3Title: 'Solve the case',
+    homeCard3Desc: 'Filter cosmic ray glitches and instrument flags to confirm real cosmic discoveries.',
+    homeHonestyTitle: 'Real data is always labeled',
+    homeHonestyDesc: 'Every pixel is traced to its origin. Real NASA observations, saved copies, and training data are always distinctly marked.',
+
+    // Lenses & Frame Player
+    lensTime: 'TIME',
+    lensTimeSub: 'FRAME BLINK & TRAILS',
+    lensColors: 'HIDDEN COLORS',
+    lensColorsSub: '102 SPECTRAL BANDS',
+    lensDoubt: 'DOUBT',
+    lensDoubtSub: 'INSTRUMENT GLITCHES',
+    lensNeighbors: 'NEIGHBORS',
+    lensNeighborsSub: 'GAIA DR3 & ALLWISE',
+    framePlayerPlay: 'Play',
+    framePlayerPause: 'Pause',
+    framePlayerStep: 'Step Frame',
+    framePlayerSpeed: 'Speed',
+    frameModeSky: 'Sky Frame (target moves)',
+    frameModeTarget: 'Target Centered (stars drift)',
+    curtainDragPrompt: 'Drag divider to compare before and after',
+    btnExportPostcard: 'Export Discovery Postcard',
+    modeBeginner: 'Beginner',
+    modeExplorer: 'Explorer',
+    modeScientist: 'Scientist',
+
+    // 2D Game Station
+    gameStationTitle: 'SPHEREx Observatory Station',
+    gameStationSubtitle: 'Interactive 2D Science Mini-Games',
+    gameTaskComparatorTitle: 'Spot the Mover',
+    gameTaskComparatorDesc: 'Blink two infrared frames and tap the dot that moved across the field.',
+    gameTaskCleaningTitle: 'Clean the Noise',
+    gameTaskCleaningDesc: 'Wipe detector glitches guided by the real SPHEREx quality bitmask.',
+    gameTaskColorTitle: 'Tune the Filter',
+    gameTaskColorDesc: 'Sweep through 102 channels until a distinct atmospheric absorption dip appears.',
+    gameTaskStackingTitle: 'Stack the Frames',
+    gameTaskStackingDesc: 'Drag 6 faint exposures together to sharpen the deep signal out of the noise.',
+    gameTaskTimeTitle: 'Order the Snapshots',
+    gameTaskTimeDesc: 'Sort exposures by observation time and read the real cadence gap.',
+    gameTaskIdTitle: 'Match the ID Card',
+    gameTaskIdDesc: 'Cross-match with Gaia DR3 and AllWISE. Unmatched sources could be new discoveries.',
+    gameReviewTitle: 'False Alarm Review',
+    gameReviewPrompt: 'One candidate is a false alarm. Inspect the evidence dossier, identify the glitch, and give the physical reason.',
   },
   ar: {
     // Brand & Top Navigation
@@ -734,5 +844,60 @@ export const translations: Record<Language, TranslationDictionary> = {
     labelFov: 'مجال الرؤية (FOV):',
     labelEpochPair: 'زوج المقارنة:',
     labelMultiEpochTimeline: 'التسلسل الزمني للرصدات المتعددة:',
+
+    // Cinematic Redesign & Observatory System
+    homeHeroPlayfair: 'السماء لا تهدأ أبدًا.',
+    homeHeroInter: 'اكتشف ما يتحرك. انضم إلى رحلة البحث.',
+    homeBtnEnterSky: 'ادخل إلى السماء',
+    homeBtnPlayCase: 'ابدأ التحقيق الفلكي',
+    homeLiveTicker: '102 لونًا خفيًا · 6 كواشف · مسح شامل للسماء كل 6 أشهر · 96 مليون مجرة · 0.75 إلى 5.0 ميكرون تحت الحمراء',
+    homeCatGreeting: 'أهلاً بك! أنا سبيكس، مرشدك الفلكي في أعماق السماء. دقق النظر—فلا شيء في الكون يبقى ساكناً.',
+    homeCard1Title: 'شاهد الحركة',
+    homeCard1Desc: 'اقلب بين لقطتين زمنيتين بالأشعة تحت الحمراء وشاهد الأجرام السماوية وهي تقفز عبر الفضاء.',
+    homeCard2Title: 'اقرأ الألوان الخفية',
+    homeCard2Desc: 'تصفح 102 نطاق طيفي لفك شفرة البصمات الكيميائية والأغلفة الجوية للكواكب الباردة.',
+    homeCard3Title: 'حل لغز الحالة',
+    homeCard3Desc: 'استبعد شوائب الأشعة الكونية وأعلام الحساس لتأكيد الاكتشافات الفلكية الحقيقية.',
+    homeHonestyTitle: 'البيانات الحقيقية موسومة دائماً بكل وضوح',
+    homeHonestyDesc: 'كل بكسل موثق بمصدره. نميز دائماً وبوضوح بين رصد ناسا الحقيقي، والنسخ المحفوظة، والبيانات التدريبية.',
+
+    // Lenses & Frame Player
+    lensTime: 'الزمن',
+    lensTimeSub: 'تعاقب اللقطات والمسار',
+    lensColors: 'الألوان الخفية',
+    lensColorsSub: '102 نطاق طيفي',
+    lensDoubt: 'فحص الشك',
+    lensDoubtSub: 'عيوب الكاشف والشوائب',
+    lensNeighbors: 'الجيران الفلكيون',
+    lensNeighborsSub: 'كتالوج جايا ووايز',
+    framePlayerPlay: 'تشغيل',
+    framePlayerPause: 'إيقاف مؤقت',
+    framePlayerStep: 'اللقطة التالية',
+    framePlayerSpeed: 'السرعة',
+    frameModeSky: 'إطار السماء (الهدف يتحرك)',
+    frameModeTarget: 'مركز الهدف (النجوم تنجرف)',
+    curtainDragPrompt: 'اسحب الفاصل للمقارنة بين اللقطتين',
+    btnExportPostcard: 'تصدير بطاقة الاكتشاف',
+    modeBeginner: 'مبتدئ',
+    modeExplorer: 'مستكشف',
+    modeScientist: 'عالم فلك',
+
+    // 2D Game Station
+    gameStationTitle: 'محطة مرصد سفيركس الفضائي',
+    gameStationSubtitle: 'ألعاب علمية تفاعلية ثنائية الأبعاد',
+    gameTaskComparatorTitle: 'حدد الجرم المتحرك',
+    gameTaskComparatorDesc: 'اقلب بين الإطارين واضغط على النقطة التي غيرت موقعها عبر الحقل.',
+    gameTaskCleaningTitle: 'نظف شوائب الكاشف',
+    gameTaskCleaningDesc: 'امسح عيوب الحساس مسترشداً بقناع جودة SPHEREx الحقيقي.',
+    gameTaskColorTitle: 'اضبط المرشح الطيفي',
+    gameTaskColorDesc: 'مرر بين 102 قناة حتى يظهر انخفاض الامتصاص الجوي المميز.',
+    gameTaskStackingTitle: 'اجمع الإطارات الرصدية',
+    gameTaskStackingDesc: 'اسحب 6 تعريضات خافتة معاً لإظهار الإشارة العميقة من بين الضجيج.',
+    gameTaskTimeTitle: 'رتب اللقطات الزمنية',
+    gameTaskTimeDesc: 'رتب الأرصاد وفق تاريخ الالتقاط وتعرف على الفاصل الزمني الحقيقي.',
+    gameTaskIdTitle: 'طابق بطاقة الهوية الفلكية',
+    gameTaskIdDesc: 'طابق الجرم مع كتالوجات Gaia DR3 وAllWISE. النجوم غير المطابقة قد تكون اكتشافات جديدة.',
+    gameReviewTitle: 'مراجعة الإنذارات الكاذبة',
+    gameReviewPrompt: 'أحد المرشحين إنذار كاذب. دقق في ملف الأدلة، وحدد الخطأ، واذكر السبب العلمي الفيزيائي.',
   },
 };

@@ -65,6 +65,12 @@ import { SpexInteractiveGuide } from './SpexInteractiveGuide';
 import { EvidenceExportModal } from './EvidenceExportModal';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 import { Language, translations } from '../utils/translations';
+import { SkySphereEntry } from './TimeLens/SkySphereEntry';
+import { FramePlayer } from './TimeLens/FramePlayer';
+import { CurtainDivider } from './TimeLens/CurtainDivider';
+import { DiscoveryCard } from './TimeLens/DiscoveryCard';
+import { PostcardModal } from './TimeLens/PostcardModal';
+import { LensButton } from '../design/components/LensButton';
 
 interface ExploreViewProps {
   currentResult: InvestigationResult | null;
@@ -167,6 +173,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showCandidateComparison, setShowCandidateComparison] = useState<boolean>(false);
   const [showDataRelease, setShowDataRelease] = useState<boolean>(false);
   const [isExplainerOpen, setIsExplainerOpen] = useState<boolean>(false);
+  const [showSkySphere, setShowSkySphere] = useState<boolean>(false);
+  const [showPostcard, setShowPostcard] = useState<boolean>(false);
+  const [activeLens, setActiveLens] = useState<'TIME' | 'HIDDEN_COLORS' | 'DOUBT' | 'NEIGHBORS' | null>(null);
   const viewerSectionRef = useRef<HTMLDivElement | null>(null);
 
   useModalBehavior(isSearchOpen, () => setIsSearchOpen(false));
@@ -601,6 +610,32 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <span>{isRtl ? 'دليل الجولة' : 'Guide Me'}</span>
           </button>
 
+          {/* Sky Sphere Map Toggle */}
+          <button
+            type="button"
+            onClick={() => setShowSkySphere(!showSkySphere)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border active:scale-95 ${
+              showSkySphere
+                ? 'bg-cyan-500 text-slate-950 border-cyan-400 shadow-[0_0_15px_rgba(0,229,255,0.4)]'
+                : 'bg-slate-800 hover:bg-slate-700 text-cyan-300 border-cyan-500/30'
+            }`}
+            title={isRtl ? 'فتح خريطة السماء الكروية التفاعلية' : 'Open 3D Interactive Sky Sphere'}
+          >
+            <Globe2 className="w-3.5 h-3.5" />
+            <span>{showSkySphere ? (isRtl ? 'إخفاء الخريطة' : 'Hide Sky Map') : (isRtl ? 'خريطة السماء' : 'Sky Sphere')}</span>
+          </button>
+
+          {/* Share Discovery Postcard Button */}
+          <button
+            type="button"
+            onClick={() => setShowPostcard(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition cursor-pointer active:scale-95"
+            title={isRtl ? 'تصدير بطاقة اكتشاف مصورة للمشاركة' : 'Generate Shareable Discovery Postcard'}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span>{isRtl ? 'بطاقة الاكتشاف' : 'Postcard'}</span>
+          </button>
+
           {/* Share Link Button */}
           <button
             type="button"
@@ -671,6 +706,51 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Interactive Sky Sphere Modal / Drawer View */}
+      {showSkySphere && (
+        <div className="p-4 sm:p-6 rounded-3xl bg-slate-950/95 border-2 border-cyan-500/40 shadow-2xl backdrop-blur-xl animate-in fade-in space-y-4">
+          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300">
+                <Globe2 className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white font-serif">
+                  {isRtl ? 'خريطة السماء الكروية التفاعلية — اختر نقطة الرصد' : 'Interactive Sky Sphere — Pick an Observation Point'}
+                </h3>
+                <p className="text-xs text-slate-400 font-mono">
+                  {isRtl ? 'انقر على أي جرم أو اسحب الكرة السماوية للاستكشاف' : 'Tap any pulsing target or drag the celestial sphere to navigate'}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowSkySphere(false)}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition"
+              aria-label="Close Sky Sphere"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <SkySphereEntry
+            language={language}
+            onLaunchTarget={(targetId, ra, dec) => {
+              setCustomRa(ra.toString());
+              setCustomDec(dec.toString());
+              onSelectCase(targetId, { sizePix: selectedFovSize, epochPair: selectedEpochPair });
+              setShowSkySphere(false);
+            }}
+            onLaunchCoords={(ra, dec) => {
+              setCustomRa(ra.toString());
+              setCustomDec(dec.toString());
+              onSearchTarget(ra, dec, selectedFovSize);
+              setShowSkySphere(false);
+            }}
+          />
         </div>
       )}
 
@@ -1608,6 +1688,90 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </button>
           </div>
 
+          {/* Time Lens 4-Lens Analytical Switcher */}
+          <div className="pt-3 border-t border-slate-200 dark:border-white/[0.08]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-mono uppercase tracking-wider text-obs-amber font-bold flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5" />
+                {isRtl ? 'عدسات التحليل الفلكي (Observatory Lenses)' : 'Time Lens Analyzers (4 Perspectives)'}
+              </span>
+              <span className="text-[11px] text-slate-400 font-mono">
+                {activeLens ? `Active: ${activeLens}` : (isRtl ? 'اختر عدسة للتحليل المتعمق' : 'Select a lens to probe deep data')}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <LensButton
+                id="time"
+                label={isRtl ? 'الزمن' : 'Time'}
+                sublabel={isRtl ? 'سلسلة لقطات' : 'Series'}
+                icon={<Clock className="w-3.5 h-3.5" />}
+                isActive={activeLens === 'TIME'}
+                onClick={() => setActiveLens(activeLens === 'TIME' ? null : 'TIME')}
+                color="amber"
+              />
+              <LensButton
+                id="colors"
+                label={isRtl ? 'الألوان الخفية' : 'Hidden Colors'}
+                sublabel="102 bands"
+                icon={<Sparkles className="w-3.5 h-3.5" />}
+                isActive={activeLens === 'HIDDEN_COLORS'}
+                onClick={() => {
+                  setActiveLens(activeLens === 'HIDDEN_COLORS' ? null : 'HIDDEN_COLORS');
+                  setShowSpectralExplorer(true);
+                }}
+                color="cyan"
+              />
+              <LensButton
+                id="doubt"
+                label={isRtl ? 'قناع الشك' : 'Doubt'}
+                sublabel={isRtl ? 'أخطاء الكاشف' : 'Glitch Mask'}
+                icon={<AlertTriangle className="w-3.5 h-3.5" />}
+                isActive={activeLens === 'DOUBT'}
+                onClick={() => {
+                  setActiveLens(activeLens === 'DOUBT' ? null : 'DOUBT');
+                  setMarkerVisibility(activeLens === 'DOUBT' ? 'reticles' : 'labels');
+                }}
+                color="rose"
+              />
+              <LensButton
+                id="neighbors"
+                label={isRtl ? 'الجيران' : 'Neighbors'}
+                sublabel="Gaia / WISE"
+                icon={<Layers className="w-3.5 h-3.5" />}
+                isActive={activeLens === 'NEIGHBORS'}
+                onClick={() => {
+                  setActiveLens(activeLens === 'NEIGHBORS' ? null : 'NEIGHBORS');
+                  if (candidateFilter === 'all') setCandidateFilter('known');
+                  else setCandidateFilter('all');
+                }}
+                color="emerald"
+              />
+            </div>
+          </div>
+
+          {/* Frame Player when TIME lens is active */}
+          {activeLens === 'TIME' && (
+            <div className="mt-4 p-4 rounded-2xl bg-black/80 border border-obs-cyan/40 shadow-xl animate-fade-in">
+              <div className="flex items-center justify-between pb-2 mb-3 border-b border-white/10">
+                <span className="text-xs font-mono text-obs-cyan font-bold">
+                  {isRtl ? 'مشغل السلاسل الزمنية الحقيقي — /api/spherex/timeseries' : 'Real-Time Cadence Player — /api/spherex/timeseries'}
+                </span>
+                <button
+                  onClick={() => setActiveLens(null)}
+                  className="text-xs text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <FramePlayer
+                ra={currentResult?.targetCoords?.ra ?? 276.2614}
+                dec={currentResult?.targetCoords?.dec ?? 64.8258}
+                caseId={currentResult?.caseId}
+                language={language}
+              />
+            </div>
+          )}
+
           {/* Split Slider Control */}
           {viewMode === 'split' && (
             <div className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex items-center gap-3 text-xs font-mono animate-in fade-in">
@@ -1845,6 +2009,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
               {/* Candidate Cards List */}
               <div className="space-y-3">
+                {selectedCandidate && (
+                  <div className="mb-4">
+                    <DiscoveryCard
+                      candidate={selectedCandidate}
+                      viewMode={presentationLevel === 'science' ? 'scientist' : 'beginner'}
+                      language={language}
+                      onClose={() => setSelectedCandidate(null)}
+                    />
+                  </div>
+                )}
                 {paginatedCandidates.length > 0 ? (
                   paginatedCandidates.map((cand) => (
                     <FindingCard
@@ -2113,6 +2287,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           selectedCandidate={selectedCandidate}
           language={language}
           onClose={() => setShowEvidenceExport(false)}
+        />
+      )}
+
+      {/* Discovery Postcard Modal */}
+      {showPostcard && currentResult && (
+        <PostcardModal
+          isOpen={showPostcard}
+          onClose={() => setShowPostcard(false)}
+          result={currentResult}
+          candidate={selectedCandidate}
+          language={language}
         />
       )}
     </div>
