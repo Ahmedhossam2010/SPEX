@@ -418,8 +418,10 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     pmRaMasYr: -801.551,
     pmDecMasYr: 10362.394,
     coordinateEpochYear: 2000.0,
-    coordinateVerification: 'VERIFIED_GAIA_DR3',
-    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
+    coordinateVerification: 'SECONDARY_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 via Wikipedia "RW Aurigae" infobox (secondary source; not queried from the Gaia archive directly)',
+    source: 'https://en.wikipedia.org/wiki/RW_Aurigae infobox (Gaia DR3 values relayed)',
+    needsPrimaryCheck: true,
     constellation: 'Ophiuchus',
     scienceType: 'High-Proper-Motion M4V Red Dwarf',
     description:
@@ -464,7 +466,10 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
       'Sky position pending SIMBAD (eps Ind B) / Gaia DR3 archive output; position epoch unknown until then. Proper motion above is verified Gaia DR3 (reference epoch 2016.0).',
     coordinateVerification: 'UNVERIFIED',
     coordinateSource:
-      'PLACEHOLDER sky position = epsilon Indi A position. Paste SIMBAD (eps Ind B) or Gaia DR3 archive output for Eps Ind Ba here. Proper motion is verified Gaia DR3 (reference epoch 2016.0).',
+      'PLACEHOLDER sky position = epsilon Indi A position. Paste SIMBAD (eps Ind B) or Gaia DR3 archive output for Eps Ind Ba here. Proper motion is Gaia DR3 as relayed by a secondary source (see source field).',
+    source:
+      'Proper motion: https://en.wikipedia.org/wiki/Epsilon_Indi infobox for epsilon Ind Ba/Bb (Gaia DR3, reference epoch 2016.0). Sky position: PLACEHOLDER (= epsilon Indi A position).',
+    needsPrimaryCheck: true,
   },
   {
     // Reference star in the same field (verified). Not the challenge target.
@@ -528,7 +533,8 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     id: 'target-rw-aurigae',
     name: 'RW Aurigae (RW Aur)',
     // FIXED 2026-11: previous RA (77.45833 = 05h09m50s) was ~26 arcmin off the real star.
-    // Verified against SIMBAD/Gaia DR3: 05h07m49.4562s +30d24'04.774"
+    // Value source: Gaia DR3 as relayed by the Wikipedia "RW Aurigae" infobox
+    // (05h07m49.4562s +30d24'04.774") - secondary source, needs SIMBAD/Gaia-archive check.
     ra: 76.95606750,
     dec: 30.40132611,
     sexagesimal: '05h07m49.456s +30d24m04.774s',
