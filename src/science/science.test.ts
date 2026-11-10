@@ -2814,4 +2814,85 @@ test('Task 8: decodeBitmaskFlags accurately counts flags and calculates masked f
   assert.equal(dq.maskedFraction, 0.06);
 });
 
+// ---- Phase 1 verification: coordinates, proper motion, URL resolution contract ----
+
+test('Phase 1: challenge target coordinates match SIMBAD/Gaia DR3 (RW Aurigae RA fixed)', async () => {
+  const { OFFICIAL_CHALLENGE_TARGETS } = await import('./challengeTargets');
+
+  // RW Aurigae: the previous table entry (05h09m50.00s) was ~26 arcmin off.
+  // Fetched 2026-11 from SIMBAD/Gaia DR3: 05h07m49.4562s +30d24'04.774"
+  const rw = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-rw-aurigae')!;
+  assert.ok(Math.abs(rw.ra - 76.9560675) < 5 / 3600, `RW Aur RA should be 76.9560675 deg, got ${rw.ra}`);
+  assert.ok(Math.abs(rw.dec - 30.40132611) < 5 / 3600, `RW Aur Dec should be 30.40132611 deg, got ${rw.dec}`);
+  assert.equal(rw.coordinateVerification, 'VERIFIED_GAIA_DR3');
+  assert.ok(rw.pmRaMasYr != null && rw.pmDecMasYr != null, 'RW Aur proper motion must be recorded');
+
+  // Barnard's Star: 17h57m48.49847s +04d41'36.1139"
+  const barnard = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-barnards-star')!;
+  assert.ok(Math.abs(barnard.ra - 269.45207690) < 1 / 3600, `Barnard RA mismatch: ${barnard.ra}`);
+  assert.ok(Math.abs(barnard.dec - 4.69336497) < 1 / 3600, `Barnard Dec mismatch: ${barnard.dec}`);
+  assert.ok(Math.abs(barnard.pmDecMasYr! - 10362.394) < 0.01);
+
+  // WISE 0855: 08h55m10.83168s -07d14'42.5256"
+  const wise = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-wise-0855')!;
+  assert.ok(Math.abs(wise.ra - 133.79513200) < 1 / 3600, `WISE 0855 RA mismatch: ${wise.ra}`);
+  assert.ok(Math.abs(wise.dec - -7.24514600) < 1 / 3600, `WISE 0855 Dec mismatch: ${wise.dec}`);
+  assert.ok(Math.abs(wise.pmRaMasYr! - -8123.7) < 0.01);
+
+  // Epsilon Indi: table position matches SIMBAD's epsilon Indi A to <1".
+  const eps = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-b')!;
+  assert.ok(Math.abs(eps.ra - 330.84042) < 1 / 3600);
+  assert.ok(Math.abs(eps.dec - -56.78601) < 1 / 3600);
+  assert.equal(eps.coordinateVerification, 'VERIFIED_GAIA_DR3');
+
+  // R Draconis: UNVERIFIED until a SIMBAD TAP check is run locally. It must not
+  // silently pretend to be verified.
+  const rdra = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-r-draconis')!;
+  assert.equal(rdra.coordinateVerification, 'UNVERIFIED', 'R Draconis must stay UNVERIFIED until checked against SIMBAD');
+  assert.equal(rdra.pmRaMasYr, undefined, 'No invented proper motion for R Draconis');
+});
+
+test('Phase 1: Barnard Star proper-motion offset J2000 -> 2025.4 is ~4.4 arcmin', async () => {
+  const { propagatePosition, julianYearFromMjd } = await import('./properMotion');
+
+  const prop = propagatePosition(269.45207690, 4.69336497, -801.551, 10362.394, 2000.0, 2025.4);
+  const offsetArcmin = prop.separationArcsec / 60;
+  assert.ok(
+    offsetArcmin > 4.2 && offsetArcmin < 4.6,
+    `Barnard Star J2000->2025.4 offset should be ~4.4 arcmin, got ${offsetArcmin.toFixed(3)} arcmin`
+  );
+  assert.ok(prop.dec > 4.69336497, 'Barnard Star moves north in Dec');
+  assert.ok(prop.ra < 269.45207690, 'Barnard Star RA decreases');
+
+  // WISE 0855 moves ~8.1"/yr: offset over the same baseline is ~3.4 arcmin.
+  const propWise = propagatePosition(133.79513200, -7.24514600, -8123.7, 673.2, 2000.0, 2025.4);
+  const wiseArcmin = propWise.separationArcsec / 60;
+  assert.ok(
+    wiseArcmin > 3.2 && wiseArcmin < 3.7,
+    `WISE 0855 J2000->2025.4 offset should be ~3.4 arcmin, got ${wiseArcmin.toFixed(3)} arcmin`
+  );
+
+  // Epoch conversion sanity: MJD 51544.5 == J2000.0
+  assert.ok(Math.abs(julianYearFromMjd(51544.5) - 2000.0) < 1e-9);
+  assert.ok(Math.abs(julianYearFromMjd(60793.0) - 2025.325) < 1e-3);
+});
+
+test('Phase 1: zero proper motion leaves the position untouched', async () => {
+  const { propagatePosition } = await import('./properMotion');
+  const same = propagatePosition(100, 20, 0, 0, 2000, 2050);
+  assert.equal(same.ra, 100);
+  assert.equal(same.dec, 20);
+  assert.equal(same.separationArcsec, 0);
+});
+
+test('Phase 1: buildFallbackFitsUrl is deterministic and embeds obsId + detector', async () => {
+  const { buildFallbackFitsUrl } = await import('./timeSeriesPipeline');
+  const url1 = buildFallbackFitsUrl('2025W35_1A_0444_3', 'D2');
+  const url2 = buildFallbackFitsUrl('2025W35_1A_0444_3', 'D2');
+  assert.equal(url1, url2, 'fallback URL builder must be deterministic');
+  assert.ok(url1.includes('2025W35_1A_0444_3D2'), 'fallback URL embeds obsId + detector');
+  // resolveFitsUrl itself performs a live network verification and therefore must
+  // NOT be exercised inside the offline unit-test suite.
+});
+
 
