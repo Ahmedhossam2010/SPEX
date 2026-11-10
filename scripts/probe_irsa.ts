@@ -1,5 +1,10 @@
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
+import { FITSReader } from '../src/science/fitsReader';
+import { WCS } from '../src/science/wcs';
+import { OFFICIAL_CHALLENGE_TARGETS } from '../src/science/challengeTargets';
+import { propagatePosition, julianYearFromMjd } from '../src/science/properMotion';
 
 interface TargetInfo {
   id: string;
@@ -99,14 +104,21 @@ async function probeCutout(fitsUrl: string, ra: number, dec: number) {
     const res = await fetch(cutoutUrl, { signal: controller.signal, method: 'GET' });
     clearTimeout(timeout);
     let size = 0;
+    let checksum: string | null = null;
+    let buffer: Buffer | null = null;
     if (res.ok) {
       const ab = await res.arrayBuffer();
       size = ab.byteLength;
+      buffer = Buffer.from(ab);
+      // SHA-256 per downloaded FITS proves files from different obs_ids are
+      // distinct even when every QR2 cutout is exactly 5,117,760 bytes.
+      checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+      console.log(`  -> SHA-256: ${checksum}`);
     }
-    return { status: res.status, statusText: res.statusText, size, url: cutoutUrl };
+    return { status: res.status, statusText: res.statusText, size, checksum, buffer, url: cutoutUrl };
   } catch (err: any) {
     clearTimeout(timeout);
-    return { status: 0, statusText: err.message, size: 0, url: cutoutUrl };
+    return { status: 0, statusText: err.message, size: 0, checksum: null, buffer: null, url: cutoutUrl };
   }
 }
 
@@ -162,12 +174,54 @@ async function main() {
       const directFits = await resolveDataLinkToFits(firstDatalink);
       if (directFits) {
         console.log(`  -> Resolved FITS: ${directFits}`);
-        const cutout = await probeCutout(directFits, tgt.ra, tgt.dec);
+
+        // Proper-motion propagation to this exposure's observation date
+        const mjdObs = details.rows[0].t_min;
+        const obsEpochYear = julianYearFromMjd(mjdObs);
+        const catTarget = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === tgt.id);
+        let centerRa = tgt.ra;
+        let centerDec = tgt.dec;
+        if (catTarget && catTarget.pmRaMasYr != null && catTarget.pmDecMasYr != null && catTarget.coordinateEpochYear != null) {
+          const prop = propagatePosition(tgt.ra, tgt.dec, catTarget.pmRaMasYr, catTarget.pmDecMasYr, catTarget.coordinateEpochYear, obsEpochYear);
+          centerRa = prop.ra;
+          centerDec = prop.dec;
+          console.log(`  -> Proper motion: ${(prop.separationArcsec / 60).toFixed(2)} arcmin from epoch ${catTarget.coordinateEpochYear} to ${obsEpochYear.toFixed(2)}`);
+        }
+
+        const cutout = await probeCutout(directFits, centerRa, centerDec);
         console.log(`  -> Cutout: HTTP ${cutout.status}, size: ${cutout.size} bytes`);
+
+        // Footprint containment: is the propagated target inside the downloaded
+        // cutout, and more than 20 px from the edge?
+        let containment: any = null;
+        if (cutout.buffer) {
+          try {
+            const parsed = FITSReader.parse(cutout.buffer);
+            const pix = WCS.skyToPix(centerRa, centerDec, parsed.wcs);
+            const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
+            containment = {
+              x: Number(pix.x.toFixed(2)),
+              y: Number(pix.y.toFixed(2)),
+              width: parsed.width,
+              height: parsed.height,
+              insideCutout: pix.x >= 0 && pix.y >= 0 && pix.x <= parsed.width - 1 && pix.y <= parsed.height - 1,
+              pxFromEdge: Number(pxFromEdge.toFixed(2)),
+              passes20pxMargin: pxFromEdge >= 20,
+            };
+            console.log(`  -> Containment: pixel (${containment.x}, ${containment.y}) in ${parsed.width}x${parsed.height}, ${containment.pxFromEdge} px from edge, ${containment.passes20pxMargin ? 'PASS' : 'FAIL'} (20 px margin)`);
+          } catch (e: any) {
+            console.warn(`  -> Containment check failed: ${e.message}`);
+          }
+        }
+
         details.sampleCutout = {
           directFitsUrl: directFits,
           httpStatus: cutout.status,
           sizeBytes: cutout.size,
+          sha256: cutout.checksum,
+          centerRa,
+          centerDec,
+          containment,
         };
       }
     } else {
@@ -194,15 +248,19 @@ Data Source: NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx ObsCore TAP (
 
 This diagnostic investigation directly queries NASA/IPAC IRSA for the 5 challenge targets specified in the NASA Space Apps Challenge "Planet X and SPHEREx", plus the North Ecliptic Pole deep calibration strip.
 
-| Target | RA (deg) | Dec (deg) | Sexagesimal | TAP Rows (r=0.5°) | Cutout Status | QR2 Coverage Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| Target | RA (deg) | Dec (deg) | Sexagesimal | TAP Rows (r=0.5°) | Cutout Status | SHA-256 (first 12) | Containment | QR2 Coverage Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 `;
 
   for (const p of probeData) {
     const t = p.target;
     const cutoutStatus = p.sampleCutout ? `HTTP ${p.sampleCutout.httpStatus} (${p.sampleCutout.sizeBytes} B)` : 'N/A';
+    const sha = p.sampleCutout?.sha256 ? `\`${String(p.sampleCutout.sha256).slice(0, 12)}…\`` : 'N/A';
+    const cont = p.sampleCutout?.containment
+      ? `${p.sampleCutout.containment.insideCutout ? 'inside' : 'OUTSIDE'}, ${p.sampleCutout.containment.pxFromEdge} px from edge (${p.sampleCutout.containment.passes20pxMargin ? 'PASS' : 'FAIL'} 20px)`
+      : 'N/A';
     const coverage = p.count > 0 ? (p.sampleCutout?.httpStatus === 200 ? 'COVERED_REAL_DATA' : 'METADATA_ONLY') : 'NO_DATA_IN_RELEASE';
-    md += `| **${t.name}** | \`${t.ra}\` | \`${t.dec}\` | \`${t.sexagesimal}\` | **${p.count}** | ${cutoutStatus} | **${coverage}** |\n`;
+    md += `| **${t.name}** | \`${t.ra}\` | \`${t.dec}\` | \`${t.sexagesimal}\` | **${p.count}** | ${cutoutStatus} | ${sha} | ${cont} | **${coverage}** |\n`;
   }
 
   md += `\n## Key Architectural Findings & Design Implications
