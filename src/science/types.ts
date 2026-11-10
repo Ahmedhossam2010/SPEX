@@ -255,6 +255,12 @@ export interface ChallengeTarget {
   coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
   /** Source the verified coordinates came from (set when coordinateVerification is set). */
   coordinateSource?: string;
+  /** Whether the epoch of the stored ra/dec is known. When false, proper-motion propagation is provisional. */
+  coordinateEpochKnown?: boolean;
+  /** Human-readable note about which epoch the stored coordinates refer to. */
+  coordinateEpochNote?: string;
+  /** Role of this entry in the challenge target list. */
+  role?: 'challenge_target' | 'reference_star';
 }
 
 export interface SpectralBandInfo {
