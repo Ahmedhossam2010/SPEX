@@ -2672,6 +2672,18 @@ test('Phase 1: Eps Ind Ba/Bb carries verified Gaia DR3 proper motion while its s
   assert.ok(Math.abs(bab.pmDecMasYr! - -2466.832) < 0.001, 'Gaia DR3 PM Dec (mas/yr)');
 });
 
+test('Phase 1: secondary-source astrometry records exact origin and needsPrimaryCheck flags', async () => {
+  const { OFFICIAL_CHALLENGE_TARGETS } = await import('./challengeTargets');
+  const rw = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-rw-aurigae')!;
+  const bab = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-bab')!;
+  assert.equal(rw.coordinateVerification, 'SECONDARY_GAIA_DR3', 'RW Aur position must not claim direct Gaia-archive verification');
+  assert.equal(rw.needsPrimaryCheck, true);
+  assert.ok((rw.source ?? '').includes('wikipedia.org'), 'source must record the exact origin URL');
+  assert.equal(bab.coordinateVerification, 'UNVERIFIED', 'Ba/Bb sky position stays UNVERIFIED until SIMBAD output is pasted');
+  assert.equal(bab.needsPrimaryCheck, true);
+  assert.ok((bab.source ?? '').includes('wikipedia.org'));
+});
+
 test('Task 2: TAP query produces two distinct fits_urls for two different rows (no hardcoded identical URL bug)', async () => {
   const { resolveFitsUrl, buildFallbackFitsUrl } = await import('./timeSeriesPipeline');
 
@@ -2839,7 +2851,7 @@ test('Phase 1: challenge target coordinates match SIMBAD/Gaia DR3 (RW Aurigae RA
   const rw = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-rw-aurigae')!;
   assert.ok(Math.abs(rw.ra - 76.9560675) < 5 / 3600, `RW Aur RA should be 76.9560675 deg, got ${rw.ra}`);
   assert.ok(Math.abs(rw.dec - 30.40132611) < 5 / 3600, `RW Aur Dec should be 30.40132611 deg, got ${rw.dec}`);
-  assert.equal(rw.coordinateVerification, 'VERIFIED_GAIA_DR3');
+  assert.equal(rw.coordinateVerification, 'SECONDARY_GAIA_DR3', 'value came via a Wikipedia infobox, not the Gaia archive directly');
   assert.ok(rw.pmRaMasYr != null && rw.pmDecMasYr != null, 'RW Aur proper motion must be recorded');
 
   // Barnard's Star: 17h57m48.49847s +04d41'36.1139"
