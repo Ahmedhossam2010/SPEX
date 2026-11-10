@@ -41,6 +41,7 @@ import {
   CatalogOverlayItem,
 } from './src/science/timeSeriesPipeline';
 import { parseCoordinateInput, sexagesimalToDecimal, decimalToSexagesimal } from './src/science/coordinates';
+import { propagatePosition, julianYearFromMjd } from './src/science/properMotion';
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -409,6 +410,9 @@ async function getFITSCutout(
         } catch {}
       }
       const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+      // SHA-256 per downloaded FITS proves that files from different obs_ids are
+      // genuinely distinct (all QR2 Level-2B cutouts share the same 5,117,760-byte size).
+      console.log(`[IRSA IBE] Downloaded FITS sha256=${checksum} bytes=${buffer.length} url=${cutoutUrl}`);
 
       return { buffer, checksum };
     } catch (err: any) {
@@ -494,7 +498,8 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
         const visitKey = extractVisitKey(obsId);
 
         // Build unique FITS URL per row from that row's own access_url / obs_id
-        const fitsUrl = await resolveFitsUrl(accessUrl, obsId, detector);
+        const resolvedFits = await resolveFitsUrl(accessUrl, obsId, detector);
+        const fitsUrl = resolvedFits.url;
 
         return {
           obs_id: obsId,
@@ -513,6 +518,7 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
           dataproduct_type: dataproduct,
           access_url: accessUrl,
           fits_url: fitsUrl,
+          fits_resolved_by: resolvedFits.resolvedBy,
           access_format: 'application/fits',
           survey: SPHEREX_DATA_RELEASE,
         };
@@ -746,8 +752,11 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
           const em1 = ((parseFloat(row1[6]) + parseFloat(row1[7])) / 2) * 1e6;
           const em2 = ((parseFloat(row2[6]) + parseFloat(row2[7])) / 2) * 1e6;
 
-          const fitsUrl1 = await resolveFitsUrl(acc1, obsId1, chosenDet);
-          const fitsUrl2 = await resolveFitsUrl(acc2, obsId2, chosenDet);
+          const resolvedFits1 = await resolveFitsUrl(acc1, obsId1, chosenDet);
+          const resolvedFits2 = await resolveFitsUrl(acc2, obsId2, chosenDet);
+          console.info(
+            `[Process] FITS URL resolution: obs1=${resolvedFits1.resolvedBy}, obs2=${resolvedFits2.resolvedBy}`
+          );
 
           const detNum = parseInt(chosenDet.replace(/\D/g, ''), 10) || 1;
           const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
@@ -755,7 +764,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
 
           ep1 = {
             obs_id: obsId1,
-            fits_url: fitsUrl1,
+            fits_url: resolvedFits1.url,
             mjd: Number(((parseFloat(row1[4]) + parseFloat(row1[5])) / 2).toFixed(6)),
             band: bandName,
             wavelength_um: Number(em1.toFixed(2)),
@@ -764,7 +773,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
 
           ep2 = {
             obs_id: obsId2,
-            fits_url: fitsUrl2,
+            fits_url: resolvedFits2.url,
             mjd: Number(((parseFloat(row2[4]) + parseFloat(row2[5])) / 2).toFixed(6)),
             band: bandName,
             wavelength_um: Number(em2.toFixed(2)),
@@ -806,6 +815,52 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       }
     }
 
+    // ---- Phase 1 verification: proper-motion propagation ----
+    // Catalogued targets are stored at epoch 2000.0; SPHEREx exposures are 2025+.
+    // High-proper-motion targets (Barnard's Star ~10.4"/yr, WISE 0855 ~8.2"/yr) move
+    // arcminutes between catalog epoch and observation epoch, so the cutout must be
+    // centered on the propagated position. The TAP cone search keeps using the
+    // catalog position: the displacement is negligible against the search radius.
+    const matchedTarget = OFFICIAL_CHALLENGE_TARGETS.find(
+      (t) =>
+        t.pmRaMasYr != null &&
+        t.pmDecMasYr != null &&
+        t.coordinateEpochYear != null &&
+        WCS.angularSeparationArcsec(t.ra, t.dec, ra, dec) < 5
+    );
+    const obsEpochYear = julianYearFromMjd(ep1.mjd);
+    let centerRa = ra;
+    let centerDec = dec;
+    let properMotionInfo: InvestigationResult['properMotion'] | undefined;
+    if (
+      matchedTarget &&
+      matchedTarget.pmRaMasYr != null &&
+      matchedTarget.pmDecMasYr != null &&
+      matchedTarget.coordinateEpochYear != null
+    ) {
+      const prop = propagatePosition(
+        ra,
+        dec,
+        matchedTarget.pmRaMasYr,
+        matchedTarget.pmDecMasYr,
+        matchedTarget.coordinateEpochYear,
+        obsEpochYear
+      );
+      centerRa = prop.ra;
+      centerDec = prop.dec;
+      properMotionInfo = {
+        targetId: matchedTarget.id,
+        pmRaMasYr: matchedTarget.pmRaMasYr,
+        pmDecMasYr: matchedTarget.pmDecMasYr,
+        fromEpochYear: matchedTarget.coordinateEpochYear,
+        toEpochYear: obsEpochYear,
+        separationArcsec: prop.separationArcsec,
+      };
+      console.info(
+        `[Process] Proper motion: ${matchedTarget.name} moved ${prop.separationArcsec.toFixed(1)}\" from epoch ${matchedTarget.coordinateEpochYear} to ${obsEpochYear.toFixed(2)}; cutout centered on propagated position`
+      );
+    }
+
     const sourceMode: 'live' | 'saved_benchmark' = isCustomSearch ? 'live' : 'saved_benchmark';
     const caseIdToUse = isCustomSearch ? 'custom-irsa-target' : selectedCase.id;
     const caseTitle = isCustomSearch
@@ -816,12 +871,38 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       : selectedCase.description;
 
     // Download real FITS cutouts for both epochs from NASA/IPAC IRSA
-    const fits1Res = await getFITSCutout(ep1.fits_url, ra, dec, sizePix);
-    const fits2Res = await getFITSCutout(ep2.fits_url, ra, dec, sizePix);
+    // (centered on the proper-motion-propagated target position)
+    const fits1Res = await getFITSCutout(ep1.fits_url, centerRa, centerDec, sizePix);
+    const fits2Res = await getFITSCutout(ep2.fits_url, centerRa, centerDec, sizePix);
 
     // Parse FITS HDUs with real scientific parser
     const fitsData1 = FITSReader.parse(fits1Res.buffer);
     const fitsData2 = FITSReader.parse(fits2Res.buffer);
+
+    // Footprint containment check (Phase 1 verification): where does the propagated
+    // target actually land inside the downloaded cutout, and how far from the edge?
+    let targetPixel: InvestigationResult['targetPixel'];
+    try {
+      const pix = WCS.skyToPix(centerRa, centerDec, fitsData1.wcs);
+      const x = pix.x;
+      const y = pix.y;
+      const pxFromEdge = Math.min(x, y, fitsData1.width - 1 - x, fitsData1.height - 1 - y);
+      targetPixel = {
+        x: Number(x.toFixed(2)),
+        y: Number(y.toFixed(2)),
+        width: fitsData1.width,
+        height: fitsData1.height,
+        insideCutout: x >= 0 && y >= 0 && x <= fitsData1.width - 1 && y <= fitsData1.height - 1,
+        pxFromEdge: Number(pxFromEdge.toFixed(2)),
+      };
+      if (!targetPixel.insideCutout || targetPixel.pxFromEdge < 20) {
+        console.warn(
+          `[Process] Target pixel ${targetPixel.x},${targetPixel.y} is ${targetPixel.insideCutout ? `only ${targetPixel.pxFromEdge.toFixed(1)} px` : 'NOT'} inside the ${targetPixel.width}x${targetPixel.height} cutout (margin warning threshold: 20 px)`
+        );
+      }
+    } catch (pixErr) {
+      console.warn('[Process] Could not compute target pixel position from WCS:', pixErr);
+    }
 
     // Extract authentic physical observation timestamps from FITS headers
     const mjd1 =
@@ -928,7 +1009,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
       try {
         const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
-          const resF = await getFITSCutout(ep.fits_url, ra, dec, sizePix);
+          const resF = await getFITSCutout(ep.fits_url, centerRa, centerDec, sizePix);
           const parsed = FITSReader.parse(resF.buffer);
           const epDateObs =
             (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || ep.date;
@@ -1007,7 +1088,10 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       sourceMode,
       title: caseTitle,
       description: caseDescription,
-      targetCoords: { ra, dec },
+      targetCoords: { ra: centerRa, dec: centerDec },
+      targetCoordsCatalog: properMotionInfo ? { ra, dec } : undefined,
+      properMotion: properMotionInfo,
+      targetPixel,
       fovArcmin,
       sizePix,
       epoch1: {
@@ -1105,6 +1189,17 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       }
     }
 
+    // ---- Phase 1 verification: proper-motion propagation (time-series route) ----
+    // Each exposure is cut out around the target's propagated position at that
+    // exposure's own observation date, so the target stays centered in every frame.
+    const matchedTargetTs = OFFICIAL_CHALLENGE_TARGETS.find(
+      (t) =>
+        t.pmRaMasYr != null &&
+        t.pmDecMasYr != null &&
+        t.coordinateEpochYear != null &&
+        WCS.angularSeparationArcsec(t.ra, t.dec, ra, dec) < 5
+    );
+
     // Query TAP for all observations covering this position
     const tapRadiusDeg = 0.35;
     const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${tapRadiusDeg}))=1 ORDER BY t_min ASC`;
@@ -1144,7 +1239,8 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           const date = new Date((mjd - 40587) * 86400 * 1000).toISOString();
           const wavelengthUm = Number((((emMin + emMax) / 2) * 1e6).toFixed(2));
           const visitKey = extractVisitKey(obsId);
-          const fitsUrl = await resolveFitsUrl(accessUrl, obsId, detector);
+          const resolvedFitsTs = await resolveFitsUrl(accessUrl, obsId, detector);
+          const fitsUrl = resolvedFitsTs.url;
 
           exposures.push({
             obsId,
@@ -1200,8 +1296,30 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     // Fetch cutouts concurrently
     const framePromises = selectedExposures.map(async (exp, idx) => {
       try {
-        const cutout = await getFITSCutout(exp.fitsUrl, ra, dec, sizePix);
+        const expEpochYear = julianYearFromMjd(exp.mjd);
+        const propExp =
+          matchedTargetTs &&
+          matchedTargetTs.pmRaMasYr != null &&
+          matchedTargetTs.pmDecMasYr != null &&
+          matchedTargetTs.coordinateEpochYear != null
+            ? propagatePosition(
+                ra,
+                dec,
+                matchedTargetTs.pmRaMasYr,
+                matchedTargetTs.pmDecMasYr,
+                matchedTargetTs.coordinateEpochYear,
+                expEpochYear
+              )
+            : null;
+        const cutout = await getFITSCutout(
+          exp.fitsUrl,
+          propExp ? propExp.ra : ra,
+          propExp ? propExp.dec : dec,
+          sizePix
+        );
         const parsed = FITSReader.parse(cutout.buffer);
+        const pix = WCS.skyToPix(propExp ? propExp.ra : ra, propExp ? propExp.dec : dec, parsed.wcs);
+        const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
         const dq = decodeBitmaskFlags(parsed.flags, parsed.width * parsed.height);
         const dateObs =
           (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || exp.date;
@@ -1234,6 +1352,12 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           dqDecoded: dq,
           wcs: parsed.wcs,
           reprojectedFlux: Array.from(parsed.data),
+          targetPixel: {
+            x: Number(pix.x.toFixed(2)),
+            y: Number(pix.y.toFixed(2)),
+            insideCutout: pix.x >= 0 && pix.y >= 0 && pix.x <= parsed.width - 1 && pix.y <= parsed.height - 1,
+            pxFromEdge: Number(pxFromEdge.toFixed(2)),
+          },
           fitsUrl: exp.fitsUrl,
           accessUrl: exp.accessUrl,
         } as TimeSeriesFrame;
@@ -1332,6 +1456,27 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
 
     return res.json({
       targetCoords: { ra, dec },
+      properMotion:
+        matchedTargetTs &&
+        matchedTargetTs.pmRaMasYr != null &&
+        matchedTargetTs.pmDecMasYr != null &&
+        matchedTargetTs.coordinateEpochYear != null
+          ? {
+              targetId: matchedTargetTs.id,
+              pmRaMasYr: matchedTargetTs.pmRaMasYr,
+              pmDecMasYr: matchedTargetTs.pmDecMasYr,
+              fromEpochYear: matchedTargetTs.coordinateEpochYear,
+              toEpochYear: obsEpochYear,
+              separationArcsec: propagatePosition(
+                ra,
+                dec,
+                matchedTargetTs.pmRaMasYr,
+                matchedTargetTs.pmDecMasYr,
+                matchedTargetTs.coordinateEpochYear,
+                obsEpochYear
+              ).separationArcsec,
+            }
+          : undefined,
       fovArcmin,
       sizePix,
       totalExposuresFound: exposures.length,
