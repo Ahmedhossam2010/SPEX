@@ -2839,11 +2839,17 @@ test('Phase 1: challenge target coordinates match SIMBAD/Gaia DR3 (RW Aurigae RA
   assert.ok(Math.abs(wise.dec - -7.24514600) < 1 / 3600, `WISE 0855 Dec mismatch: ${wise.dec}`);
   assert.ok(Math.abs(wise.pmRaMasYr! - -8123.7) < 0.01);
 
-  // Epsilon Indi: table position matches SIMBAD's epsilon Indi A to <1".
-  const eps = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-b')!;
-  assert.ok(Math.abs(eps.ra - 330.84042) < 1 / 3600);
-  assert.ok(Math.abs(eps.dec - -56.78601) < 1 / 3600);
-  assert.equal(eps.coordinateVerification, 'VERIFIED_GAIA_DR3');
+  // Epsilon Indi Ba/Bb (challenge target): coordinates are an UNVERIFIED
+  // placeholder duplicating epsilon Indi A's position until SIMBAD output
+  // is pasted. Epsilon Indi A is the verified reference star.
+  const epsBab = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-bab')!;
+  assert.equal(epsBab.coordinateVerification, 'UNVERIFIED', 'Eps Indi Ba/Bb must stay UNVERIFIED until SIMBAD output is pasted');
+  assert.equal(epsBab.role, 'challenge_target');
+  const epsA = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-a')!;
+  assert.ok(Math.abs(epsA.ra - 330.84042) < 1 / 3600);
+  assert.ok(Math.abs(epsA.dec - -56.78601) < 1 / 3600);
+  assert.equal(epsA.coordinateVerification, 'VERIFIED_GAIA_DR3');
+  assert.equal(epsA.role, 'reference_star');
 
   // R Draconis: UNVERIFIED until a SIMBAD TAP check is run locally. It must not
   // silently pretend to be verified.
