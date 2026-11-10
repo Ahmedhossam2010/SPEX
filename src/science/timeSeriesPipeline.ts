@@ -37,6 +37,8 @@ export interface TimeSeriesFrame {
   dqDecoded: DecodedDQFlags;
   wcs: WCSParams;
   reprojectedFlux: number[]; // Aligned to reference WCS
+  /** Where the propagated target lands in this frame, and its distance to the frame edge. */
+  targetPixel?: { x: number; y: number; insideCutout: boolean; pxFromEdge: number };
   fitsUrl: string;
   accessUrl: string;
   isSimulated?: boolean;
@@ -118,6 +120,15 @@ export interface TimeSeriesResult {
   catalogOverlays: CatalogOverlayItem[];
   releaseId: string;
   message?: string;
+  /** Proper-motion propagation applied for per-exposure cutout centering. */
+  properMotion?: {
+    targetId?: string;
+    pmRaMasYr: number;
+    pmDecMasYr: number;
+    fromEpochYear: number;
+    toEpochYear: number;
+    separationArcsec: number;
+  };
 }
 
 /** How the final FITS URL was obtained. */
