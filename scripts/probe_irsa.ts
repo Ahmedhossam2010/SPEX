@@ -47,9 +47,13 @@ const TARGETS: TargetInfo[] = [
   {
     id: 'target-rw-aurigae',
     name: 'RW Aurigae',
-    ra: 77.45833,
-    dec: 30.40142,
-    sexagesimal: '05h09m50.00s +30d24m05.0s',
+    // Gaia DR3 (Wikipedia infobox, extracted 2026-11): 05h07m49.4562s +30d24m04.774s.
+    // The previous 77.45833 / '05h09m50.00s' value was ~26 arcmin off in RA; the
+    // 19-row TAP count reported in docs/IRSA_PROBE.md was measured at that stale
+    // center and must be re-probed at the corrected position.
+    ra: 76.95606750,
+    dec: 30.40132611,
+    sexagesimal: '05h07m49.4562s +30d24m04.774s',
   },
   {
     id: 'target-r-draconis',
