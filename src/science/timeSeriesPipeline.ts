@@ -249,16 +249,8 @@ export function buildFallbackFitsUrl(obsId?: string, detector?: string, accessUr
   const id = obsId || '2025W18_1B_0001_1';
   const weekMatch = id.match(/^(\d{4}W\d{2}_[0-9A-Z]+)/);
   const week = weekMatch ? weekMatch[1] : '2025W18_1B';
-
-  // Map release builds dynamically based on observation week
-  let build = 'l2b-v20-2025-241';
-  if (week.startsWith('2025W24')) build = 'l2b-v20-2025-252';
-  else if (week.startsWith('2025W35') || week.startsWith('2025W38')) build = 'l2b-v20-2025-269';
-  else if (week.startsWith('2025W46')) build = 'l2b-v20-2025-321';
-  else if (week.startsWith('2025W18') && det === '3') build = 'l2b-v20-2025-240';
-
   const base = process.env.SPHEREX_BASE_URL || 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2';
-  return `${base}/level2/${week}/${build}/${det}/level2_${id}D${det}_spx_${build}.fits`;
+  return `${base}/level2/${week}/l2b-v20-2025-241/${det}/level2_${id}D${det}_spx_l2b-v20-2025-241.fits`;
 }
 
 /**

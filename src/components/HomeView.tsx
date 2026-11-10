@@ -152,7 +152,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             variant="primary"
             size="lg"
             icon={<Compass className="w-5 h-5" />}
-            onClick={() => onStartExplore()}
+            onClick={() => onStartExplore('case-nep-var-01')}
             className="w-full sm:w-auto shadow-[0_0_30px_rgba(255,185,0,0.35)]"
           >
             {t.homeBtnEnterSky}

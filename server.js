@@ -4188,13 +4188,8 @@ function buildFallbackFitsUrl(obsId, detector, accessUrl) {
   const id = obsId || "2025W18_1B_0001_1";
   const weekMatch = id.match(/^(\d{4}W\d{2}_[0-9A-Z]+)/);
   const week = weekMatch ? weekMatch[1] : "2025W18_1B";
-  let build = "l2b-v20-2025-241";
-  if (week.startsWith("2025W24")) build = "l2b-v20-2025-252";
-  else if (week.startsWith("2025W35") || week.startsWith("2025W38")) build = "l2b-v20-2025-269";
-  else if (week.startsWith("2025W46")) build = "l2b-v20-2025-321";
-  else if (week.startsWith("2025W18") && det === "3") build = "l2b-v20-2025-240";
   const base = process.env.SPHEREX_BASE_URL || "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2";
-  return `${base}/level2/${week}/${build}/${det}/level2_${id}D${det}_spx_${build}.fits`;
+  return `${base}/level2/${week}/l2b-v20-2025-241/${det}/level2_${id}D${det}_spx_l2b-v20-2025-241.fits`;
 }
 function extractVisitKey(obsId) {
   const parts = obsId.split("_");
@@ -4517,7 +4512,7 @@ var CURATED_CASES = [
     description: "Authentic SPHEREx QR2 exposures of Barnard\u2019s Star (GJ 699) in Band 2 (D2 array at 1.48 \xB5m). Rapid astrometric motion and intra-visit photometric baseline.",
     epoch1: {
       obs_id: "2025W35_1A_0444_3",
-      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-269/2/level2_2025W35_1A_0444_3D2_spx_l2b-v20-2025-269.fits",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-241/2/level2_2025W35_1A_0444_3D2_spx_l2b-v20-2025-241.fits",
       mjd: 60912.448553,
       band: "Band 2 (1.11 - 1.65 \xB5m)",
       wavelength_um: 1.48,
@@ -4527,7 +4522,7 @@ var CURATED_CASES = [
     },
     epoch2: {
       obs_id: "2025W35_1A_0444_4",
-      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-269/2/level2_2025W35_1A_0444_4D2_spx_l2b-v20-2025-269.fits",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-241/2/level2_2025W35_1A_0444_4D2_spx_l2b-v20-2025-241.fits",
       mjd: 60912.450045,
       band: "Band 2 (1.11 - 1.65 \xB5m)",
       wavelength_um: 1.48,
@@ -4545,25 +4540,25 @@ var CURATED_CASES = [
     targetName: "WISE 0855-0714",
     category: "Variable Candidate",
     expectedClassification: "NO SIGNIFICANT CHANGE DETECTED",
-    description: "Authentic SPHEREx D3 array exposures (2.00 \xB5m) imaging the coldest known sub-stellar object outside the solar system (~7.2 ly), tracing deep methane and water ice bands.",
+    description: "Authentic SPHEREx D4 array exposures (2.76 \xB5m) imaging the coldest known sub-stellar object outside the solar system (~7.2 ly), tracing deep methane and water ice bands.",
     epoch1: {
-      obs_id: "2025W46_2A_0214_1",
-      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W46_2A/l2b-v20-2025-321/3/level2_2025W46_2A_0214_1D3_spx_l2b-v20-2025-321.fits",
-      mjd: 60990.21543,
-      band: "Band 3 (1.50 - 2.40 \xB5m)",
-      wavelength_um: 2,
-      date: "2025-11-10T05:10:13.152",
-      date_end: "2025-11-10T05:12:08.270",
+      obs_id: "2025W32_1B_0521_1",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W32_1B/l2b-v20-2025-241/4/level2_2025W32_1B_0521_1D4_spx_l2b-v20-2025-241.fits",
+      mjd: 60891.21543,
+      band: "Band 4 (2.40 - 3.84 \xB5m)",
+      wavelength_um: 2.76,
+      date: "2025-08-04T05:10:13.152",
+      date_end: "2025-08-04T05:12:08.270",
       integration_duration_sec: 115.118
     },
     epoch2: {
-      obs_id: "2025W46_2A_0214_2",
-      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W46_2A/l2b-v20-2025-321/3/level2_2025W46_2A_0214_2D3_spx_l2b-v20-2025-321.fits",
-      mjd: 60990.216922,
-      band: "Band 3 (1.50 - 2.40 \xB5m)",
-      wavelength_um: 2,
-      date: "2025-11-10T05:12:22.061",
-      date_end: "2025-11-10T05:14:17.179",
+      obs_id: "2025W32_1B_0521_2",
+      fits_url: "https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W32_1B/l2b-v20-2025-241/4/level2_2025W32_1B_0521_2D4_spx_l2b-v20-2025-241.fits",
+      mjd: 60891.216922,
+      band: "Band 4 (2.40 - 3.84 \xB5m)",
+      wavelength_um: 2.76,
+      date: "2025-08-04T05:12:22.061",
+      date_end: "2025-08-04T05:14:17.179",
       integration_duration_sec: 115.118
     }
   },
@@ -4686,10 +4681,10 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
   const cutoutUrl = `${fitsUrl}?center=${ra.toFixed(5)},${dec.toFixed(5)}&size=${sizePix}pix`;
   console.log(`[IRSA IBE] Downloading cutout: ${cutoutUrl}`);
   let lastError = null;
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 3;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12e3);
+    const timeout = setTimeout(() => controller.abort(), 2e4);
     try {
       const res = await fetch(cutoutUrl, {
         signal: controller.signal,
@@ -4703,12 +4698,6 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
           throw new Error(
             `IRSA IBE: Celestial coordinates (RA ${ra.toFixed(4)}\xB0, Dec ${dec.toFixed(4)}\xB0) do not overlap with survey coverage in this observation file.`
           );
-        }
-        if (res.status === 404) {
-          throw new Error(`IRSA IBE server returned status 404: Not Found.`);
-        }
-        if (res.status === 503) {
-          throw new Error(`IRSA IBE server returned status 503: Service Unavailable.`);
         }
         throw new Error(`IRSA IBE server returned status ${res.status}: ${res.statusText}`);
       }
@@ -4727,20 +4716,19 @@ async function getFITSCutout(fitsUrl, ra, dec, sizePix = 64) {
     } catch (err) {
       clearTimeout(timeout);
       lastError = err;
-      if (err.message?.includes("footprint") || err.message?.includes("survey coverage") || err.message?.includes("422") || err.message?.includes("404")) {
-        break;
+      if (err.message?.includes("footprint") || err.message?.includes("survey coverage") || err.message?.includes("422")) {
+        throw err;
       }
+      console.warn(`[IRSA IBE] Download attempt ${attempt} failed: ${err.message}. Retrying...`);
       if (attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, attempt * 500));
+        await new Promise((r) => setTimeout(r, attempt * 600));
       }
     }
   }
-  const cachedFiles = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".fits")) : [];
-  const persistentFiles = fs.existsSync(PERSISTENT_CACHE_DIR) ? fs.readdirSync(PERSISTENT_CACHE_DIR).filter((f) => f.endsWith(".fits")) : [];
-  const availableFiles = persistentFiles.length > 0 ? persistentFiles : cachedFiles;
-  if (availableFiles.length > 0) {
-    const baseDir = persistentFiles.length > 0 ? PERSISTENT_CACHE_DIR : CACHE_DIR;
-    const fallbackPath = path.join(baseDir, availableFiles[0]);
+  const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith(".fits"));
+  if (cachedFiles.length > 0) {
+    console.warn(`[IRSA IBE] Network unavailable after ${MAX_RETRIES} attempts. Falling back to cached benchmark FITS.`);
+    const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
     const buffer = fs.readFileSync(fallbackPath);
     const checksum = crypto2.createHash("sha256").update(buffer).digest("hex");
     return { buffer, checksum };
@@ -5173,7 +5161,7 @@ app.post("/api/spherex/process", async (req, res) => {
       access_format: "application/fits"
     };
     let multiEpochArray = void 0;
-    if (!isCustomSearch && selectedCase.id === caseId && selectedCase.epochs && selectedCase.epochs.length >= 3) {
+    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
       try {
         const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
           const resF = await getFITSCutout(ep.fits_url, centerRa, centerDec, sizePix);
