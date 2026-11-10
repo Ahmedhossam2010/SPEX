@@ -1293,6 +1293,26 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     const MAX_FRAMES = 12;
     const selectedExposures = exposures.slice(0, MAX_FRAMES);
 
+    // Frame mode (Phase 1 verification, item 2):
+    // - 'sky' (DEFAULT): one common WCS grid centered on the target's position at a
+    //   reference epoch; every frame is reprojected onto it, so a high-proper-motion
+    //   target VISIBLY MOVES across frames and background stars stay fixed.
+    // - 'target': each cutout is re-centered on the mover at its own observation date
+    //   (previous behavior); background stars appear to move instead. Labeled as such in the UI.
+    const frameModeRaw = String((req.query.frameMode ?? req.query.frame ?? req.body?.frameMode ?? req.body?.frame) ?? '').toLowerCase();
+    const frameMode: 'sky' | 'target' = frameModeRaw === 'target' ? 'target' : 'sky';
+    const refMjdTs = selectedExposures.length > 0
+      ? selectedExposures[Math.floor((selectedExposures.length - 1) / 2)].mjd
+      : exposures[0]?.mjd ?? 0;
+    const refEpochYearTs = julianYearFromMjd(refMjdTs);
+    const refPropTs =
+      matchedTargetTs &&
+      matchedTargetTs.pmRaMasYr != null &&
+      matchedTargetTs.pmDecMasYr != null &&
+      matchedTargetTs.coordinateEpochYear != null
+        ? propagatePosition(ra, dec, matchedTargetTs.pmRaMasYr, matchedTargetTs.pmDecMasYr, matchedTargetTs.coordinateEpochYear, refEpochYearTs)
+        : null;
+
     // Fetch cutouts concurrently
     const framePromises = selectedExposures.map(async (exp, idx) => {
       try {
@@ -1311,14 +1331,14 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
                 expEpochYear
               )
             : null;
-        const cutout = await getFITSCutout(
-          exp.fitsUrl,
-          propExp ? propExp.ra : ra,
-          propExp ? propExp.dec : dec,
-          sizePix
-        );
+        const targetRa = propExp ? propExp.ra : ra;
+        const targetDec = propExp ? propExp.dec : dec;
+        const cutoutCenterRa = frameMode === 'sky' && refPropTs ? refPropTs.ra : targetRa;
+        const cutoutCenterDec = frameMode === 'sky' && refPropTs ? refPropTs.dec : targetDec;
+        const cutout = await getFITSCutout(exp.fitsUrl, cutoutCenterRa, cutoutCenterDec, sizePix);
         const parsed = FITSReader.parse(cutout.buffer);
-        const pix = WCS.skyToPix(propExp ? propExp.ra : ra, propExp ? propExp.dec : dec, parsed.wcs);
+        // Predicted target (mover) pixel position in THIS frame's WCS
+        const pix = WCS.skyToPix(targetRa, targetDec, parsed.wcs);
         const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
         const dq = decodeBitmaskFlags(parsed.flags, parsed.width * parsed.height);
         const dateObs =
@@ -1456,6 +1476,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
 
     return res.json({
       targetCoords: { ra, dec },
+      frameMode,
       properMotion:
         matchedTargetTs &&
         matchedTargetTs.pmRaMasYr != null &&
