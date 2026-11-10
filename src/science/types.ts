@@ -363,6 +363,26 @@ export interface InvestigationResult {
   fileIdentifiers?: string[];
   observationTimestamps?: string[];
   processingVersion?: string;
+  /** Where the (proper-motion-propagated) target lands inside the downloaded cutout. */
+  targetPixel?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    insideCutout: boolean;
+    pxFromEdge: number;
+  };
+  /** Catalog (epoch) coordinates before proper-motion propagation, when propagation was applied. */
+  targetCoordsCatalog?: { ra: number; dec: number };
+  /** Proper-motion propagation applied for cutout centering (Phase 1 verification). */
+  properMotion?: {
+    targetId?: string;
+    pmRaMasYr: number;
+    pmDecMasYr: number;
+    fromEpochYear: number;
+    toEpochYear: number;
+    separationArcsec: number;
+  };
   isSimulated?: boolean;
   simulatedLabel?: string;
   timeSeries?: any;
