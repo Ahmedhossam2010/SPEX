@@ -460,6 +460,8 @@ export class CatalogMatcher {
           pmRaMasYr: src.pmRaMasYr,
           pmDecMasYr: src.pmDecMasYr,
           sourceType: src.objectType,
+          // Static benchmark fixture: UI must label these as "Saved local catalog, not live".
+          isStaticFixture: true,
         });
       }
     }
@@ -490,6 +492,8 @@ export class CatalogMatcher {
           mag: src.w1Mag,
           magLabel: `W1=${src.w1Mag.toFixed(1)}, W2=${src.w2Mag.toFixed(1)}`,
           sourceType: src.objectType,
+          // Static benchmark fixture: UI must label these as "Saved local catalog, not live".
+          isStaticFixture: true,
         });
       }
     }
