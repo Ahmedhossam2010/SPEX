@@ -15,6 +15,10 @@ export interface TranslationDictionary {
   themeToggleDark: string;
   themeToggleLight: string;
 
+  // Catalog provenance labeling (static fixture fallback must never look live)
+  catalogStaticBadge: string;
+  catalogStaticHint: string;
+
   // 10-Second Explainer Banner
   explainerTitle: string;
   explainerBadge: string;
@@ -240,6 +244,9 @@ export const translations: Record<Language, TranslationDictionary> = {
     langToggle: 'عربي',
     themeToggleDark: 'Switch to Light Theme',
     themeToggleLight: 'Switch to Dark Theme',
+    catalogStaticBadge: 'Saved local catalog, not live',
+    catalogStaticHint:
+      'This match comes from a saved local benchmark list, not a live Gaia/AllWISE query. Treat the identity as a hint, not a confirmation.',
 
     // 10-Second Explainer Banner
     explainerTitle: 'Comparing SPHEREx Observations Over Time',
@@ -480,6 +487,9 @@ export const translations: Record<Language, TranslationDictionary> = {
     langToggle: 'English',
     themeToggleDark: 'التبديل إلى الوضع الفاتح',
     themeToggleLight: 'التبديل إلى الوضع الداكن',
+    catalogStaticBadge: 'فهرس محلي محفوظ، غير مباشر',
+    catalogStaticHint:
+      'هذه المطابقة من قائمة محلية محفوظة للمعايرة، وليست استعلامًا مباشرًا من Gaia أو AllWISE. اعتبرها تلميحًا للهوية لا تأكيدًا.',
 
     // 10-Second Explainer Banner
     explainerTitle: 'مقارنة رصدات SPHEREx عبر الزمن',
