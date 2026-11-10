@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { CandidateDetection } from '../science/types';
 import { ScienceTerm } from './ScienceTerm';
-import { Language } from '../utils/translations';
+import { Language, translations } from '../utils/translations';
 
 interface FindingCardProps {
   candidate: CandidateDetection;
@@ -370,6 +370,11 @@ export const FindingCard: React.FC<FindingCardProps> = ({
               <div className="text-[10px] text-slate-500 dark:text-slate-400">
                 Separation: {gaiaMatch.separationArcsec.toFixed(3)}″ · {gaiaMatch.photometry || 'Optical source'}
               </div>
+              {gaiaMatch.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' && (
+                <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                  {translations[language].catalogStaticBadge}
+                </div>
+              )}
             </div>
           )}
 
@@ -382,6 +387,11 @@ export const FindingCard: React.FC<FindingCardProps> = ({
               <div className="text-[10px] text-slate-500 dark:text-slate-400">
                 Separation: {allwiseMatch.separationArcsec.toFixed(3)}″ · {allwiseMatch.photometry || 'Mid-IR source'}
               </div>
+              {allwiseMatch.matchProvenance === 'BENCHMARK_FIXTURE_CACHE' && (
+                <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+                  {translations[language].catalogStaticBadge}
+                </div>
+              )}
             </div>
           )}
 
