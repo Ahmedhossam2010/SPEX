@@ -245,7 +245,7 @@ export interface ChallengeTarget {
   observationsCount?: number;
   sampleObsId?: string;
   sexagesimal?: string;
-  /** RA proper motion in mas/yr (alpha component, no cos(dec) factor). Absent = unknown. */
+  /** RA proper motion mu_alpha* in mas/yr (includes cos(dec), Gaia/SIMBAD convention). Absent = unknown. */
   pmRaMasYr?: number;
   /** Dec proper motion in mas/yr. Absent = unknown. */
   pmDecMasYr?: number;
