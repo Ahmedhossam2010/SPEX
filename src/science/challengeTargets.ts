@@ -433,21 +433,46 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
       'Verified in IRSA TAP with 39 real exposures in SPHEREx QR2. Multi-epoch series allows visual inspection of fast proper motion and flux stability across passes.',
   },
   {
-    id: 'target-epsilon-indi-b',
-    name: 'Epsilon Indi B & C',
-    // Verified against SIMBAD/Gaia DR3: 22h03m21.65363s -56d47'09.5228" (epsilon Indi A position)
+    // CHALLENGE TARGET. PLACEHOLDER COORDINATES: until the SIMBAD output for
+    // 'Eps Ind Ba' is pasted here, this entry deliberately duplicates epsilon
+    // Indi A's position. Do NOT trust cutouts centered here for the brown-dwarf
+    // pair until coordinateVerification flips to VERIFIED_*.
+    id: 'target-epsilon-indi-bab',
+    name: 'Epsilon Indi Ba/Bb (challenge target)',
     ra: 330.84042,
     dec: -56.78601,
-    sexagesimal: '22h03m21.70s -56d47m09.6s',
-    pmRaMasYr: 3966.661,
-    pmDecMasYr: -2536.192,
-    coordinateEpochYear: 2000.0,
-    coordinateVerification: 'VERIFIED_GAIA_DR3',
-    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11). NOTE: this is the epsilon Indi A position; the Ba/Bb brown-dwarf pair orbits ~402" away - re-check the intended target center against SIMBAD (Eps Ind Ba) before relying on it.',
+    sexagesimal: '22h03m21.70s -56d47m09.6s (PLACEHOLDER = epsilon Indi A position)',
     constellation: 'Indus',
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
     description:
-      'A benchmark binary methane-dwarf system at ~11.8 ly. Its extreme near-infrared spectral features (methane absorption at 1.6 and 3.3 µm) make it a key target for SPHEREx 102-band low-temperature spectroscopy.',
+      "The challenge target: a benchmark binary methane-dwarf system at ~11.8 ly (Ba T1 + Bb T6, ~0.6\u0022 apart), orbiting ~402\u0022 (~6.7') from epsilon Indi A. Its methane absorption at 1.6 and 3.3 µm makes it a key SPHEREx 102-band target. Coordinates are PENDING SIMBAD verification.",
+    qr2Coverage: 'covered',
+    observationsCount: 27,
+    sampleObsId: '2025W18_1B_0175_1',
+    angularDistanceDegToNEP: 125.8,
+    recommendedBenchmarkId: 'case-nep-var-01',
+    expectedBehavior:
+      'Coverage counts above were verified for the PLACEHOLDER position (= epsilon Indi A). Coverage at the true Ba/Bb position must be re-verified with scripts/probe_irsa.ts once SIMBAD coordinates are pasted.',
+    role: 'challenge_target',
+    coordinateEpochKnown: false,
+    coordinateEpochNote: 'Coordinates pending SIMBAD output; epoch unknown until then.',
+    coordinateVerification: 'UNVERIFIED',
+    coordinateSource: 'PLACEHOLDER = epsilon Indi A position. Paste SIMBAD TAP output for Eps Ind Ba here.',
+  },
+  {
+    // Reference star in the same field (verified). Not the challenge target.
+    // FoV note: at the pipeline's 6.2"/pixel scale, the 160px option spans
+    // ~16.5 arcmin - wide enough to include BOTH epsilon Indi A and the Ba/Bb
+    // pair (402" apart) when centered between them.
+    id: 'target-epsilon-indi-a',
+    name: 'Epsilon Indi A (reference star)',
+    ra: 330.84042,
+    dec: -56.78601,
+    sexagesimal: '22h03m21.70s -56d47m09.6s',
+    constellation: 'Indus',
+    scienceType: 'K4.5V Main-Sequence Star (system primary)',
+    description:
+      'The K-dwarf primary of the epsilon Indi system, kept as a verified astrometric reference for the field. The Ba/Bb brown-dwarf pair lies ~402" away and is tracked by target-epsilon-indi-bab.',
     qr2Coverage: 'covered',
     observationsCount: 27,
     sampleObsId: '2025W18_1B_0175_1',
@@ -455,6 +480,15 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
       'Verified in IRSA TAP with 27 real exposures across multiple detectors (including D3 at ~2.0 µm) in the southern celestial hemisphere.',
+    role: 'reference_star',
+    pmRaMasYr: 3966.661,
+    pmDecMasYr: -2536.192,
+    coordinateEpochYear: 2000.0,
+    coordinateEpochKnown: true,
+    coordinateEpochNote:
+      'Position quoted at epoch J2000.0 (SIMBAD convention); proper motion measured by Gaia DR3 (reference epoch 2016.0).',
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
   },
   {
     id: 'target-wise-0855',
@@ -466,6 +500,9 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     pmRaMasYr: -8123.7,
     pmDecMasYr: 673.2,
     coordinateEpochYear: 2000.0,
+    coordinateEpochKnown: false,
+    coordinateEpochNote:
+      "The challenge statement gives 08h55m10.831s -07d14m42.53s WITHOUT an epoch. The stored values match SIMBAD's J2000 position, but the challenge epoch is unknown - treat propagation as provisional until the empirical centroid check in scripts/probe_irsa.ts measures the real offset.",
     coordinateVerification: 'VERIFIED_GAIA_DR3',
     coordinateSource: 'SIMBAD-sourced values (Wikipedia infobox, extracted 2026-11)',
     constellation: 'Hydra',
@@ -491,6 +528,9 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     pmRaMasYr: 2.641,
     pmDecMasYr: -27.398,
     coordinateEpochYear: 2000.0,
+    coordinateEpochKnown: true,
+    coordinateEpochNote:
+      'Position quoted at epoch J2000.0 (SIMBAD convention); proper motion measured by Gaia DR3 (reference epoch 2016.0). Young stellar object - verify against SIMBAD locally if sub-arcsecond centering matters.',
     coordinateVerification: 'VERIFIED_GAIA_DR3',
     coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
     constellation: 'Auriga',
@@ -516,6 +556,8 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     dec: 66.70281,
     sexagesimal: '16h33m19.21s +66d42m10.1s',
     coordinateEpochYear: 2000.0,
+    coordinateEpochKnown: false,
+    coordinateEpochNote: 'Both the coordinates and their epoch are unverified.',
     coordinateVerification: 'UNVERIFIED',
     coordinateSource: 'Pending SIMBAD verification - do not treat as confirmed',
     constellation: 'Draco',
