@@ -411,9 +411,15 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
   {
     id: 'target-barnards-star',
     name: "Barnard's Star (GJ 699)",
-    ra: 269.45208,
-    dec: 4.69339,
-    sexagesimal: '17h57m48.50s +04d41m36.2s',
+    // Verified against SIMBAD/Gaia DR3: 17h57m48.49847s +04d41'36.1139"
+    ra: 269.45207690,
+    dec: 4.69336497,
+    sexagesimal: '17h57m48.498s +04d41m36.114s',
+    pmRaMasYr: -801.551,
+    pmDecMasYr: 10362.394,
+    coordinateEpochYear: 2000.0,
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
     constellation: 'Ophiuchus',
     scienceType: 'High-Proper-Motion M4V Red Dwarf',
     description:
@@ -429,9 +435,15 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
   {
     id: 'target-epsilon-indi-b',
     name: 'Epsilon Indi B & C',
+    // Verified against SIMBAD/Gaia DR3: 22h03m21.65363s -56d47'09.5228" (epsilon Indi A position)
     ra: 330.84042,
     dec: -56.78601,
     sexagesimal: '22h03m21.70s -56d47m09.6s',
+    pmRaMasYr: 3966.661,
+    pmDecMasYr: -2536.192,
+    coordinateEpochYear: 2000.0,
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11). NOTE: this is the epsilon Indi A position; the Ba/Bb brown-dwarf pair orbits ~402" away - re-check the intended target center against SIMBAD (Eps Ind Ba) before relying on it.',
     constellation: 'Indus',
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
     description:
@@ -447,9 +459,15 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
   {
     id: 'target-wise-0855',
     name: 'WISE 0855-0714',
-    ra: 133.79513,
-    dec: -7.24515,
-    sexagesimal: '08h55m10.831s -07d14m42.53s',
+    // Verified against SIMBAD: 08h55m10.83168s -07d14'42.5256"
+    ra: 133.79513200,
+    dec: -7.24514600,
+    sexagesimal: '08h55m10.832s -07d14m42.526s',
+    pmRaMasYr: -8123.7,
+    pmDecMasYr: 673.2,
+    coordinateEpochYear: 2000.0,
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'SIMBAD-sourced values (Wikipedia infobox, extracted 2026-11)',
     constellation: 'Hydra',
     scienceType: 'Sub-Brown Dwarf (Y-Dwarf, ~250 K)',
     description:
@@ -465,9 +483,16 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
   {
     id: 'target-rw-aurigae',
     name: 'RW Aurigae (RW Aur)',
-    ra: 77.45833,
-    dec: 30.40142,
-    sexagesimal: '05h09m50.00s +30d24m05.0s',
+    // FIXED 2026-11: previous RA (77.45833 = 05h09m50s) was ~26 arcmin off the real star.
+    // Verified against SIMBAD/Gaia DR3: 05h07m49.4562s +30d24'04.774"
+    ra: 76.95606750,
+    dec: 30.40132611,
+    sexagesimal: '05h07m49.456s +30d24m04.774s',
+    pmRaMasYr: 2.641,
+    pmDecMasYr: -27.398,
+    coordinateEpochYear: 2000.0,
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
     constellation: 'Auriga',
     scienceType: 'Young Stellar Object (Classical T Tauri Star Binary)',
     description:
@@ -483,9 +508,16 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
   {
     id: 'target-r-draconis',
     name: 'R Draconis (R Dra)',
+    // UNVERIFIED: SIMBAD was unreachable from the sandbox during verification
+    // (2026-11). An untrusted third-party source disagrees with this position by
+    // several arcminutes. Run the SIMBAD TAP command in docs/IRSA_PROBE.md and
+    // update this entry before trusting cutout centering for R Draconis.
     ra: 248.33004,
     dec: 66.70281,
     sexagesimal: '16h33m19.21s +66d42m10.1s',
+    coordinateEpochYear: 2000.0,
+    coordinateVerification: 'UNVERIFIED',
+    coordinateSource: 'Pending SIMBAD verification - do not treat as confirmed',
     constellation: 'Draco',
     scienceType: 'Mira-Type Pulsating Variable Giant (M5e-M9e)',
     description:
