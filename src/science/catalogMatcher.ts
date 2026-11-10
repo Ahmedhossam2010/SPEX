@@ -379,7 +379,9 @@ export class CatalogMatcher {
 
   /**
    * Propagate celestial coordinates from reference catalog epoch to target observation epoch
-   * using proper motion vector (pmra in mas/yr [with cos(dec) convention], pmdec in mas/yr).
+   * using proper motion vector (pmra in mas/yr as mu_alpha* = mu_alpha*cos(dec),
+   * the Gaia DR3 / SIMBAD convention; pmdec in mas/yr).
+   * Reference catalog epoch is Julian year 2016.0 (Gaia DR3 reference epoch).
    */
   public static propagateProperMotion(
     ra: number,
@@ -395,7 +397,8 @@ export class CatalogMatcher {
     }
 
     const cosDec = Math.cos((dec * Math.PI) / 180);
-    const deltaRaDeg = cosDec !== 0 ? (pmRaMasYr * deltaYears) / (3.6e6 * cosDec) : 0;
+    // pmRaMasYr is mu_alpha* (cos(dec) already included) -> advance RA directly.
+  const deltaRaDeg = (pmRaMasYr * deltaYears) / 3.6e6;
     const deltaDecDeg = (pmDecMasYr * deltaYears) / 3.6e6;
 
     const propRa = ((ra + deltaRaDeg) % 360 + 360) % 360;
