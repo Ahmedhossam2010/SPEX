@@ -64,15 +64,28 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Sphere orientation and animation
-  const rotationRef = useRef(0.8);
-  const tiltRef = useRef(0.42);
+  // Sphere orientation and animation (starts with Barnard's star facing front)
+  const rotationRef = useRef(4.7);
+  const tiltRef = useRef(0.38);
   const isDraggingRef = useRef(false);
   const lastMousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const zoomRef = useRef<{ target: ChallengeTarget; start: number; launched: boolean } | null>(null);
 
-  const [hoveredTarget, setHoveredTarget] = useState<ChallengeTarget | null>(null);
-  const [activeTarget, setActiveTarget] = useState<ChallengeTarget | null>(null);
+  const hoveredTargetRef = useRef<ChallengeTarget | null>(null);
+  const activeTargetRef = useRef<ChallengeTarget | null>(null);
+
+  const [hoveredTarget, setHoveredTargetState] = useState<ChallengeTarget | null>(null);
+  const setHoveredTarget = (tgt: ChallengeTarget | null) => {
+    hoveredTargetRef.current = tgt;
+    setHoveredTargetState(tgt);
+  };
+
+  const [activeTarget, setActiveTargetState] = useState<ChallengeTarget | null>(null);
+  const setActiveTarget = (tgt: ChallengeTarget | null) => {
+    activeTargetRef.current = tgt;
+    setActiveTargetState(tgt);
+  };
+
   const [targetScreenPos, setTargetScreenPos] = useState<{ x: number; y: number } | null>(null);
 
   // Collapsed manual coordinates toggle
@@ -94,19 +107,28 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
     [targets]
   );
 
-  // Friendly names for non-experts
-  const getTargetFriendlyName = (tgt: ChallengeTarget): string => {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('hover') === '1' && targets.length > 0) {
+        setHoveredTarget(targets[0]);
+      }
+    }
+  }, [targets]);
+
+  // Real astronomical names for the 5 official targets
+  const getTargetRealName = (tgt: ChallengeTarget): string => {
     switch (tgt.id) {
       case 'target-barnards-star':
-        return isRtl ? 'نجم بارنارد السريع' : "Barnard's Fast Star";
+        return isRtl ? 'نجم بارنارد (GJ 699)' : "Barnard's Star (GJ 699)";
       case 'target-epsilon-indi-bab':
-        return isRtl ? 'ثنائي إبسيلون الهندي البارد' : 'Epsilon Indi Cold Pair';
+        return isRtl ? 'إبسيلون الهندي Ba/Bb' : 'Epsilon Indi Ba/Bb';
       case 'target-wise-0855':
-        return isRtl ? 'قزم وايز الجليدي 0855' : 'WISE 0855 Ice World';
+        return 'WISE 0855-0714';
       case 'target-rw-aurigae':
-        return isRtl ? 'نجم آر دبليو المتغير' : 'RW Aurigae Variable Star';
+        return isRtl ? 'آر دبليو ممسك الأعنة (RW Aur)' : 'RW Aurigae';
       case 'target-r-draconis':
-        return isRtl ? 'عملاق التنين النابض' : 'R Draconis Pulsing Giant';
+        return isRtl ? 'آر التنين (R Dra)' : 'R Draconis';
       default:
         return tgt.name.replace(/ \(.*\)$/, '');
     }
@@ -115,15 +137,15 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
   const getTargetSummary = (tgt: ChallengeTarget): string => {
     switch (tgt.id) {
       case 'target-barnards-star':
-        return isRtl ? 'أسرع نجم متحرك في سماء الأرض' : 'A tiny star that races across the sky.';
+        return isRtl ? 'نجم قزم أحمر سريع الحركة يندفع عبر الفضاء.' : 'A tiny star that races across the sky.';
       case 'target-epsilon-indi-bab':
-        return isRtl ? 'زوج من الأقزام البنية الباردة المتجمدة' : 'Twin frigid worlds lost in the darkness.';
+        return isRtl ? 'زوج من الأقزام البنية الباردة المتجمدة.' : 'Twin frigid worlds lost in the darkness.';
       case 'target-wise-0855':
-        return isRtl ? 'أبرد جرم شبه نجمي مكتشف خارج المجموعة الشمسية' : 'The coldest known world outside our solar system.';
+        return isRtl ? 'أبرد جرم شبه نجمي مكتشف خارج المجموعة الشمسية.' : 'The coldest known world outside our solar system.';
       case 'target-rw-aurigae':
-        return isRtl ? 'نجم فتي تحيط به أقراص كوكبية متغيرة السطوع' : 'A violent newborn star shedding dust clouds.';
+        return isRtl ? 'نجم فتي تحيط به أقراص غبارية متغيرة.' : 'A violent newborn star shedding dust clouds.';
       case 'target-r-draconis':
-        return isRtl ? 'نجم عملاق ينبض ويتغير ضوؤه باستمرار' : 'A giant red star breathing in and out over months.';
+        return isRtl ? 'نجم عملاق أحمر ينبض ويتنفس عبر الشهور.' : 'A giant red star breathing in and out over months.';
       default:
         return tgt.scienceType;
     }
@@ -289,9 +311,9 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
         const sx = cx + r.x * baseR;
         const sy = cy - r.y * baseR;
 
-        const isHovered = hoveredTarget?.id === tgt.id;
+        const isHovered = hoveredTargetRef.current?.id === tgt.id || hoveredTarget?.id === tgt.id;
         const isZooming = zoomState?.target.id === tgt.id;
-        const isCurrentActive = activeTarget?.id === tgt.id || isHovered;
+        const isCurrentActive = activeTargetRef.current?.id === tgt.id || activeTarget?.id === tgt.id || isHovered;
 
         if (isCurrentActive) {
           activePos = { x: sx, y: sy };
@@ -350,21 +372,27 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
         ctx.arc(sx, sy, coreRadius, 0, Math.PI * 2);
         ctx.fill();
 
-        // In-Canvas Name Label (visible on hover / active or subtle readable indicator)
-        const friendlyName = getTargetFriendlyName(tgt);
-        ctx.font = `${isHovered || isZooming ? 'bold 12px' : '500 11px'} Inter, system-ui, sans-serif`;
-        ctx.textAlign = 'center';
+        // In-Canvas Real Name Label (only visible on hover / tap)
+        if (isHovered || isZooming || isCurrentActive) {
+          const realName = getTargetRealName(tgt);
+          ctx.font = 'bold 12px Inter, system-ui, sans-serif';
+          ctx.textAlign = 'center';
 
-        const labelY = sy + coreRadius + (isHovered ? 18 : 15);
+          const labelY = sy + coreRadius + 18;
 
-        // Soft text shadow backing
-        ctx.fillStyle = 'rgba(2, 4, 10, 0.85)';
-        const textWidth = ctx.measureText(friendlyName).width;
-        ctx.fillRect(sx - textWidth / 2 - 6, labelY - 11, textWidth + 12, 16);
+          // Soft backdrop badge
+          const textWidth = ctx.measureText(realName).width;
+          ctx.fillStyle = 'rgba(2, 4, 10, 0.90)';
+          ctx.fillRect(sx - textWidth / 2 - 8, labelY - 12, textWidth + 16, 20);
 
-        // Text color
-        ctx.fillStyle = isHovered || isZooming ? '#FFB900' : 'rgba(241, 245, 249, 0.92)';
-        ctx.fillText(friendlyName, sx, labelY);
+          ctx.strokeStyle = 'rgba(255, 185, 0, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(sx - textWidth / 2 - 8, labelY - 12, textWidth + 16, 20);
+
+          // Text color
+          ctx.fillStyle = '#FFB900';
+          ctx.fillText(realName, sx, labelY + 2);
+        }
       });
 
       ctx.restore();
@@ -499,19 +527,14 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-slate-900/40 via-[#02040A] to-[#02040A]" />
 
       {/* TOP: One Big Line */}
-      <div className="relative z-10 w-full pt-6 sm:pt-10 px-4 text-center pointer-events-none">
+      <div className="relative z-10 w-full pt-8 sm:pt-12 px-4 text-center pointer-events-none">
         <h1
-          className={`text-2xl sm:text-4xl md:text-5xl text-slate-100 font-normal tracking-tight drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] ${
+          className={`text-2xl sm:text-4xl md:text-5xl text-slate-100 font-normal tracking-tight drop-shadow-[0_4px_24px_rgba(0,0,0,0.85)] ${
             isRtl ? 'font-cairo font-bold' : 'font-serif-hero italic'
           }`}
         >
           {t.screen1BigTitle}
         </h1>
-        <p className="mt-2 text-xs sm:text-sm text-slate-400 tracking-wide font-sans">
-          {isRtl
-            ? 'خمسة نجوم حقيقية في سماء الأشعة تحت الحمراء تنتظر استكشافك'
-            : 'Five official infrared targets rotating in real space.'}
-        </p>
       </div>
 
       {/* CENTER: Full-Screen Interactive Rotating Celestial Sphere */}
@@ -542,9 +565,9 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
           >
             <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#FFB900]">
               <Sparkles className="w-3.5 h-3.5 text-[#00D3F3]" />
-              <span>{getTargetFriendlyName(hoveredTarget)}</span>
+              <span>{getTargetRealName(hoveredTarget)}</span>
             </div>
-            <p className="text-[11px] text-slate-300 mt-0.5 max-w-[200px] leading-tight">
+            <p className="text-[11px] text-slate-300 mt-0.5 max-w-[220px] leading-tight">
               {getTargetSummary(hoveredTarget)}
             </p>
             <span className="inline-block mt-1 text-[9px] font-mono text-[#00D3F3] tracking-wider">
@@ -560,19 +583,19 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
           <button
             type="button"
             onClick={() => setShowCoordsForm(true)}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer group"
+            className="inline-flex items-center gap-2 px-5 py-3 min-h-[48px] text-xs font-mono text-slate-400 hover:text-slate-100 transition-colors cursor-pointer group"
           >
-            <Compass className="w-3.5 h-3.5 text-slate-500 group-hover:text-[#FFB900] transition-colors" />
-            <span className="underline decoration-slate-600 underline-offset-4 group-hover:decoration-slate-400">
+            <Compass className="w-4 h-4 text-slate-500 group-hover:text-[#FFB900] transition-colors" />
+            <span className="underline decoration-slate-600 underline-offset-4 group-hover:decoration-[#FFB900]">
               {t.screen1EnterCoords}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+            <ChevronDown className="w-4 h-4 text-slate-500 group-hover:text-slate-300" />
           </button>
         ) : (
-          <div className="w-full max-w-md p-3 rounded-2xl bg-[#0C0E14]/85 backdrop-blur-xl border border-white/10 shadow-2xl animate-fade-in">
+          <div className="w-full max-w-md p-3.5 rounded-2xl bg-[#0C0E14]/90 backdrop-blur-xl border border-white/10 shadow-2xl animate-fade-in">
             <form onSubmit={handleCoordSubmit} className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute top-1/2 -translate-y-1/2 start-3 w-3.5 h-3.5 text-slate-500" />
+                <Search className="absolute top-1/2 -translate-y-1/2 start-3 w-4 h-4 text-slate-500" />
                 <input
                   type="text"
                   value={coordInput}
@@ -582,20 +605,20 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
                   }}
                   placeholder={t.skyEntryCoordPlaceholder}
                   autoFocus
-                  className="w-full bg-slate-950/70 border border-slate-700/80 focus:border-[#FFB900] rounded-xl py-2 ps-9 pe-3 text-xs text-slate-100 placeholder:text-slate-600 outline-none transition"
+                  className="w-full min-h-[48px] bg-slate-950/80 border border-slate-700/80 focus:border-[#FFB900] rounded-xl py-2 ps-9 pe-3 text-xs text-slate-100 placeholder:text-slate-600 outline-none transition"
                   aria-label={t.screen1EnterCoords}
                 />
               </div>
               <button
                 type="submit"
-                className="px-3.5 py-2 rounded-xl bg-[#FFB900] hover:bg-[#FB9600] text-slate-950 text-xs font-bold transition shadow-[0_0_12px_rgba(255,185,0,0.3)] cursor-pointer"
+                className="px-4 py-2 min-h-[48px] min-w-[56px] rounded-xl bg-[#FFB900] hover:bg-[#FB9600] text-slate-950 text-xs font-bold transition shadow-[0_0_12px_rgba(255,185,0,0.3)] cursor-pointer"
               >
                 {isRtl ? 'بحث' : 'Go'}
               </button>
               <button
                 type="button"
                 onClick={() => setShowCoordsForm(false)}
-                className="p-2 text-slate-400 hover:text-slate-200 transition-colors"
+                className="p-2 min-h-[48px] min-w-[48px] flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
                 title={t.screen1EnterCoordsCollapse}
               >
                 <ChevronUp className="w-4 h-4" />

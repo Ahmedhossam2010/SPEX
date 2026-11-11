@@ -25,6 +25,35 @@ export interface TranslationDictionary {
   skyEntryCoordPlaceholder: string;
   skyEntryGo: string;
   skyEntryUnverifiedTag: string;
+  screen1BigTitle: string;
+  screen1EnterCoords: string;
+  screen1EnterCoordsCollapse: string;
+  scientistModeToggle: string;
+
+  // Screen 2 The Time Lens Hunt
+  backToSky: string;
+  moreTools: string;
+  curtainMode: string;
+  singleFrameMode: string;
+  coachStep1: string;
+  coachStep2: string;
+  coachStep3: string;
+  coachSkip: string;
+  coachNext: string;
+  doubtGlitchDetected: string;
+  doubtGlitchDesc: string;
+  doubtClean: string;
+  doubtCleanDesc: string;
+  neighborsTitle: string;
+  neighborsDesc: string;
+  colorsTitle: string;
+  colorsDesc: string;
+  targetBarnardDesc: string;
+  targetWiseDesc: string;
+  targetEpsIndiDesc: string;
+  targetRwAurDesc: string;
+  targetRDraconisDesc: string;
+  targetDefaultDesc: string;
 
   // 10-Second Explainer Banner
   explainerTitle: string;
@@ -315,6 +344,35 @@ export const translations: Record<Language, TranslationDictionary> = {
     skyEntryCoordPlaceholder: 'e.g. 17h57m48.5s +04d41m36.1s or 269.452, 4.693',
     skyEntryGo: 'Open in SPHEREx Lab',
     skyEntryUnverifiedTag: 'Unverified position - pending SIMBAD check',
+    screen1BigTitle: 'Tap a star to start the hunt.',
+    screen1EnterCoords: 'Enter coordinates',
+    screen1EnterCoordsCollapse: 'Hide coordinates',
+    scientistModeToggle: 'Scientist mode',
+
+    // Screen 2 The Time Lens Hunt
+    backToSky: 'Back to Sky',
+    moreTools: 'More Tools',
+    curtainMode: 'Curtain View',
+    singleFrameMode: 'Single View',
+    coachStep1: 'Press play and watch the sky.',
+    coachStep2: 'Tap anything that seems to jump or move.',
+    coachStep3: 'Ask SPEX what it found.',
+    coachSkip: 'Got it',
+    coachNext: 'Next',
+    doubtGlitchDetected: 'Detector Glitch',
+    doubtGlitchDesc: 'Pixel saturation or cosmic ray hit flagged by pipeline mask.',
+    doubtClean: 'Clean Signal',
+    doubtCleanDesc: 'No detector quality flags raised for this area.',
+    neighborsTitle: 'Catalog Neighbors',
+    neighborsDesc: 'Cross-matched against Gaia DR3 and AllWISE references.',
+    colorsTitle: 'Hidden Colors',
+    colorsDesc: 'Infrared wavelength channels (0.75 - 5.0 µm).',
+    targetBarnardDesc: 'A tiny red star racing across our solar neighborhood.',
+    targetWiseDesc: 'An ultra-cold sub-stellar brown dwarf lurking nearby.',
+    targetEpsIndiDesc: 'A binary brown dwarf pair dancing in deep infrared.',
+    targetRwAurDesc: 'A young eruptive variable star surrounded by a protoplanetary disk.',
+    targetRDraconisDesc: 'A pulsating red giant star breathing in the northern sky.',
+    targetDefaultDesc: 'An authentic SPHEREx infrared sky patch observed over time.',
 
     // 10-Second Explainer Banner
     explainerTitle: 'Comparing SPHEREx Observations Over Time',
@@ -619,6 +677,35 @@ export const translations: Record<Language, TranslationDictionary> = {
     skyEntryCoordPlaceholder: 'مثال: 17h57m48.5s +04d41m36.1s أو 269.452, 4.693',
     skyEntryGo: 'افتح في مختبر SPHEREx',
     skyEntryUnverifiedTag: 'إحداثيات غير متحقق منها - بانتظار التحقق من SIMBAD',
+    screen1BigTitle: 'المس نجماً لبدء البحث.',
+    screen1EnterCoords: 'إدخال الإحداثيات',
+    screen1EnterCoordsCollapse: 'إخفاء الإحداثيات',
+    scientistModeToggle: 'وضع العلماء',
+
+    // Screen 2 The Time Lens Hunt
+    backToSky: 'العودة لخريطة السماء',
+    moreTools: 'أدوات إضافية',
+    curtainMode: 'مقارنة الستارة',
+    singleFrameMode: 'عرض منفرد',
+    coachStep1: 'اضغط تشغيل وراقب حركة السماء.',
+    coachStep2: 'المس أي نقطة تبدو وكأنها تقفز أو تتحرك.',
+    coachStep3: 'استمع لحكم سبيكس حول ما تم اكتشافه.',
+    coachSkip: 'فهمت',
+    coachNext: 'التالي',
+    doubtGlitchDetected: 'خلل في الكاشف',
+    doubtGlitchDesc: 'تشبع بكسلي أو اصطدام شعاع كوني مسجل في قناع الجودة.',
+    doubtClean: 'إشارة نقية',
+    doubtCleanDesc: 'لا توجد أي إشارات لخلل تقني في هذا النطاق.',
+    neighborsTitle: 'الأجرام المجاورة',
+    neighborsDesc: 'مطابقة مع قواعد بيانات غايا DR3 ووايز الفلكية.',
+    colorsTitle: 'الألوان الخفية',
+    colorsDesc: 'قنوات الأطوال الموجية تحت الحمراء (0.75 - 5.0 ميكرومتر).',
+    targetBarnardDesc: 'نجم أحمر قزم يركض بسرعة فائقة عبر سمائنا.',
+    targetWiseDesc: 'قزم بني فائق البرودة يتخفى بالقرب من نظامنا الشمسي.',
+    targetEpsIndiDesc: 'ثنائي من الأقزام البنية يرقصان في أعماق الأشعة تحت الحمراء.',
+    targetRwAurDesc: 'نجم متغير متفجر شاب محاط بقرص كوكبي أولي.',
+    targetRDraconisDesc: 'نجم عملاق أحمر نابض يتنفس في سمائنا الشمالية.',
+    targetDefaultDesc: 'رقعة سماء حقيقية رصدها تلسكوب سفيركس عبر الزمن.',
 
     // 10-Second Explainer Banner
     explainerTitle: 'مقارنة رصدات SPHEREx عبر الزمن',

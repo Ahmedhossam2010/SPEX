@@ -12,6 +12,7 @@ import {
   X,
   Home,
   CheckCircle2,
+  Microscope,
 } from 'lucide-react';
 import { SpherexLogo } from './SpherexLogo';
 import { Language, translations } from '../utils/translations';
@@ -25,6 +26,8 @@ interface HeaderProps {
   onToggleLanguage: () => void;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
+  isScientistMode?: boolean;
+  onToggleScientistMode?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,6 +38,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleLanguage,
   theme,
   onToggleTheme,
+  isScientistMode = false,
+  onToggleScientistMode,
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
@@ -136,6 +141,24 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Desktop Quick Controls */}
         <div className="hidden md:flex items-center gap-2">
+          {/* Scientist Mode Toggle */}
+          {onToggleScientistMode && (
+            <button
+              type="button"
+              onClick={onToggleScientistMode}
+              title={t.scientistModeToggle}
+              aria-label={t.scientistModeToggle}
+              className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl border text-xs font-mono transition-all cursor-pointer shadow-xs active:scale-95 ${
+                isScientistMode
+                  ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400 shadow-[0_0_12px_rgba(0,211,243,0.3)] font-bold'
+                  : 'border-slate-200 dark:border-white/[0.1] bg-slate-100 dark:bg-white/[0.04] text-slate-700 dark:text-slate-300 hover:text-cyan-400 hover:border-cyan-500/40'
+              }`}
+            >
+              <Microscope className={`h-4 w-4 ${isScientistMode ? 'text-cyan-400' : 'text-slate-500'}`} />
+              <span>{t.scientistModeToggle}</span>
+            </button>
+          )}
+
           {/* Theme Toggle */}
           <button
             type="button"
@@ -253,8 +276,31 @@ export const Header: React.FC<HeaderProps> = ({
               })}
             </div>
 
-            {/* Quick Actions Footer: Theme and Language */}
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-slate-200 dark:border-white/10">
+            {/* Quick Actions Footer: Scientist Mode, Theme and Language */}
+            {onToggleScientistMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleScientistMode();
+                  setMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center justify-between p-3.5 min-h-[48px] rounded-2xl border text-xs font-mono transition-all cursor-pointer active:scale-95 ${
+                  isScientistMode
+                    ? 'bg-cyan-500/20 text-cyan-300 border-cyan-400 font-bold'
+                    : 'border-slate-200 dark:border-white/10 bg-slate-100 dark:bg-white/5 text-slate-800 dark:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Microscope className={`h-4 w-4 ${isScientistMode ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <span>{t.scientistModeToggle}</span>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isScientistMode ? 'bg-cyan-500 text-slate-950' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-400'}`}>
+                  {isScientistMode ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            )}
+
+            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-white/10">
               <button
                 type="button"
                 onClick={onToggleTheme}

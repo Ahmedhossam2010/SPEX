@@ -5,8 +5,9 @@ import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
-import { SkySphereEntry } from './components/TimeLens/SkySphereEntry';
-import { InvestigationResult } from './science/types';
+import { Screen1Sky } from './components/Screen1Sky';
+import { ScientistExplore } from './components/ScientistExplore';
+import { InvestigationResult, ChallengeTarget } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 
@@ -55,6 +56,18 @@ export function App() {
   const [currentResult, setCurrentResult] = useState<InvestigationResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const [isScientistMode, setIsScientistMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') === 'scientist';
+  });
+  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>(() => {
+    if (typeof window === 'undefined') return 'sky';
+    const params = new URLSearchParams(window.location.search);
+    return params.get('case') || params.get('ra') ? 'hunt' : 'sky';
+  });
+  const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget | null>(null);
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
   const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
@@ -250,6 +263,20 @@ export function App() {
     });
   };
 
+  const handleToggleScientistMode = () => {
+    setIsScientistMode((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (next) params.set('mode', 'scientist');
+        else params.delete('mode');
+        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        window.history.replaceState({ ...window.history.state }, '', newUrl);
+      }
+      return next;
+    });
+  };
+
   const t = translations[language];
 
   return (
@@ -269,6 +296,8 @@ export function App() {
         onToggleLanguage={handleToggleLanguage}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        isScientistMode={isScientistMode}
+        onToggleScientistMode={handleToggleScientistMode}
       />
 
       <main className="flex-1 w-full relative">
@@ -315,15 +344,42 @@ export function App() {
           />
         )}
 
-        {activeTab === 'explore' && !currentResult && !isLoading && (
-          <SkySphereEntry
+        {activeTab === 'explore' && isScientistMode && (
+          <ScientistExplore
+            currentResult={currentResult}
+            isLoading={isLoading}
+            onSearchTarget={handleSearchTarget}
+            onSelectCase={handleSelectCase}
+            cases={cases}
             language={language}
-            onLaunchTarget={(_targetId, ra, dec) => handleSearchTarget(ra, dec)}
-            onLaunchCoords={(ra, dec) => handleSearchTarget(ra, dec)}
+            fallbackQuery={fallbackQuery}
+            onClearFallback={handleClearFallback}
           />
         )}
 
-        {activeTab === 'explore' && (currentResult || isLoading) && (
+        {activeTab === 'explore' && !isScientistMode && exploreScreen === 'sky' && (
+          <Screen1Sky
+            language={language}
+            onSelectTarget={(target) => {
+              setSelectedTarget(target);
+              setExploreScreen('hunt');
+              if (target.id === 'target-barnards-star') {
+                loadCase('case-barnards-star');
+              } else if (target.id === 'target-wise-0855') {
+                loadCase('case-wise-0855');
+              } else {
+                loadCase(cases[0]?.id || 'case-nep-var-01', { ra: target.ra, dec: target.dec });
+              }
+            }}
+            onSelectCoords={(ra, dec) => {
+              setSelectedTarget(null);
+              setExploreScreen('hunt');
+              loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
+            }}
+          />
+        )}
+
+        {activeTab === 'explore' && !isScientistMode && exploreScreen === 'hunt' && (
           <ExploreView
             currentResult={currentResult}
             isLoading={isLoading}
@@ -333,6 +389,9 @@ export function App() {
             language={language}
             fallbackQuery={fallbackQuery}
             onClearFallback={handleClearFallback}
+            onBackToSky={() => setExploreScreen('sky')}
+            onToggleScientistMode={handleToggleScientistMode}
+            selectedTarget={selectedTarget}
           />
         )}
 
