@@ -6,7 +6,6 @@ import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { Screen1Sky } from './components/Screen1Sky';
-import { ScientistExplore } from './components/ScientistExplore';
 import { InvestigationResult, ChallengeTarget } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
@@ -344,20 +343,7 @@ export function App() {
           />
         )}
 
-        {activeTab === 'explore' && isScientistMode && (
-          <ScientistExplore
-            currentResult={currentResult}
-            isLoading={isLoading}
-            onSearchTarget={handleSearchTarget}
-            onSelectCase={handleSelectCase}
-            cases={cases}
-            language={language}
-            fallbackQuery={fallbackQuery}
-            onClearFallback={handleClearFallback}
-          />
-        )}
-
-        {activeTab === 'explore' && !isScientistMode && exploreScreen === 'sky' && (
+        {activeTab === 'explore' && exploreScreen === 'sky' && (
           <Screen1Sky
             language={language}
             onSelectTarget={(target) => {
@@ -379,7 +365,7 @@ export function App() {
           />
         )}
 
-        {activeTab === 'explore' && !isScientistMode && exploreScreen === 'hunt' && (
+        {activeTab === 'explore' && exploreScreen === 'hunt' && (
           <ExploreView
             currentResult={currentResult}
             isLoading={isLoading}
@@ -390,6 +376,7 @@ export function App() {
             fallbackQuery={fallbackQuery}
             onClearFallback={handleClearFallback}
             onBackToSky={() => setExploreScreen('sky')}
+            isScientistMode={isScientistMode}
             onToggleScientistMode={handleToggleScientistMode}
             selectedTarget={selectedTarget}
           />

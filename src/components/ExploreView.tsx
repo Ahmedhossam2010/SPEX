@@ -1,32 +1,22 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  RotateCcw,
-  ZoomIn,
-  ZoomOut,
+  ArrowLeft,
   Sparkles,
   Share2,
   Clock,
+  Palette,
+  ShieldCheck,
+  ShieldAlert,
+  Users,
+  Compass,
+  Maximize2,
   Layers,
-  Eye,
-  AlertTriangle,
-  ChevronDown,
-  ChevronUp,
-  X,
-  ArrowLeft,
+  Activity,
+  Globe,
   Sliders,
   CheckCircle2,
-  Microscope,
+  AlertTriangle,
   Info,
-  Maximize2,
-  Minimize2,
-  HelpCircle,
-  GripVertical,
-  Activity,
-  Compass,
 } from 'lucide-react';
 import {
   CandidateDetection,
@@ -34,19 +24,18 @@ import {
   SPHERExObservation,
   ChallengeTarget,
 } from '../science/types';
-import { AstronomyRenderer, ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
-import { WCS } from '../science/wcs';
-import { SPHEREX_102_CHANNELS, SPHEREX_DETECTOR_ARRAYS } from '../science/spectralBands';
-import { Badge } from '../design/components/Badge';
-import { Button } from '../design/components/Button';
-import { IconButton } from '../design/components/IconButton';
-import { GlassPanel } from '../design/components/GlassPanel';
-import { LensButton, LensMode } from '../design/components/LensButton';
-import { CurtainDivider } from './TimeLens/CurtainDivider';
-import { DiscoveryCard } from './TimeLens/DiscoveryCard';
+import { ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
+import { AstronomicalSkyViewport } from './Explore/AstronomicalSkyViewport';
+import { FourLensesDock } from './Explore/FourLensesDock';
+import { ScientistInvestigationPanel } from './Explore/ScientistInvestigationPanel';
+import { SpexCompanion } from './Explore/SpexCompanion';
+import { SpexGuidedTour } from './Explore/SpexGuidedTour';
+import { SpexUiHighlight } from './Explore/SpexUiHighlight';
 import { PostcardModal } from './TimeLens/PostcardModal';
+import { ProvenanceModal } from './ProvenanceModal';
+import { DataReleaseModal } from './DataReleaseModal';
+import { LensMode } from '../design/components/LensButton';
 import { Language, translations } from '../utils/translations';
-import { SPEX_HERO_IMAGE } from '../spex/spexAssets';
 
 export interface ExploreViewProps {
   currentResult: InvestigationResult | null;
@@ -58,6 +47,7 @@ export interface ExploreViewProps {
   fallbackQuery?: { ra: number; dec: number } | null;
   onClearFallback?: () => void;
   onBackToSky?: () => void;
+  isScientistMode?: boolean;
   onToggleScientistMode?: () => void;
   selectedTarget?: ChallengeTarget | null;
 }
@@ -72,853 +62,381 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   fallbackQuery,
   onClearFallback,
   onBackToSky,
+  isScientistMode = false,
   onToggleScientistMode,
   selectedTarget,
 }) => {
-  const t = translations[language];
   const isRtl = language === 'ar';
+  const t = translations[language];
 
-  // --- View & Mode State ---
-  const [activeLens, setActiveLens] = useState<LensMode | null>('time');
-  const [isCurtainMode, setIsCurtainMode] = useState<boolean>(false);
-  const [currentFrameIdx, setCurrentFrameIdx] = useState<number>(0); // 0: Epoch 1, 1: Epoch 2, 2: Difference
+  // --- CANONICAL SHARED ASTRONOMICAL VIEWPORT STATE ---
+  // Frame Selection: 0 = Epoch 1 (Visit 1), 1 = Epoch 2 (Visit 2), 2 = Difference Map
+  const [currentFrameIdx, setCurrentFrameIdx] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1); // 0.5, 1, 2
-  const [hasPlayedOnce, setHasPlayedOnce] = useState<boolean>(false);
-  const [showMoreTools, setShowMoreTools] = useState<boolean>(false);
+  const [isCurtainActive, setIsCurtainActive] = useState<boolean>(false);
 
-  // Hidden Colors: Active Spectral Band
-  const [activeBandIdx, setActiveBandIdx] = useState<number>(0);
-
-  // Canvas Geometry & Controls
+  // Geometric Transform (PERSISTS across Explorer & Scientist mode toggles!)
   const [zoom, setZoom] = useState<number>(1.0);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Tapped Spot & Candidate
-  const [tappedSpot, setTappedSpot] = useState<{ x: number; y: number; ra: number; dec: number } | null>(null);
+  // Scientific Display Parameters (Controlled by Scientist Mode or auto-tuned by active lens)
+  const [stretch, setStretch] = useState<StretchMode>('asinh');
+  const [customColormap, setCustomColormap] = useState<ColormapMode | null>(null);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('presentation');
+  const [contrastFactor, setContrastFactor] = useState<number>(1.0);
+
+  // Active Lens: 'time' | 'colors' | 'doubt' | 'neighbors' | null
+  const [activeLens, setActiveLens] = useState<LensMode | null>('time');
+
+  // Hidden Colors: Selected band index
+  const [activeBandIdx, setActiveBandIdx] = useState<number>(0);
+
+  // DOUBT Lens: Data Quality overlay toggle & selected flagged pixel
+  const [isDoubtOverlayActive, setIsDoubtOverlayActive] = useState<boolean>(true);
+  const [selectedFlagPixel, setSelectedFlagPixel] = useState<{ x: number; y: number; flag: number } | null>(null);
+
+  // NEIGHBORS Lens: Catalog overlay toggle & selected candidate
+  const [isNeighborsOverlayActive, setIsNeighborsOverlayActive] = useState<boolean>(true);
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateDetection | null>(null);
-  const [quietSpotMessage, setQuietSpotMessage] = useState<string | null>(null);
+  const [tappedSpot, setTappedSpot] = useState<{ x: number; y: number; ra: number; dec: number } | null>(null);
+
+  // Canonical HTML5 Canvas Ref (captured for Postcard export and Curtain divider)
+  const [canvasInstance, setCanvasInstance] = useState<HTMLCanvasElement | null>(null);
+
+  // Guided Onboarding Tour & UI Pointing Beacon State
+  const [showTour, setShowTour] = useState<boolean>(false);
+  const [highlightedTargetId, setHighlightedTargetId] = useState<string | null>(null);
 
   // Modals
   const [showPostcard, setShowPostcard] = useState<boolean>(false);
+  const [showProvenance, setShowProvenance] = useState<boolean>(false);
+  const [showDataRelease, setShowDataRelease] = useState<boolean>(false);
 
-  // Guided Coach Marks (3 steps: 1 = play, 2 = tap mover, 3 = ask spex)
-  const [coachStep, setCoachStep] = useState<number>(() => {
-    if (typeof window === 'undefined') return 1;
-    const seen = localStorage.getItem('spex_coach_seen_v2');
-    return seen ? 0 : 1;
-  });
+  // Auto-play interval for Time sequence blinker
+  useEffect(() => {
+    if (!isPlaying) return;
+    const interval = setInterval(() => {
+      setCurrentFrameIdx((prev) => (prev + 1) % 3);
+    }, 900);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
-  const advanceCoach = (skip = false) => {
-    if (skip || coachStep >= 3) {
-      setCoachStep(0);
-      localStorage.setItem('spex_coach_seen_v2', 'true');
-    } else {
-      setCoachStep((prev) => prev + 1);
-    }
-  };
-
-  // Canvas Refs
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const epoch1CanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const epoch2CanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const playTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-
-  // Available observations
+  // Observations references
   const obs1 = currentResult?.epoch1;
   const obs2 = currentResult?.epoch2;
   const diffObs = currentResult?.difference;
 
-  // Frame count: 3 frames (Epoch 1, Epoch 2, Difference)
-  const totalFrames = 3;
+  // Determine current active pixel array to render
+  const currentPixelData = useMemo(() => {
+    if (!currentResult) return null;
+    if (currentFrameIdx === 0 && obs1) return obs1.flux;
+    if (currentFrameIdx === 1 && obs2) return obs2.flux;
+    if (currentFrameIdx === 2 && diffObs) return diffObs.diff;
+    return obs1?.flux || null;
+  }, [currentResult, currentFrameIdx, obs1, obs2, diffObs]);
 
-  // Auto-play interval
-  useEffect(() => {
-    if (!isPlaying) {
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
-      return;
-    }
+  const isCurrentDifference = currentFrameIdx === 2;
 
-    setHasPlayedOnce(true);
-    const intervalMs = Math.round(900 / playbackSpeed);
-    playTimerRef.current = setInterval(() => {
-      setCurrentFrameIdx((prev) => (prev + 1) % totalFrames);
-    }, intervalMs);
-
-    return () => {
-      if (playTimerRef.current) clearInterval(playTimerRef.current);
-    };
-  }, [isPlaying, playbackSpeed, totalFrames]);
-
-  // Sync offscreen canvases for CurtainDivider
-  useEffect(() => {
-    if (!obs1 || !obs2) return;
-
-    if (!epoch1CanvasRef.current) {
-      epoch1CanvasRef.current = document.createElement('canvas');
-    }
-    if (!epoch2CanvasRef.current) {
-      epoch2CanvasRef.current = document.createElement('canvas');
-    }
-
-    AstronomyRenderer.renderToCanvas(
-      epoch1CanvasRef.current,
-      obs1.flux,
-      obs1.width,
-      obs1.height,
-      {
-        stretch: 'asinh',
-        colormap: 'diff_diverging',
-        displayMode: 'presentation',
-        renderSize: 512,
-        asinhBeta: 0.1,
-      }
-    );
-
-    AstronomyRenderer.renderToCanvas(
-      epoch2CanvasRef.current,
-      obs2.flux,
-      obs2.width,
-      obs2.height,
-      {
-        stretch: 'asinh',
-        colormap: 'diff_diverging',
-        displayMode: 'presentation',
-        renderSize: 512,
-        asinhBeta: 0.1,
-      }
-    );
-  }, [obs1, obs2]);
-
-  // Main canvas render pass
-  const renderSkyFrame = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !currentResult) return;
-
-    let targetData: number[] | Float32Array | null = null;
-    let width = 64;
-    let height = 64;
-    let isSignedDiff = false;
-
-    if (currentFrameIdx === 0 && obs1) {
-      targetData = obs1.flux;
-      width = obs1.width;
-      height = obs1.height;
-    } else if (currentFrameIdx === 1 && obs2) {
-      targetData = obs2.flux;
-      width = obs2.width;
-      height = obs2.height;
-    } else if (diffObs) {
-      targetData = diffObs.diff;
-      width = diffObs.width;
-      height = diffObs.height;
-      isSignedDiff = true;
-    }
-
-    if (!targetData) return;
-
-    // Colormap selection based on active lens
-    let colormap: ColormapMode = isSignedDiff ? 'diff_diverging' : 'infrared_warm';
+  // Canonical Colormap Resolution
+  const effectiveColormap: ColormapMode = useMemo(() => {
+    if (customColormap) return customColormap;
+    if (isCurrentDifference) return 'diff_diverging';
     if (activeLens === 'colors') {
-      colormap = activeBandIdx % 2 === 0 ? 'inferno' : 'viridis';
-    } else if (activeLens === 'doubt') {
-      colormap = 'grayscale';
+      return activeBandIdx === 0 ? 'infrared_warm' : activeBandIdx === 1 ? 'inferno' : 'viridis';
     }
+    if (activeLens === 'doubt') return 'grayscale';
+    return 'infrared_warm';
+  }, [customColormap, isCurrentDifference, activeLens, activeBandIdx]);
 
-    AstronomyRenderer.renderToCanvas(canvas, targetData, width, height, {
-      stretch: 'asinh',
-      colormap,
-      displayMode: 'presentation',
-      isDifference: isSignedDiff,
-      renderSize: 640,
-      asinhBeta: isSignedDiff ? 0.05 : 0.1,
-    });
+  // Target Display Name
+  const targetDisplayName = useMemo(() => {
+    if (selectedTarget) return selectedTarget.name;
+    if (currentResult?.title) return currentResult.title;
+    return cases[0]?.title || "Barnard's Star (GJ 699)";
+  }, [selectedTarget, currentResult, cases]);
 
-    // Layer 2: Draw Lens Overlays & Markers on top of astronomical image
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const displaySize = canvas.width;
-    const scaleX = displaySize / width;
-    const scaleY = displaySize / height;
-
-    // Overlay 1: DOUBT LENS (Highlight detector glitches & artifact pixels in Rose #FF637E)
-    const dq = obs1?.flags || obs2?.flags;
-    if (activeLens === 'doubt' && dq) {
-      ctx.save();
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const flag = dq[y * width + x] || 0;
-          if (flag > 0) {
-            const px = x * scaleX;
-            const py = y * scaleY;
-            ctx.fillStyle = 'rgba(255, 99, 126, 0.35)';
-            ctx.fillRect(px, py, scaleX, scaleY);
-            ctx.strokeStyle = '#FF637E';
-            ctx.lineWidth = 1;
-            ctx.strokeRect(px, py, scaleX, scaleY);
-          }
-        }
-      }
-      ctx.restore();
-    }
-
-    // Overlay 2: NEIGHBORS LENS (Gaia DR3 & AllWISE catalog star markers in Cyan #00D3F3)
-    if (activeLens === 'neighbors' && currentResult.candidates) {
-      ctx.save();
-      for (const cand of currentResult.candidates) {
-        if (cand.catalogMatches && cand.catalogMatches.length > 0) {
-          const cx = cand.x * scaleX;
-          const cy = cand.y * scaleY;
-
-          // Reticle ring
-          ctx.strokeStyle = '#00D3F3';
-          ctx.lineWidth = 1.5;
-          ctx.beginPath();
-          ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-          ctx.stroke();
-
-          // Label
-          ctx.fillStyle = '#00D3F3';
-          ctx.font = '10px monospace';
-          const match = cand.catalogMatches[0];
-          ctx.fillText(`${match.catalog} (${match.separationArcsec.toFixed(1)}″)`, cx + 18, cy + 3);
-        }
-      }
-      ctx.restore();
-    }
-
-    // Overlay 3: Selected candidate or tapped spot ring
-    if (tappedSpot) {
-      const sx = (tappedSpot.x / width) * displaySize;
-      const sy = (tappedSpot.y / height) * displaySize;
-
-      ctx.save();
-      // Amber highlight reticle
-      ctx.strokeStyle = '#FFB900';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 20, 0, Math.PI * 2);
-      ctx.stroke();
-
-      // Crosshair tick marks
-      ctx.beginPath();
-      ctx.moveTo(sx - 26, sy);
-      ctx.lineTo(sx - 12, sy);
-      ctx.moveTo(sx + 12, sy);
-      ctx.lineTo(sx + 26, sy);
-      ctx.moveTo(sx, sy - 26);
-      ctx.lineTo(sx, sy - 12);
-      ctx.moveTo(sx, sy + 12);
-      ctx.lineTo(sx, sy + 26);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }, [currentResult, currentFrameIdx, activeLens, activeBandIdx, tappedSpot, obs1, obs2, diffObs]);
-
-  useEffect(() => {
-    renderSkyFrame();
-  }, [renderSkyFrame]);
-
-  // Handle Canvas Tap / Spot Selection
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas || !currentResult) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const normX = Math.max(0, Math.min(1, clickX / rect.width));
-    const normY = Math.max(0, Math.min(1, clickY / rect.height));
-
-    const imgWidth = obs1?.width || 64;
-    const imgHeight = obs1?.height || 64;
-    const pixX = normX * imgWidth;
-    const pixY = normY * imgHeight;
-
-    // Convert pixel to celestial RA/Dec using WCS if available
-    let ra = currentResult.targetCoords?.ra || 269.452;
-    let dec = currentResult.targetCoords?.dec || 4.693;
-    if (obs1?.wcs) {
-      const sky = WCS.pixToSky(pixX, pixY, obs1.wcs);
-      if (sky) {
-        ra = sky.ra;
-        dec = sky.dec;
-      }
-    }
-
-    setTappedSpot({ x: pixX, y: pixY, ra, dec });
-
-    // Find nearest candidate within 6 pixels
-    const candidates = currentResult.candidates || [];
-    let nearest: CandidateDetection | null = null;
-    let minDistance = 6.0;
-
-    for (const cand of candidates) {
-      const dist = Math.hypot(cand.x - pixX, cand.y - pixY);
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearest = cand;
-      }
-    }
-
-    if (nearest) {
-      setSelectedCandidate(nearest);
-      setQuietSpotMessage(null);
-    } else {
-      setSelectedCandidate(null);
-      setQuietSpotMessage(
-        isRtl
-          ? 'ضوء هادئ من أعماق الفضاء هنا — لم يُرصد تحرك أو وميض في هذا البكسل.'
-          : 'Quiet starlight background here — no significant motion or flare recorded at this spot.'
-      );
-    }
-
-    // Advance coach marks if on step 2
-    if (coachStep === 2) {
-      advanceCoach();
-    }
-  };
-
-  // Zoom & Pan Handlers
-  const handleZoomIn = () => setZoom((prev) => Math.min(3.0, prev + 0.25));
-  const handleZoomOut = () => setZoom((prev) => Math.max(0.75, prev - 0.25));
-  const handleResetZoom = () => {
-    setZoom(1.0);
-    setPan({ x: 0, y: 0 });
-  };
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    setIsDragging(true);
-    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging) return;
-    setPan({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y,
-    });
-  };
-
-  const handlePointerUp = () => setIsDragging(false);
-
-  // Target Description Resolution
-  const targetInfo = useMemo(() => {
-    const defaultName = currentResult?.caseId
-      ? cases.find((c) => c.id === currentResult.caseId)?.title || "Barnard's Star (GJ 699)"
-      : "Barnard's Star (GJ 699)";
-
-    const title = selectedTarget?.name || defaultName;
-
-    let sentence = t.targetDefaultDesc;
-    if (title.includes('Barnard') || currentResult?.caseId === 'case-barnards-star') {
-      sentence = t.targetBarnardDesc;
-    } else if (title.includes('WISE') || currentResult?.caseId === 'case-wise-0855') {
-      sentence = t.targetWiseDesc;
-    } else if (title.includes('Indi')) {
-      sentence = t.targetEpsIndiDesc;
-    } else if (title.includes('RW Aur')) {
-      sentence = t.targetRwAurDesc;
-    } else if (title.includes('Draconis')) {
-      sentence = t.targetRDraconisDesc;
-    }
-
-    return { title, sentence };
-  }, [selectedTarget, currentResult, cases, t]);
-
-  // Frame title for current view
-  const currentFrameLabel = (() => {
-    if (currentFrameIdx === 0) {
-      return isRtl ? 'الرصدة الأولى (قبل)' : 'Visit 1 (Before)';
-    }
-    if (currentFrameIdx === 1) {
-      return isRtl ? 'الرصدة الثانية (بعد)' : 'Visit 2 (After)';
-    }
-    return isRtl ? 'صورة الفارق (طرح اللقطتين)' : 'Difference Map (Visit 2 - Visit 1)';
-  })();
-
-  // Plain-language cadence text (Authentic intra-visit interval is ~2.1 minutes)
-  const cadenceText = isRtl
-    ? 'التُقطت هاتان الصورتان بفارق دقيقتين فقط خلال نفس دورة المسح (مسار الحركة مكبر للتوضيح).'
-    : 'These pictures were taken 2.1 minutes apart during the same survey pass (motion trail enlarged for illustration).';
+  // Available SPHEREx Infrared Bands for Lens 2
+  const availableBands = useMemo(() => {
+    return [
+      { id: 1, name: 'Band 1', range: '0.75 – 1.11 µm', wavelength: 0.93 },
+      { id: 2, name: 'Band 2', range: '1.11 – 1.65 µm', wavelength: 1.48 },
+      { id: 4, name: 'Band 4', range: '2.40 – 3.84 µm', wavelength: 2.76 },
+    ];
+  }, []);
 
   return (
     <div
-      className="relative w-full min-h-[calc(100vh-64px)] bg-[#02040A] text-[#F1F5F9] flex flex-col justify-between overflow-hidden select-none"
+      className={`relative w-full h-[calc(100vh-64px)] flex flex-col bg-[#02040A] text-slate-100 overflow-hidden select-none ${
+        isRtl ? 'font-cairo' : 'font-sans'
+      }`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* =========================================================================
-          TOP SLIM BAR: Back to Sky · Target Name & Sentence · Authenticity Badge
-         ========================================================================= */}
-      <header className="relative z-30 shrink-0 w-full px-3 sm:px-6 py-2.5 bg-[#0C0E14]/80 backdrop-blur-md border-b border-white/10 flex items-center justify-between gap-3">
-        {/* Left: Back button & Target identification */}
-        <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
-          <button
-            type="button"
-            onClick={onBackToSky}
-            className="flex items-center justify-center min-w-[48px] min-h-[48px] rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 shrink-0"
-            title={t.backToSky}
-            aria-label={t.backToSky}
-          >
-            <ArrowLeft className={`w-5 h-5 ${isRtl ? 'rotate-180' : ''}`} />
-          </button>
+      {/* ==================================================================== */}
+      {/* PART 3.A: SMALL ELEGANT FLOATING TOP BAR */}
+      {/* ==================================================================== */}
+      <header className="relative z-30 shrink-0 h-13 sm:h-14 bg-[#0C0E14]/90 backdrop-blur-xl border-b border-white/10 px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-3 shadow-md">
+        {/* Left: Back to Sky & Target Name */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          {onBackToSky && (
+            <button
+              type="button"
+              onClick={onBackToSky}
+              className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer text-xs font-mono"
+              title={isRtl ? 'العودة إلى القبة السماوية' : 'Return to Sky'}
+            >
+              <ArrowLeft className={`w-3.5 h-3.5 transition-transform ${isRtl ? 'rotate-180 group-hover:translate-x-0.5' : 'group-hover:-translate-x-0.5'}`} />
+              <span className="hidden sm:inline font-medium">{isRtl ? 'القبة' : 'Sky'}</span>
+            </button>
+          )}
 
-          <div className="flex flex-col min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="font-serif text-sm sm:text-base font-bold text-white tracking-wide truncate">
-                {targetInfo.title}
-              </h2>
-              <Badge variant="REAL" size="sm" />
-            </div>
-            <p className="text-[11px] sm:text-xs text-slate-400 font-sans truncate max-w-md sm:max-w-xl">
-              {targetInfo.sentence}
-            </p>
+          <div className="flex items-baseline gap-2 min-w-0">
+            <h1 className="text-sm sm:text-base font-bold text-slate-100 truncate tracking-tight">
+              {targetDisplayName}
+            </h1>
+            {currentResult?.targetCoords && (
+              <span className="hidden md:inline font-mono text-[11px] text-slate-400">
+                ({currentResult.targetCoords.ra.toFixed(4)}°, {currentResult.targetCoords.dec >= 0 ? '+' : ''}{currentResult.targetCoords.dec.toFixed(4)}°)
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Right: Coordinates & Actions (Postcard, Scientist Mode) */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Coordinate Readout */}
-          <div className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/40 border border-white/10 font-mono text-[11px] text-cyan-400">
-            <span>RA {currentResult?.targetCoords?.ra?.toFixed(4) ?? '269.4521'}°</span>
-            <span className="text-slate-600">·</span>
-            <span>
-              Dec {currentResult?.targetCoords?.dec != null && currentResult.targetCoords.dec >= 0 ? '+' : ''}
-              {currentResult?.targetCoords?.dec?.toFixed(4) ?? '+04.6934'}°
-            </span>
-          </div>
-
-          {/* Share Discovery Postcard Button */}
+        {/* Right: Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Guided Tour Trigger Button */}
           <button
             type="button"
-            onClick={() => setShowPostcard(true)}
-            className="flex items-center gap-1.5 min-h-[48px] px-3.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-[#FFB900]/40 text-[#FFB900] transition-all cursor-pointer active:scale-95 text-xs font-semibold"
-            title={t.btnExportPostcard}
+            onClick={() => setShowTour(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#00D3F3]/40 bg-[#00D3F3]/10 hover:bg-[#00D3F3]/20 text-[#00D3F3] transition cursor-pointer text-xs font-mono font-semibold"
+            title={isRtl ? 'بدء جولة سبيكس التوضيحية' : 'Start SPEX Tour'}
           >
-            <Sparkles className="w-4 h-4 text-[#FFB900]" />
-            <span className="hidden sm:inline">{t.btnExportPostcard}</span>
+            <Compass className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{isRtl ? 'الجولة' : 'Tour'}</span>
           </button>
 
-          {/* Scientist Mode Switch */}
+          {/* Data Authenticity Indicator */}
+          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'Authentic QR2'}</span>
+          </div>
+
+          {/* Mode Switch: Explorer vs Scientist */}
           {onToggleScientistMode && (
-            <button
-              type="button"
-              onClick={onToggleScientistMode}
-              className="flex items-center gap-1.5 min-h-[48px] px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/10 text-slate-300 hover:text-white transition-all cursor-pointer active:scale-95 text-xs font-mono"
-              title={t.scientistModeToggle}
-            >
-              <Microscope className="w-4 h-4 text-cyan-400" />
-              <span className="hidden md:inline">{t.scientistModeToggle}</span>
-            </button>
+            <div data-tour="scientist_toggle" className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15">
+              <button
+                type="button"
+                onClick={() => isScientistMode && onToggleScientistMode()}
+                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
+                  !isScientistMode
+                    ? 'bg-[#FFB900] text-slate-950 shadow-sm font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {isRtl ? 'المستكشف' : 'Explorer'}
+              </button>
+              <button
+                type="button"
+                onClick={() => !isScientistMode && onToggleScientistMode()}
+                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
+                  isScientistMode
+                    ? 'bg-[#00D3F3] text-slate-950 shadow-sm font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {isRtl ? 'العلماء' : 'Scientist'}
+              </button>
+            </div>
           )}
+
+          {/* Discovery Postcard Share Action */}
+          <button
+            type="button"
+            data-tour="postcard_button"
+            onClick={() => setShowPostcard(true)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-[#FFB900]/40 bg-[#FFB900]/10 hover:bg-[#FFB900]/20 text-[#FFB900] transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+            title={isRtl ? 'مشاركة بطاقة الاكتشاف' : 'Discovery Postcard'}
+          >
+            <Share2 className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{isRtl ? 'بطاقة الاكتشاف' : 'Postcard'}</span>
+          </button>
         </div>
       </header>
 
-      {/* =========================================================================
-          CENTER SKY VIEWPORT: Astronomical Canvas (>= 70% Viewport Height)
-         ========================================================================= */}
-      <main
-        ref={viewportRef}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        className="relative flex-1 w-full min-h-[60vh] lg:min-h-[70vh] bg-black flex items-center justify-center overflow-hidden cursor-crosshair touch-none"
-      >
-        {/* Background Faint Detector Grid */}
-        <div className="absolute inset-0 detector-grid opacity-25 pointer-events-none" />
-
-        {/* Viewport Corner Crop Marks */}
-        <div className="crop-mark-tl pointer-events-none" />
-        <div className="crop-mark-tr pointer-events-none" />
-        <div className="crop-mark-bl pointer-events-none" />
-        <div className="crop-mark-br pointer-events-none" />
-
-        {/* Top-Left Floating HUD: Exposure Info & Active Lens status */}
-        <div className="absolute top-4 left-4 z-20 pointer-events-none flex flex-col gap-1.5">
-          <div className="bg-[#0C0E14]/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 font-mono text-[11px] text-[#00D3F3] flex items-center gap-2 shadow-lg">
-            <span className="w-2 h-2 rounded-full bg-[#00D3F3] animate-pulse" />
-            <span>{currentFrameLabel}</span>
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-300">6.2″/pix</span>
-          </div>
-
-          {activeLens === 'doubt' && (
-            <div className="bg-rose-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-rose-500/40 font-mono text-[10px] text-rose-300 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-              <span>{isRtl ? 'قناع الكواشف: تمييز البكسلات المشبوهة بالوردي' : 'Doubt Lens: Flagged detector artifacts in Rose'}</span>
-            </div>
-          )}
-
-          {activeLens === 'neighbors' && (
-            <div className="bg-cyan-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-cyan-500/40 font-mono text-[10px] text-cyan-300 flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{isRtl ? 'كتالوجات غايا DR3 ووايز نشطة' : 'Neighbors Lens: Gaia DR3 & AllWISE markers active'}</span>
-            </div>
-          )}
-
-          {activeLens === 'colors' && (
-            <div className="bg-amber-950/80 backdrop-blur-md px-3 py-1 rounded-xl border border-amber-500/40 font-mono text-[10px] text-amber-300 flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>
-                {isRtl ? 'نطاق تحت أحمر:' : 'Infrared Band:'} {SPHEREX_DETECTOR_ARRAYS[activeBandIdx]?.name || 'D1 (0.75-1.11 µm)'}
-              </span>
-            </div>
-          )}
-        </div>
-
-        {/* Floating Zoom & Reset Controls */}
-        <div className="absolute top-4 right-4 z-20 flex flex-col gap-1.5 bg-[#0C0E14]/80 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-xl">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-            title="Zoom In"
-            aria-label="Zoom In"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer"
-            title="Zoom Out"
-            aria-label="Zoom Out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleResetZoom}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 transition cursor-pointer font-mono text-[10px]"
-            title="Reset View"
-            aria-label="Reset View"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Main Interactive Stage: Single Canvas OR Draggable Curtain Mode */}
-        <div
-          className="relative transition-transform duration-75 flex items-center justify-center max-w-full max-h-full"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-          }}
-        >
-          {isCurtainMode ? (
-            <div className="w-[85vw] max-w-[560px] aspect-square">
-              <CurtainDivider
-                epoch1Canvas={epoch1CanvasRef.current}
-                epoch2Canvas={epoch2CanvasRef.current}
-                epoch1Label={isRtl ? 'الرصدة 1 (قبل)' : 'Visit 1 (Before)'}
-                epoch2Label={isRtl ? 'الرصدة 2 (بعد)' : 'Visit 2 (After)'}
-                width={560}
-                height={560}
-              />
-            </div>
-          ) : (
-            <canvas
-              ref={canvasRef}
-              onClick={handleCanvasClick}
-              className="w-[85vw] max-w-[560px] aspect-square object-contain rounded-2xl shadow-2xl border border-white/15 image-rendering-pixelated cursor-crosshair bg-black"
+      {/* ==================================================================== */}
+      {/* PART 3.B: MAIN SKY VIEWPORT AS TRUE FULL HERO & FLOATING CONTROLS */}
+      {/* ==================================================================== */}
+      <div className="relative flex-1 w-full min-h-0 flex flex-col lg:flex-row overflow-hidden">
+        {/* Main Sky Telescope Viewport (Maximized to occupy full area) */}
+        <main className="relative flex-1 h-full min-h-0 w-full overflow-hidden flex flex-col bg-black">
+          <div className="relative flex-1 w-full h-full min-h-0 overflow-hidden">
+            <AstronomicalSkyViewport
+              data={currentPixelData}
+              width={obs1?.width || 64}
+              height={obs1?.height || 64}
+              isDifference={isCurrentDifference}
+              stretch={stretch}
+              colormap={effectiveColormap}
+              displayMode={displayMode}
+              contrastFactor={contrastFactor}
+              zoom={zoom}
+              pan={pan}
+              onZoomChange={setZoom}
+              onPanChange={setPan}
+              onCanvasReady={setCanvasInstance}
+              wcs={obs1?.wcs}
+              activeLens={activeLens}
+              isCurtainActive={isCurtainActive}
+              epoch1Data={obs1?.flux}
+              epoch2Data={obs2?.flux}
+              epoch1Label={isRtl ? 'الرصدة 1 (قبل)' : 'Visit 1 (Before)'}
+              epoch2Label={isRtl ? 'الرصدة 2 (بعد)' : 'Visit 2 (After)'}
+              dqFlags={obs1?.flags || obs2?.flags}
+              selectedFlagPixel={selectedFlagPixel}
+              onSelectFlagPixel={setSelectedFlagPixel}
+              candidates={currentResult?.candidates}
+              selectedCandidate={selectedCandidate}
+              onSelectCandidate={setSelectedCandidate}
+              tappedSpot={tappedSpot}
+              onTapSpot={setTappedSpot}
+              language={language}
+              isLoading={isLoading}
+              targetName={targetDisplayName}
+              fovArcmin={currentResult?.fovArcmin || 6.6}
+              className="w-full h-full"
             />
-          )}
-        </div>
 
-        {/* Guided Coach Marks (Step 1, 2, 3) */}
-        {coachStep > 0 && (
-          <div className="absolute inset-x-4 bottom-28 z-40 flex justify-center pointer-events-none">
-            <div className="pointer-events-auto bg-[#0C0E14]/95 backdrop-blur-xl border border-amber-500/50 p-4 rounded-2xl max-w-md w-full shadow-[0_0_30px_rgba(255,185,0,0.25)] flex items-start gap-3.5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-300">
-                <Compass className="w-5 h-5" />
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-mono text-[10px] text-amber-400 uppercase tracking-wider font-semibold">
-                    STEP {coachStep} OF 3
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => advanceCoach(true)}
-                    className="text-xs text-slate-400 hover:text-white cursor-pointer"
-                  >
-                    {t.coachSkip}
-                  </button>
-                </div>
-
-                <p className="text-sm font-sans font-medium text-white mb-3">
-                  {coachStep === 1 && t.coachStep1}
-                  {coachStep === 2 && t.coachStep2}
-                  {coachStep === 3 && t.coachStep3}
-                </p>
-
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => advanceCoach()}
-                    className="min-h-[40px] px-4 rounded-xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 font-bold text-xs transition cursor-pointer"
-                  >
-                    {coachStep === 3 ? t.coachSkip : t.coachNext}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SPEX Slide-up Discovery Card (Triggered on Tap) */}
-        {selectedCandidate && (
-          <div className="absolute inset-x-4 bottom-4 z-40 flex justify-center pointer-events-none animate-in fade-in slide-in-from-bottom-6 duration-300">
-            <div className="pointer-events-auto w-full max-w-md relative">
-              <button
-                type="button"
-                onClick={() => setSelectedCandidate(null)}
-                className="absolute -top-3 -right-3 z-50 w-8 h-8 rounded-full bg-slate-900 border border-white/20 text-white flex items-center justify-center hover:bg-slate-800 transition shadow-lg cursor-pointer"
-                title="Dismiss Card"
-                aria-label="Dismiss Card"
-              >
-                <X className="w-4 h-4" />
-              </button>
-
-              <DiscoveryCard
-                candidate={selectedCandidate}
-                viewMode="explorer"
+            {/* FLOATING 4-LENS DOCK & CONTEXTUAL DRAWER (Overlaid at bottom of telescope viewport) */}
+            <div className="absolute bottom-3 sm:bottom-4 inset-x-0 mx-auto z-20 pointer-events-none max-w-3xl px-2 sm:px-4">
+              <FourLensesDock
+                activeLens={activeLens}
+                onSelectLens={setActiveLens}
+                currentFrameIdx={currentFrameIdx}
+                totalFrames={3}
+                onSelectFrameIdx={setCurrentFrameIdx}
+                isPlaying={isPlaying}
+                onTogglePlay={() => setIsPlaying(!isPlaying)}
+                isCurtainActive={isCurtainActive}
+                onToggleCurtain={() => setIsCurtainActive(!isCurtainActive)}
+                epoch1Date={obs1?.metadata?.date_obs}
+                epoch2Date={obs2?.metadata?.date_obs}
+                cadenceSeconds={currentResult?.compatibility?.startToStartCadenceSec ?? 128.9}
+                activeBandIdx={activeBandIdx}
+                onSelectBandIdx={setActiveBandIdx}
+                availableBands={availableBands}
+                isDoubtOverlayActive={isDoubtOverlayActive}
+                onToggleDoubtOverlay={() => setIsDoubtOverlayActive(!isDoubtOverlayActive)}
+                selectedFlagPixel={selectedFlagPixel}
+                onClearFlagPixel={() => setSelectedFlagPixel(null)}
+                isNeighborsOverlayActive={isNeighborsOverlayActive}
+                onToggleNeighborsOverlay={() => setIsNeighborsOverlayActive(!isNeighborsOverlayActive)}
+                selectedCandidate={selectedCandidate}
                 language={language}
-                onClose={() => setSelectedCandidate(null)}
+                className="pointer-events-auto"
               />
             </div>
           </div>
-        )}
+        </main>
 
-        {/* Quiet Background Starlight Card (If tapped an unflagged pixel) */}
-        {!selectedCandidate && quietSpotMessage && (
-          <div className="absolute inset-x-4 bottom-4 z-40 flex justify-center pointer-events-none animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="pointer-events-auto bg-[#0C0E14]/90 backdrop-blur-md border border-white/10 p-3.5 rounded-2xl max-w-md w-full flex items-center justify-between gap-3 shadow-xl">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0 text-cyan-300">
-                  <Eye className="w-4 h-4" />
-                </div>
-                <p className="text-xs text-slate-300 font-sans leading-relaxed">
-                  {quietSpotMessage}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQuietSpotMessage(null)}
-                className="text-slate-400 hover:text-white p-1 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* =========================================================================
-          BOTTOM DOCK: Big Amber Play Button · Time Scrubber · 4 Scientific Lenses
-         ========================================================================= */}
-      <footer className="relative z-30 shrink-0 w-full bg-[#0C0E14]/90 backdrop-blur-xl border-t border-white/10 px-3 sm:px-6 py-3 flex flex-col gap-3">
-        {/* Core Timeline Bar: Play Button + Scrubber + Curtain Toggle */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          {/* Left: ONE Big Amber Play Button (min 48px touch target) */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                setIsPlaying(!isPlaying);
-                setHasPlayedOnce(true);
-                if (coachStep === 1) advanceCoach();
-              }}
-              className="min-w-[48px] min-h-[48px] px-5 rounded-2xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 font-bold transition-all shadow-[0_0_20px_rgba(255,185,0,0.4)] flex items-center justify-center gap-2 cursor-pointer active:scale-95 shrink-0"
-              title={isPlaying ? t.framePlayerPause : t.framePlayerPlay}
-              aria-label={isPlaying ? t.framePlayerPause : t.framePlayerPlay}
-            >
-              {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
-              <span className="text-sm font-sans tracking-wide">
-                {isPlaying ? t.framePlayerPause : t.framePlayerPlay}
-              </span>
-            </button>
-
-            {/* Stepper buttons */}
-            <div className="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10">
-              <button
-                type="button"
-                onClick={() => setCurrentFrameIdx((prev) => (prev - 1 + totalFrames) % totalFrames)}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-                title="Previous Frame"
-                aria-label="Previous Frame"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setCurrentFrameIdx((prev) => (prev + 1) % totalFrames)}
-                className="min-w-[40px] min-h-[40px] flex items-center justify-center text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-                title="Next Frame"
-                aria-label="Next Frame"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Center: Observation Scrubber Slider */}
-          <div className="flex-1 flex flex-col gap-1 px-1 sm:px-4">
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-              <span className="text-[#00D3F3] font-semibold">{currentFrameLabel}</span>
-              <span>
-                {currentFrameIdx + 1} / {totalFrames}
-              </span>
-            </div>
-
-            <input
-              type="range"
-              min={0}
-              max={totalFrames - 1}
-              value={currentFrameIdx}
-              onChange={(e) => setCurrentFrameIdx(parseInt(e.target.value, 10))}
-              className="w-full accent-[#FFB900] cursor-pointer h-2 bg-slate-800 rounded-lg"
-              aria-label="Observation timeline scrubber"
+        {/* ================================================================== */}
+        {/* PART 6: STRUCTURED SCIENTIST INVESTIGATION WORKSPACE PANEL */}
+        {/* ================================================================== */}
+        {isScientistMode && currentResult && (
+          <aside className="relative z-20 w-full lg:w-[420px] xl:w-[460px] shrink-0 h-full p-2 sm:p-3 overflow-hidden animate-slide-left border-l border-white/10 bg-[#0C0E14]/95 backdrop-blur-xl">
+            <ScientistInvestigationPanel
+              currentResult={currentResult}
+              language={language}
+              stretch={stretch}
+              colormap={effectiveColormap}
+              displayMode={displayMode}
+              contrastFactor={contrastFactor}
+              onStretchChange={setStretch}
+              onColormapChange={setCustomColormap}
+              onDisplayModeChange={setDisplayMode}
+              onContrastFactorChange={setContrastFactor}
+              selectedCandidate={selectedCandidate}
+              onSelectCandidate={setSelectedCandidate}
+              onOpenProvenanceModal={() => setShowProvenance(true)}
+              onOpenDataReleaseModal={() => setShowDataRelease(true)}
+              className="w-full h-full"
             />
-          </div>
-
-          {/* Right: Curtain Comparison Mode Switch & More Tools Toggle */}
-          <div className="flex items-center gap-2 justify-end">
-            <button
-              type="button"
-              onClick={() => setIsCurtainMode(!isCurtainMode)}
-              className={`min-h-[48px] px-3.5 rounded-xl border font-mono text-xs transition cursor-pointer flex items-center gap-2 ${
-                isCurtainMode
-                  ? 'bg-amber-500/20 text-[#FFB900] border-[#FFB900]'
-                  : 'bg-white/[0.04] text-slate-300 border-white/10 hover:bg-white/[0.08]'
-              }`}
-              title={isCurtainMode ? t.singleFrameMode : t.curtainMode}
-            >
-              <GripVertical className="w-4 h-4" />
-              <span>{isCurtainMode ? t.singleFrameMode : t.curtainMode}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowMoreTools(!showMoreTools)}
-              className="min-h-[48px] px-3.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 text-slate-300 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
-            >
-              <Sliders className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline">{t.moreTools}</span>
-              {showMoreTools ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Honest Cadence Explanation Line */}
-        <div className="px-1 text-[11px] font-mono text-slate-400 flex items-center gap-2">
-          <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-          <span className="truncate">{cadenceText}</span>
-        </div>
-
-        {/* The 4 Scientific Lenses Dock (Always accessible or expanded via More Tools) */}
-        <div
-          className={`grid grid-cols-2 lg:grid-cols-4 gap-2 pt-1 transition-all ${
-            showMoreTools ? 'block' : 'hidden sm:grid'
-          }`}
-        >
-          {/* LENS 1: TIME */}
-          <LensButton
-            id="time"
-            label={t.lensTime}
-            sublabel={t.lensTimeSub}
-            icon={<Clock className="w-4 h-4 text-[#FFB900]" />}
-            isActive={activeLens === 'time'}
-            onClick={() => setActiveLens(activeLens === 'time' ? null : 'time')}
-            color="amber"
-          />
-
-          {/* LENS 2: HIDDEN COLORS */}
-          <LensButton
-            id="colors"
-            label={t.lensColors}
-            sublabel={t.lensColorsSub}
-            icon={<Sparkles className="w-4 h-4 text-[#00D3F3]" />}
-            isActive={activeLens === 'colors'}
-            onClick={() => setActiveLens(activeLens === 'colors' ? null : 'colors')}
-            color="cyan"
-          />
-
-          {/* LENS 3: DOUBT (Instrument Glitches & Quality Bitmasks) */}
-          <LensButton
-            id="doubt"
-            label={t.lensDoubt}
-            sublabel={t.lensDoubtSub}
-            icon={<AlertTriangle className="w-4 h-4 text-[#FF637E]" />}
-            isActive={activeLens === 'doubt'}
-            onClick={() => setActiveLens(activeLens === 'doubt' ? null : 'doubt')}
-            color="rose"
-          />
-
-          {/* LENS 4: NEIGHBORS (Catalog Overlays) */}
-          <LensButton
-            id="neighbors"
-            label={t.lensNeighbors}
-            sublabel={t.lensNeighborsSub}
-            icon={<Eye className="w-4 h-4 text-emerald-400" />}
-            isActive={activeLens === 'neighbors'}
-            onClick={() => setActiveLens(activeLens === 'neighbors' ? null : 'neighbors')}
-            color="emerald"
-          />
-        </div>
-
-        {/* Sub-Panel: Hidden Colors Channel Switcher (When Colors lens is active) */}
-        {activeLens === 'colors' && (
-          <div className="p-3 rounded-2xl bg-black/60 border border-cyan-500/30 flex flex-col gap-2 animate-in fade-in duration-200">
-            <div className="flex items-center justify-between text-xs font-mono text-cyan-300">
-              <span>{t.colorsTitle}</span>
-              <span className="text-[11px] text-slate-400 font-sans">
-                {isRtl
-                  ? 'العين البشرية لا ترى تحت الأحمر. نترجم درجات الحرارة إلى ألوان مرئية.'
-                  : 'Infrared light translated to visible color: warm dust glows red, stars shine cyan.'}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap gap-1.5">
-              {SPHEREX_DETECTOR_ARRAYS.map((band, idx) => (
-                <button
-                  key={band.detectorNumber}
-                  type="button"
-                  onClick={() => setActiveBandIdx(idx)}
-                  className={`min-h-[40px] px-3 py-1.5 rounded-xl text-xs font-mono transition cursor-pointer flex items-center gap-1.5 ${
-                    activeBandIdx === idx
-                      ? 'bg-[#00D3F3] text-slate-950 font-bold shadow-[0_0_15px_rgba(0,211,243,0.4)]'
-                      : 'bg-white/[0.04] text-slate-300 hover:text-white hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <span>{band.name}</span>
-                  <span className="text-[10px] opacity-75">{band.wavelengthRangeUm[0]}-{band.wavelengthRangeUm[1]}µm</span>
-                </button>
-              ))}
-            </div>
-          </div>
+          </aside>
         )}
-      </footer>
+      </div>
 
-      {/* Postcard Export Modal */}
-      {showPostcard && currentResult && (
+      {/* ==================================================================== */}
+      {/* SPEX INTELLIGENT COMPANION & GUIDED TOUR SYSTEM */}
+      {/* ==================================================================== */}
+      <SpexCompanion
+        currentResult={currentResult}
+        activeLens={activeLens}
+        currentFrameIdx={currentFrameIdx}
+        isCurtainActive={isCurtainActive}
+        selectedCandidate={selectedCandidate}
+        selectedFlagPixel={selectedFlagPixel}
+        language={language}
+        onOpenTour={() => setShowTour(true)}
+        onHighlightElement={(targetId) => {
+          setHighlightedTargetId(targetId);
+          // If action targets a specific lens, also activate that lens!
+          if (targetId === 'lens_time') setActiveLens('time');
+          else if (targetId === 'lens_colors') setActiveLens('colors');
+          else if (targetId === 'lens_doubt') setActiveLens('doubt');
+          else if (targetId === 'lens_neighbors') setActiveLens('neighbors');
+          else if (targetId === 'curtain_divider') {
+            setActiveLens('time');
+            setIsCurtainActive(true);
+          }
+        }}
+        onOpenScientistMode={() => {
+          if (!isScientistMode && onToggleScientistMode) {
+            onToggleScientistMode();
+          }
+        }}
+      />
+
+      {/* Reusable Visual Pointing Beacon */}
+      <SpexUiHighlight
+        highlightId={highlightedTargetId}
+        onClear={() => setHighlightedTargetId(null)}
+        language={language}
+      />
+
+      {/* 9-Step Guided Onboarding Tour */}
+      <SpexGuidedTour
+        isOpen={showTour}
+        onClose={() => setShowTour(false)}
+        language={language}
+        onActivateLens={(lens) => setActiveLens(lens)}
+        onActivateCurtain={(active) => setIsCurtainActive(active)}
+      />
+
+      {/* DISCOVERY POSTCARD MODAL (Renders Actual Canvas Image) */}
+      {currentResult && (
         <PostcardModal
           isOpen={showPostcard}
           onClose={() => setShowPostcard(false)}
           result={currentResult}
           candidate={selectedCandidate}
           language={language}
+          sourceCanvas={canvasInstance}
         />
       )}
+
+      {/* PROVENANCE MODAL */}
+      {currentResult?.provenance && showProvenance && (
+        <ProvenanceModal
+          provenance={currentResult.provenance}
+          onClose={() => setShowProvenance(false)}
+          language={language}
+        />
+      )}
+
+      {/* DATA RELEASE VALIDATION MODAL */}
+      <DataReleaseModal
+        isOpen={showDataRelease}
+        onClose={() => setShowDataRelease(false)}
+        language={language}
+      />
     </div>
   );
 };
-
-export default ExploreView;

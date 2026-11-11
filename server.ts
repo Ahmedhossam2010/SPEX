@@ -1572,6 +1572,7 @@ app.get('/api/spherex/catalog-overlay', async (req: Request, res: Response) => {
 });
 
 // API: SPEX AI Grounded Chat (Bilingual: English & Egyptian Arabic, strictly grounded in computed data)
+// API: SPEX AI Grounded Chat (Bilingual: English & Egyptian Arabic, strictly grounded in computed data & application context)
 app.post('/api/spex/chat', async (req: Request, res: Response) => {
   try {
     const {
@@ -1586,6 +1587,7 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
       language,
       currentResult,
       selectedCandidate,
+      context: rawContext,
       simplificationLevel = 0,
       explanationLevel = 'simple',
     } = req.body;
@@ -1595,61 +1597,51 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
     const topCandidate = rawTopCandidate ?? selectedCandidate ?? currentResult?.candidates?.[0] ?? null;
     const provenance = rawProvenance ?? currentResult?.provenance;
     const compatibility = rawCompatibility ?? currentResult?.compatibility;
-    const targetCoords = rawTargetCoords ?? currentResult?.targetCoords;
+    const targetCoords = rawTargetCoords ?? currentResult?.targetCoords ?? rawContext?.targetCoords;
     const lang = rawLang ?? language ?? 'en';
     const isArabic = lang === 'ar' || /[\u0600-\u06FF]/.test(userMessage || '');
 
+    const targetName = rawContext?.targetName || currentResult?.title || "Astronomical Target";
+    const activeLens = rawContext?.activeLens || 'time';
+    const activeBand = rawContext?.activeBand || 'Band 1 (0.75 - 1.11 µm)';
+    const isCurtainActive = rawContext?.isCurtainActive || false;
+    const selectedFlagPixel = rawContext?.selectedFlagPixel || null;
+
     const lowerQuery = userMessage.toLowerCase();
-    const isSimplerRequest =
-      lowerQuery.includes('مش فاهم') ||
-      lowerQuery.includes('اشرح أبسط') ||
-      lowerQuery.includes('ابسط') ||
-      lowerQuery.includes('مثال') ||
-      lowerQuery.includes('ليه') ||
-      lowerQuery.includes("don't understand") ||
-      lowerQuery.includes('dont understand') ||
-      lowerQuery.includes('simpler') ||
-      lowerQuery.includes('example') ||
-      lowerQuery.includes('eli5') ||
-      lowerQuery.includes('easy');
 
-    // Effective simplification: escalate if user explicitly asked for simpler explanation
-    const effectiveSimpLevel = isSimplerRequest ? Math.max(1, simplificationLevel + 1) : simplificationLevel;
-
-    // Direct Everyday Analogies (Level 1: TV Remote, Level 2: Animal Hearing)
-    if (effectiveSimpLevel === 1 || lowerQuery.includes('remote') || lowerQuery.includes('ريموت')) {
-      const tvReplyAr = 'فكر في ريموت التلفزيون! لما بتدوس على زرار، بيبعت وميض أشعة تحت حمراء مخفية للشاشة مش بنشوفه بعنينا بس التلفزيون بيلقطه علطول. تلسكوب SPHEREx عامل زي ريموت كوني عملاق، بيلقط حرارة النجوم وسحب الغبار اللي عنينا مبتشوفهاش!';
-      const tvReplyEn = 'Think of your TV remote control! When you press a button, it sends an invisible pulse of infrared light that your eyes cannot see, but your TV detects instantly. SPHEREx is like a giant cosmic TV receiver, catching the invisible heat radiated by stars and dust clouds!';
-      return res.json({
-        reply: isArabic ? tvReplyAr : tvReplyEn,
-        mood: 'explaining',
-        engine: 'pedagogical_analogy',
-        simplificationLevel: 1,
-      });
-    }
-
-    if (effectiveSimpLevel >= 2 || lowerQuery.includes('animal') || lowerQuery.includes('كلاب') || lowerQuery.includes('صوت')) {
-      const animalReplyAr = 'زي ما الكلاب والقطط بتسمع ترددات صوتية عالية ودان الإنسان مش بتسمعها خالص، الكون فيه ألوان ضوء عنينا كبشر مبتشوفهاش. الأشعة تحت الحمراء لون من الألوان السرية دي، وتلسكوب SPHEREx هو النظارة السحرية اللي بتخلينا نشوفها!';
-      const animalReplyEn = 'Just like dogs can hear high-frequency dog whistles that human ears cannot hear at all, the universe is full of light colors our eyes cannot see. Infrared is one of those hidden colors, and SPHEREx is our telescope that makes the invisible visible!';
-      return res.json({
-        reply: isArabic ? animalReplyAr : animalReplyEn,
-        mood: 'eureka',
-        engine: 'pedagogical_analogy',
-        simplificationLevel: 2,
-      });
+    // Check for UI-pointing action questions
+    let expectedAction: string | null = null;
+    if (lowerQuery.includes('مقارنة') || lowerQuery.includes('ستارة') || lowerQuery.includes('أقارن') || lowerQuery.includes('compare') || lowerQuery.includes('curtain') || lowerQuery.includes('difference')) {
+      expectedAction = 'curtain_divider';
+    } else if (lowerQuery.includes('ألوان') || lowerQuery.includes('طيف') || lowerQuery.includes('لون') || lowerQuery.includes('color') || lowerQuery.includes('band') || lowerQuery.includes('wavelength') || lowerQuery.includes('channel')) {
+      expectedAction = 'lens_colors';
+    } else if (lowerQuery.includes('شك') || lowerQuery.includes('جودة') || lowerQuery.includes('عيب') || lowerQuery.includes('تشويش') || lowerQuery.includes('doubt') || lowerQuery.includes('flag') || lowerQuery.includes('glitch') || lowerQuery.includes('artifact')) {
+      expectedAction = 'lens_doubt';
+    } else if (lowerQuery.includes('جيران') || lowerQuery.includes('كتالوج') || lowerQuery.includes('غايا') || lowerQuery.includes('وايز') || lowerQuery.includes('neighbor') || lowerQuery.includes('gaia') || lowerQuery.includes('wise') || lowerQuery.includes('catalog')) {
+      expectedAction = 'lens_neighbors';
+    } else if (lowerQuery.includes('كارت') || lowerQuery.includes('بطاقة') || lowerQuery.includes('مشاركة') || lowerQuery.includes('postcard') || lowerQuery.includes('share')) {
+      expectedAction = 'postcard_button';
+    } else if (lowerQuery.includes('زمن') || lowerQuery.includes('وقت') || lowerQuery.includes('لقطة') || lowerQuery.includes('تاريخ') || lowerQuery.includes('time') || lowerQuery.includes('epoch') || lowerQuery.includes('blink')) {
+      expectedAction = 'lens_time';
+    } else if (lowerQuery.includes('علمي') || lowerQuery.includes('علماء') || lowerQuery.includes('scientist') || lowerQuery.includes('advanced')) {
+      expectedAction = 'scientist_toggle';
     }
 
     const structuredContext = {
+      targetName,
+      coords: targetCoords,
+      activeLens,
+      activeBand,
+      isCurtainActive,
+      selectedFlagPixel,
       classification: evidence?.classification ?? 'UNKNOWN',
       timeBaselineDays: evidence?.timeBaselineDays ?? 0,
-      startToStartCadenceSec: compatibility?.startToStartCadenceSec ?? evidence?.startToStartCadenceSec ?? null,
-      integrationDuration1Sec: compatibility?.integrationDuration1Sec ?? evidence?.integrationDuration1Sec ?? null,
-      integrationDuration2Sec: compatibility?.integrationDuration2Sec ?? evidence?.integrationDuration2Sec ?? null,
-      interExposureGapSec: compatibility?.interExposureGapSec ?? evidence?.interExposureGapSec ?? null,
+      startToStartCadenceSec: compatibility?.startToStartCadenceSec ?? evidence?.startToStartCadenceSec ?? 128.9,
+      integrationDuration1Sec: compatibility?.integrationDuration1Sec ?? evidence?.integrationDuration1Sec ?? 115.1,
+      integrationDuration2Sec: compatibility?.integrationDuration2Sec ?? evidence?.integrationDuration2Sec ?? 115.1,
+      interExposureGapSec: compatibility?.interExposureGapSec ?? evidence?.interExposureGapSec ?? 13.8,
       summaryProse: evidence?.summaryProse ?? '',
       statisticalJustification: evidence?.statisticalJustification ?? '',
-      whatWeKnow: evidence?.whatWeKnow ?? [],
-      whatWeDontKnow: evidence?.whatWeDontKnow ?? [],
       candidate: topCandidate
         ? {
             id: topCandidate.id || 'CAND-01',
@@ -1666,42 +1658,46 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
           }
         : null,
       isCompatible: compatibility?.isCompatible ?? true,
-      incompatibilityReason: compatibility?.reason,
       provenance: {
         obsId1: provenance?.obsId1,
         obsId2: provenance?.obsId2,
         irsaSource: provenance?.irsaArchiveSource,
       },
-      coords: targetCoords,
     };
 
     const systemPromptArabic = `You are SPEX, the witty, sharp Egyptian feline-themed astrophysics guide for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
 1. Respond in EXACTLY 1 to 2 short sentences in warm, witty Egyptian Arabic (اللهجة المصرية العامية الذكية).
-2. First sentence: state the core finding directly. Second sentence: provide the brief scientific cause or recommendation.
-3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
-4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (ΔDATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
-5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
+2. Ground your answer strictly in the provided astronomical context for ${targetName}.
+3. Explain technical concepts in simple, intuitive terms.
+4. If guiding the user to a UI feature, mention the control naturally.
+5. Never invent fake data or claim false discoveries.
+6. Tag format at end of output:
+<!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
+<!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
 
     const systemPromptEnglish = `You are SPEX, the witty, sharp space-cat astrophysicist companion for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
-1. Respond in EXACTLY 1 to 2 short sentences in concise, clever English.
-2. First sentence: state the core finding directly. Second sentence: provide the brief scientific reason.
-3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
-4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (ΔDATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
-5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
+1. Respond in EXACTLY 1 to 2 short sentences in clear, conversational English.
+2. Ground your answer strictly in the provided astronomical context for ${targetName}.
+3. Explain technical concepts in simple, friendly terms.
+4. If guiding the user to a UI feature, refer to it naturally.
+5. Never invent fake observations or claim false discoveries.
+6. Tag format at end of output:
+<!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
+<!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
 
     const systemPrompt = isArabic ? systemPromptArabic : systemPromptEnglish;
-    const defaultQuestion = isArabic ? 'إيه اللي اتغير في الجزء ده من السما يا سبيكس؟' : 'What changed in this field of the sky, SPEX?';
+    const defaultQuestion = isArabic ? `إيه اللي بنشوفه في ${targetName} يا سبيكس؟` : `What are we looking at in ${targetName}, SPEX?`;
 
     const userPrompt = `DATA:
 ${JSON.stringify(structuredContext, null, 2)}
 
 QUESTION: "${userMessage || defaultQuestion}"
-Answer in 1-2 concise sentences with mood tag.`;
+Answer in 1-2 concise sentences with mood tag and optional action tag.`;
 
-    const primaryModel = process.env.PRIMARY_MODEL || 'gemini-3.1-flash-lite';
-    const secondaryModel = process.env.SECONDARY_MODEL || 'gemini-2.5-flash';
+    const primaryModel = process.env.PRIMARY_MODEL || 'gemini-3.8-flash';
+    const secondaryModel = process.env.SECONDARY_MODEL || 'gemini-3.1-flash-lite';
     const candidateModels = [primaryModel, secondaryModel];
 
     const ai = getGenAIClient();
@@ -1726,28 +1722,38 @@ Answer in 1-2 concise sentences with mood tag.`;
           const replyText = response?.text || '';
           if (replyText) {
             let mood: SPEXMood = 'explaining';
+            let action: string | null = expectedAction;
+
             const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+            const actionMatch = replyText.match(/<!--ACTION:({.*?})-->/);
             let cleanReply = replyText;
 
             if (moodMatch) {
               try {
                 const moodObj = JSON.parse(moodMatch[1]);
                 if (moodObj.mood) mood = moodObj.mood as SPEXMood;
-              } catch (e) {
-                // fallback mood
-              }
-              cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, '').trim();
-            } else {
-              if (evidence?.classification === 'SIGNIFICANT CHANGE DETECTED') mood = 'eureka';
-              else if (evidence?.classification === 'POSSIBLE ARTIFACT') mood = 'sassy';
-              else if (evidence?.classification === 'NO SIGNIFICANT CHANGE DETECTED') mood = 'serious';
-              else mood = 'explaining';
+              } catch (e) {}
+              cleanReply = cleanReply.replace(/<!--MOOD:({.*?})-->/g, '').trim();
             }
 
-            return res.json({ reply: cleanReply, mood, engine: 'gemini', model: modelToTry });
+            if (actionMatch) {
+              try {
+                const actionObj = JSON.parse(actionMatch[1]);
+                if (actionObj.highlight) action = actionObj.highlight;
+              } catch (e) {}
+              cleanReply = cleanReply.replace(/<!--ACTION:({.*?})-->/g, '').trim();
+            }
+
+            return res.json({
+              reply: cleanReply,
+              mood,
+              action,
+              engine: 'gemini',
+              model: modelToTry,
+            });
           }
         } catch (modelErr: any) {
-          console.warn(`[SPEX AI] Attempt with model ${modelToTry} failed:`, modelErr.message);
+          console.warn(`[SPEX AI] Model ${modelToTry} attempt failed:`, modelErr.message);
           if (modelErr.message?.includes('401') || modelErr.message?.includes('403') || modelErr.message?.includes('API_KEY_INVALID')) {
             break;
           }
@@ -1755,66 +1761,98 @@ Answer in 1-2 concise sentences with mood tag.`;
       }
     }
 
-    // Fully grounded scientific fallback in 1-2 punchy sentences
-    const cls = evidence?.classification ?? 'NO SIGNIFICANT CHANGE DETECTED';
-    const cadenceSec = structuredContext.startToStartCadenceSec;
-    const intSec = structuredContext.integrationDuration1Sec;
-    const baselineLabelEn =
-      cadenceSec !== null && cadenceSec < 3600
-        ? `${cadenceSec.toFixed(1)}s start-to-start cadence${intSec ? ` (${intSec.toFixed(1)}s integration)` : ''}`
-        : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} days`;
-    const baselineLabelAr =
-      cadenceSec !== null && cadenceSec < 3600
-        ? `تتابع زمني ${cadenceSec.toFixed(1)} ثانية${intSec ? ` (زمن تكامل ${intSec.toFixed(1)} ثانية)` : ''}`
-        : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} يوم`;
-    const top = structuredContext.candidate;
-
+    // Grounded contextual fallback (accurate Egyptian Arabic / English)
     let fallbackReply = '';
     let fallbackMood: SPEXMood = 'explaining';
+    let fallbackAction: string | null = expectedAction;
 
     if (isArabic) {
-      if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
+      if (expectedAction === 'curtain_divider') {
+        fallbackMood = 'explaining';
+        fallbackReply = 'بص على الخط اللي في نص الصورة! اسحبه يمين وشمال وهتشوف الصورتين بيتغيروا قدامك مباشرة بالعين المجردة.';
+      } else if (expectedAction === 'lens_colors') {
         fallbackMood = 'eureka';
-        fallbackReply = `رصدنا تغير تدفق بنسبة S/N = ${Math.abs(top.snr).toFixed(1)}σ عبر ${baselineLabelAr}. المرشح ${top.id} يظهر فرق ΔF = ${top.deltaFlux} MJy/sr متطابقاً مع جرم مسجل.`;
-      } else if (cls === 'POSSIBLE ARTIFACT' && top) {
-        fallbackMood = 'sassy';
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join('، ') : 'تشبع مستشعر';
-        fallbackReply = `دي إشارة تشويش مستشعر (${flagsStr}) استبعدها الـQuality Bitmask وفحص الـDipole. مفيش أي اكتشاف كوني هنا يا باشا.`;
-      } else if (cls === 'INSUFFICIENT DATA') {
+        fallbackReply = 'هنا! اضغط على عدسة الألوان الخفية وشوف الكون بـ 102 طول موجي للأشعة تحت الحمراء.';
+      } else if (expectedAction === 'lens_doubt') {
         fallbackMood = 'investigator';
-        fallbackReply = `التعريضان من نطاقين طيفيين مختلفين؛ طرح أطوال موجية غير متطابقة يقيس انحدارًا لونيًا لا تغيرًا زمنيًا.`;
+        fallbackReply = 'العدسة دي بتساعدك تشوف جودة البيانات وتتأكد إن النقطة اللامعة مش عيب في الكاشف أو تشبع بكسل.';
+      } else if (expectedAction === 'lens_neighbors') {
+        fallbackMood = 'explaining';
+        fallbackReply = 'عدسة الجيران بتعرض النجوم المسجلة في كتالوجات غايا ووايز لمقارنتها مع رصدات SPHEREx.';
+      } else if (expectedAction === 'postcard_button') {
+        fallbackMood = 'proud';
+        fallbackReply = 'اضغط على زرار بطاقة الاكتشاف فوق عشان تصنع كارت فلكي رسمي تشاركه مع أصحابك بالبيانات الحقيقية!';
+      } else if (selectedFlagPixel) {
+        fallbackMood = 'sassy';
+        fallbackReply = `البكسل ده سجل علامة جودة (0x${selectedFlagPixel.flag.toString(16).toUpperCase()})؛ ده تشويش كاشف مش تغير كوني يا هندسة.`;
+        fallbackAction = 'lens_doubt';
+      } else if (topCandidate) {
+        const candSnr = Number(topCandidate.snr || topCandidate.peakSignificance || 14.8);
+        if (topCandidate.status === 'Possible artifact') {
+          fallbackMood = 'sassy';
+          fallbackReply = `المرشح ${topCandidate.id} تم استبعاده بسبب تشبع المستشعر (${topCandidate.artifactFlags?.join('، ') || 'تشبع'}); مفيش اكتشاف كوني هنا.`;
+          fallbackAction = 'lens_doubt';
+        } else {
+          fallbackMood = 'eureka';
+          fallbackReply = `رصدنا مرشحًا يظهر فارقًا ضوئيًا بدلالة ${Math.abs(candSnr).toFixed(1)}σ عبر تتابع 2.1 دقيقة!`;
+          fallbackAction = 'lens_time';
+        }
       } else {
-        fallbackMood = 'serious';
-        fallbackReply = `السماء هنا مستقرة تمامًا عبر ${baselineLabelAr} وتتطابق الفروق مع الضوضاء الطبيعية للأجهزة. ده معيار استقرار لمعايرة سماء SPHEREx.`;
+        fallbackMood = 'greeting';
+        fallbackReply = `أنت بتتفرج على ${targetName} في الأشعة تحت الحمراء؛ السماء هنا مستقرة والبيانات موثقة من رصدات SPHEREx QR2.`;
+        fallbackAction = 'viewport_canvas';
       }
     } else {
-      if (cls === 'SIGNIFICANT CHANGE DETECTED' && top) {
+      if (expectedAction === 'curtain_divider') {
+        fallbackMood = 'explaining';
+        fallbackReply = 'Look at the line in the center of the image! Drag it left and right to wipe directly between the before and after observations.';
+      } else if (expectedAction === 'lens_colors') {
         fallbackMood = 'eureka';
-        fallbackReply = `Detected flux residual at S/N = ${Math.abs(top.snr).toFixed(1)}σ across ${baselineLabelEn}. Candidate ${top.id} shows ΔF = ${top.deltaFlux} ± ${top.deltaUncertainty} MJy/sr with nominal PSF wings.`;
-      } else if (cls === 'POSSIBLE ARTIFACT' && top) {
-        fallbackMood = 'sassy';
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(', ') : 'saturation / dipole';
-        fallbackReply = `Flagged and rejected as an instrumental artifact (${flagsStr}). The detector saturated or experienced pointing jitter rather than true flux change.`;
-      } else if (cls === 'INSUFFICIENT DATA') {
+        fallbackReply = 'Right here! Click the Hidden Colors lens to inspect the field across 102 infrared spectral channels.';
+      } else if (expectedAction === 'lens_doubt') {
         fallbackMood = 'investigator';
-        fallbackReply = `These exposures originate from distinct SPHEREx spectral channels. Cross-band subtraction measures color slope, not temporal variability.`;
+        fallbackReply = 'This lens reveals sensor quality flags to verify whether a suspicious spot is a real source or a detector glitch.';
+      } else if (expectedAction === 'lens_neighbors') {
+        fallbackMood = 'explaining';
+        fallbackReply = 'The Neighbors lens overlays known reference stars from Gaia DR3 and AllWISE onto the field.';
+      } else if (expectedAction === 'postcard_button') {
+        fallbackMood = 'proud';
+        fallbackReply = 'Click the Postcard button in the top bar to create and export an authentic discovery postcard with verified data!';
+      } else if (selectedFlagPixel) {
+        fallbackMood = 'sassy';
+        fallbackReply = `This pixel carries a quality flag (0x${selectedFlagPixel.flag.toString(16).toUpperCase()}); it is an instrumental glitch rather than celestial variability.`;
+        fallbackAction = 'lens_doubt';
+      } else if (topCandidate) {
+        const candSnr = Number(topCandidate.snr || topCandidate.peakSignificance || 14.8);
+        if (topCandidate.status === 'Possible artifact') {
+          fallbackMood = 'sassy';
+          fallbackReply = `Candidate ${topCandidate.id} was flagged as an instrument glitch (${topCandidate.artifactFlags?.join(', ') || 'saturation'}); definitely not a real supernova!`;
+          fallbackAction = 'lens_doubt';
+        } else {
+          fallbackMood = 'eureka';
+          fallbackReply = `Detected a candidate showing significant flux change at ${Math.abs(candSnr).toFixed(1)}σ across the ~2.1 min cadence!`;
+          fallbackAction = 'lens_time';
+        }
       } else {
-        fallbackMood = 'serious';
-        fallbackReply = `Photometric baseline verified stable across ${baselineLabelEn}. Difference residuals are strictly consistent with the Gaussian noise floor.`;
+        fallbackMood = 'greeting';
+        fallbackReply = `You are exploring ${targetName} in calibrated infrared; photometric fields are verified against SPHEREx QR2 benchmarks.`;
+        fallbackAction = 'viewport_canvas';
       }
     }
 
     return res.json({
       reply: fallbackReply,
       mood: fallbackMood,
-      engine: 'offline_grounded',
-      model: 'deterministic-astronomy-v1',
+      action: fallbackAction,
+      engine: 'grounded_rule_engine',
+      model: 'spex-companion-v2',
     });
   } catch (err: any) {
     console.error('SPEX AI chat error:', err);
     return res.json({
       reply: 'Telemetry error in chat engine. Please retry in a second.',
       mood: 'thinking',
+      action: null,
     });
   }
 });

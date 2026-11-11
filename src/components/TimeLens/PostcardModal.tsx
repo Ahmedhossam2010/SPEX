@@ -10,6 +10,7 @@ interface PostcardModalProps {
   result: InvestigationResult;
   candidate?: CandidateDetection | null;
   language: Language;
+  sourceCanvas?: HTMLCanvasElement | null;
 }
 
 export const PostcardModal: React.FC<PostcardModalProps> = ({
@@ -18,6 +19,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
   result,
   candidate,
   language,
+  sourceCanvas,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [copied, setCopied] = useState(false);
@@ -60,8 +62,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     ctx.strokeRect(16, 16, width - 32, height - 32);
 
     // Corner crop marks
-    const cropLen = 14;
-    ctx.strokeStyle = '#F5A623';
+    ctx.strokeStyle = '#FFB900';
     ctx.lineWidth = 2;
     // Top-left
     ctx.beginPath();
@@ -80,39 +81,51 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     ctx.moveTo(width - 26, height - 12); ctx.lineTo(width - 12, height - 12); ctx.lineTo(width - 12, height - 26);
     ctx.stroke();
 
-    // Left Viewport: Simulated difference cutout frame
+    // Left Viewport: Authentic SPHEREx astronomical cutout frame
     const vpX = 36;
     const vpY = 80;
     const vpSize = 220;
 
     ctx.fillStyle = '#010307';
     ctx.fillRect(vpX, vpY, vpSize, vpSize);
-    ctx.strokeStyle = 'rgba(0, 229, 255, 0.3)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0, 211, 243, 0.5)';
+    ctx.lineWidth = 1.5;
     ctx.strokeRect(vpX, vpY, vpSize, vpSize);
 
-    // Simulated astronomical source in center
-    const radGrad = ctx.createRadialGradient(
-      vpX + vpSize / 2, vpY + vpSize / 2, 2,
-      vpX + vpSize / 2, vpY + vpSize / 2, 45
-    );
-    radGrad.addColorStop(0, '#FFFFFF');
-    radGrad.addColorStop(0.2, '#00E5FF');
-    radGrad.addColorStop(0.6, 'rgba(0, 229, 255, 0.15)');
-    radGrad.addColorStop(1, 'transparent');
-    ctx.fillStyle = radGrad;
-    ctx.beginPath();
-    ctx.arc(vpX + vpSize / 2, vpY + vpSize / 2, 45, 0, Math.PI * 2);
-    ctx.fill();
+    if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
+      // Draw actual astronomical cutout pixels from the viewport canvas
+      ctx.drawImage(sourceCanvas, vpX, vpY, vpSize, vpSize);
+    } else {
+      // Fallback starlight core when canvas not yet populated
+      const radGrad = ctx.createRadialGradient(
+        vpX + vpSize / 2, vpY + vpSize / 2, 2,
+        vpX + vpSize / 2, vpY + vpSize / 2, 45
+      );
+      radGrad.addColorStop(0, '#FFFFFF');
+      radGrad.addColorStop(0.2, '#00D3F3');
+      radGrad.addColorStop(0.6, 'rgba(0, 211, 243, 0.15)');
+      radGrad.addColorStop(1, 'transparent');
+      ctx.fillStyle = radGrad;
+      ctx.beginPath();
+      ctx.arc(vpX + vpSize / 2, vpY + vpSize / 2, 45, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // Crosshairs
-    ctx.strokeStyle = 'rgba(245, 166, 35, 0.7)';
-    ctx.lineWidth = 1;
+    // Source Reticle Crosshairs
+    ctx.strokeStyle = '#FFB900';
+    ctx.lineWidth = 1.5;
+    const markerX = candidate ? vpX + (candidate.x / (result.epoch1?.width || 64)) * vpSize : vpX + vpSize / 2;
+    const markerY = candidate ? vpY + (candidate.y / (result.epoch1?.height || 64)) * vpSize : vpY + vpSize / 2;
+
     ctx.beginPath();
-    ctx.moveTo(vpX + vpSize / 2 - 12, vpY + vpSize / 2);
-    ctx.lineTo(vpX + vpSize / 2 + 12, vpY + vpSize / 2);
-    ctx.moveTo(vpX + vpSize / 2, vpY + vpSize / 2 - 12);
-    ctx.lineTo(vpX + vpSize / 2, vpY + vpSize / 2 + 12);
+    ctx.arc(markerX, markerY, 12, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(markerX - 16, markerY); ctx.lineTo(markerX - 6, markerY);
+    ctx.moveTo(markerX + 6, markerY); ctx.lineTo(markerX + 16, markerY);
+    ctx.moveTo(markerX, markerY - 16); ctx.lineTo(markerX, markerY - 6);
+    ctx.moveTo(markerX, markerY + 6); ctx.lineTo(markerX, markerY + 16);
     ctx.stroke();
 
     // Viewport tag

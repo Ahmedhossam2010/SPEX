@@ -171,7 +171,8 @@ export class AstronomyRenderer {
       // Unipolar single-epoch intensity
       const pMaxIdx = Math.floor(valid.length * (options.maxPercentile ?? 0.995));
       const vMax = valid[Math.min(valid.length - 1, pMaxIdx)];
-      const bgLevel = median;
+      // Keep background floor at median - 1.5 * sigma so faint nebular/star wings are not clipped to pure black
+      const bgLevel = median - 1.5 * robustSigma;
       const maxExcess = Math.max(1e-6, (vMax - bgLevel) / contrast);
       const softKnee = Math.max(1e-5, (2.5 * robustSigma) / contrast);
 
@@ -220,8 +221,8 @@ export class AstronomyRenderer {
   ) {
     if (!canvas || !data || data.length === 0 || width === 0 || height === 0) return;
 
-    const displayMode: DisplayMode = options.displayMode || 'science';
-    const baseDisplaySize = options.renderSize || 512;
+    const displayMode: DisplayMode = options.displayMode || 'presentation';
+    const baseDisplaySize = options.renderSize || 640;
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
 
     // Create offscreen canvas for native resolution
@@ -254,22 +255,12 @@ export class AstronomyRenderer {
     destCtx.scale(dpr, dpr);
 
     if (displayMode === 'presentation') {
-      // Two-stage high-order resampling (64 -> 256 -> targetSize) for smooth Gaussian PSF display
-      const interCanvas = document.createElement('canvas');
-      interCanvas.width = Math.min(256, targetSize);
-      interCanvas.height = Math.min(256, targetSize);
-      const interCtx = interCanvas.getContext('2d');
-      if (interCtx) {
-        interCtx.imageSmoothingEnabled = true;
-        interCtx.imageSmoothingQuality = 'high';
-        interCtx.drawImage(offscreen, 0, 0, interCanvas.width, interCanvas.height);
-      }
-
+      // Direct high-quality interpolation to target size (avoiding artificial downscaling bottlenecks)
       destCtx.imageSmoothingEnabled = true;
       destCtx.imageSmoothingQuality = 'high';
-      destCtx.drawImage(interCanvas, 0, 0, targetSize, targetSize);
+      destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     } else {
-      // Science mode: Native uninterpolated detector pixels
+      // Science mode: Native uninterpolated detector pixels with exact pixel grid
       destCtx.imageSmoothingEnabled = false;
       destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     }

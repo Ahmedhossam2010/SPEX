@@ -33,6 +33,7 @@ export const LensButton: React.FC<LensButtonProps> = ({
   return (
     <button
       type="button"
+      data-tour={`lens_${id}`}
       onClick={onClick}
       className={`relative group flex items-center gap-2 sm:gap-2.5 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border transition-all duration-200 cursor-pointer select-none backdrop-blur-md ${
         isActive
