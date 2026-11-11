@@ -8,6 +8,7 @@ export interface TranslationDictionary {
   workspaceSubtitle: string;
   navHome: string;
   navExplore: string;
+  navFamous: string;
   navGame: string;
   navCases: string;
   navAbout: string;
@@ -329,6 +330,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     workspaceSubtitle: 'Astronomical Transient & Variability Workspace',
     navHome: 'Home',
     navExplore: 'Explore',
+    navFamous: 'Famous Objects',
     navGame: 'Mission Game',
     navCases: 'Discoveries',
     navAbout: 'About SPEX',
@@ -662,6 +664,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     workspaceSubtitle: 'منصة استكشاف التغيرات الفلكية والكويكبات',
     navHome: 'الرئيسية',
     navExplore: 'استكشاف',
+    navFamous: 'الأجرام الشهيرة',
     navGame: 'لعبة المهمة',
     navCases: 'الاكتشافات',
     navAbout: 'عن سفيركس',

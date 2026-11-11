@@ -36,6 +36,9 @@ import { ProvenanceModal } from './ProvenanceModal';
 import { DataReleaseModal } from './DataReleaseModal';
 import { SpexSpaceDictionaryModal } from './SpexSpaceDictionaryModal';
 import { SpaceExplorerLogModal } from './Explore/SpaceExplorerLogModal';
+import { DetectorStackingModal } from './Explore/DetectorStackingModal';
+import { SpectralExplorerModal } from './SpectralExplorerModal';
+import { ObservationItem, ImageMathMode } from './Explore/ObservationTimelineSelector';
 import { LensMode } from '../design/components/LensButton';
 import { Language, translations } from '../utils/translations';
 import { BookOpen, Award } from 'lucide-react';
@@ -117,6 +120,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showDictionary, setShowDictionary] = useState<boolean>(false);
   const [dictionaryTermId, setDictionaryTermId] = useState<string | null>(null);
   const [showExplorerLog, setShowExplorerLog] = useState<boolean>(false);
+  const [showDetectorStacking, setShowDetectorStacking] = useState<boolean>(false);
+  const [showSpectralExplorer, setShowSpectralExplorer] = useState<boolean>(false);
+
+  // Multi-epoch Timeline & Observation Baseline Selection (Phase 2)
+  const [epochAIdx, setEpochAIdx] = useState<number>(0);
+  const [epochBIdx, setEpochBIdx] = useState<number>(1);
+  const [mathMode, setMathMode] = useState<ImageMathMode>('subtraction');
+  const [timeseriesFrames, setTimeseriesFrames] = useState<any[]>([]);
+  const [detectorStacks, setDetectorStacks] = useState<any[]>([]);
+  const [extractedSpectrum, setExtractedSpectrum] = useState<any[] | null>(null);
 
   // Global listener for contextual ScienceTerm dictionary triggers
   useEffect(() => {
@@ -134,6 +147,33 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     };
   }, []);
 
+  // Fetch real timeseries observations for intelligent baseline comparison
+  useEffect(() => {
+    if (!currentResult?.targetCoords) return;
+    const { ra, dec } = currentResult.targetCoords;
+    const caseId = currentResult.provenance?.caseId || '';
+    const sizePix = currentResult.epoch1?.width || 64;
+
+    fetch(`/api/spherex/timeseries?ra=${ra}&dec=${dec}&sizePix=${sizePix}&caseId=${caseId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.frames && Array.isArray(data.frames) && data.frames.length > 0) {
+          setTimeseriesFrames(data.frames);
+          setEpochAIdx(0);
+          setEpochBIdx(Math.min(1, data.frames.length - 1));
+        }
+        if (data?.detectorStacks && typeof data.detectorStacks === 'object') {
+          setDetectorStacks(data.detectorStacks);
+        }
+        if (data?.spectrum && Array.isArray(data.spectrum)) {
+          setExtractedSpectrum(data.spectrum);
+        }
+      })
+      .catch((err) => {
+        console.warn('Timeseries fetch notice:', err);
+      });
+  }, [currentResult?.targetCoords?.ra, currentResult?.targetCoords?.dec, currentResult?.provenance?.caseId]);
+
   // Auto-play interval for Time sequence blinker
   useEffect(() => {
     if (!isPlaying) return;
@@ -148,27 +188,118 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const obs2 = currentResult?.epoch2;
   const diffObs = currentResult?.difference;
 
-  // Determine current active pixel array to render
+  // Build authentic chronological timeline observations
+  const timelineObservations: ObservationItem[] = useMemo(() => {
+    if (timeseriesFrames && timeseriesFrames.length > 0) {
+      return timeseriesFrames.map((f, idx) => ({
+        index: idx,
+        obsId: f.obsId || `SPX-EXP-${idx + 1}`,
+        date: f.date || '2025-04-28T13:00:15.755Z',
+        dateEnd: f.dateEnd,
+        mjd: f.mjd || 60793.54,
+        band: f.band || 'Band 1 (0.75 - 1.11 µm)',
+        detector: f.detector || 'D1',
+        wavelengthUm: f.wavelengthUm || 0.93,
+        durationSec: f.durationSec,
+        qualityStatus: 'CLEAN',
+        flux: f.flux,
+        reprojectedFlux: f.reprojectedFlux,
+        flags: f.flags,
+        variance: f.variance,
+        width: f.width,
+        height: f.height,
+      }));
+    }
+    if (obs1 && obs2) {
+      return [
+        {
+          index: 0,
+          obsId: obs1.metadata?.obs_id || '2025W18_1B_0001_1',
+          date: obs1.metadata?.date_obs || '2025-04-28T13:00:15.755Z',
+          dateEnd: obs1.metadata?.date_end,
+          mjd: obs1.metadata?.t_min ?? 60793.5418,
+          band: obs1.metadata?.band ? `Band ${obs1.metadata.band}` : 'Band 1 (0.75 - 1.11 µm)',
+          detector: obs1.metadata?.detector ? `D${obs1.metadata.detector}` : 'D1',
+          wavelengthUm: obs1.metadata?.wavelength_um ?? 0.93,
+          durationSec: obs1.metadata?.integration_duration_sec ?? 115.1,
+          qualityStatus: 'CLEAN',
+          flux: obs1.flux,
+          flags: obs1.flags,
+          variance: obs1.variance,
+          width: obs1.width,
+          height: obs1.height,
+        },
+        {
+          index: 1,
+          obsId: obs2.metadata?.obs_id || '2025W18_1B_0001_2',
+          date: obs2.metadata?.date_obs || '2025-04-28T13:02:24.686Z',
+          dateEnd: obs2.metadata?.date_end,
+          mjd: obs2.metadata?.t_min ?? 60793.5433,
+          band: obs2.metadata?.band ? `Band ${obs2.metadata.band}` : 'Band 1 (0.75 - 1.11 µm)',
+          detector: obs2.metadata?.detector ? `D${obs2.metadata.detector}` : 'D1',
+          wavelengthUm: obs2.metadata?.wavelength_um ?? 0.93,
+          durationSec: obs2.metadata?.integration_duration_sec ?? 115.1,
+          qualityStatus: 'CLEAN',
+          flux: obs2.flux,
+          flags: obs2.flags,
+          variance: obs2.variance,
+          width: obs2.width,
+          height: obs2.height,
+        },
+      ];
+    }
+    return [];
+  }, [timeseriesFrames, obs1, obs2]);
+
+  // Determine current active pixel array to render (with math modes)
   const currentPixelData = useMemo(() => {
     if (!currentResult) return null;
-    if (currentFrameIdx === 0 && obs1) return obs1.flux;
-    if (currentFrameIdx === 1 && obs2) return obs2.flux;
-    if (currentFrameIdx === 2 && diffObs) return diffObs.diff;
+    const itemA = timelineObservations[epochAIdx];
+    const itemB = timelineObservations[epochBIdx];
+
+    if (currentFrameIdx === 0) {
+      return itemA?.reprojectedFlux || itemA?.flux || obs1?.flux || null;
+    }
+    if (currentFrameIdx === 1) {
+      return itemB?.reprojectedFlux || itemB?.flux || obs2?.flux || null;
+    }
+    if (currentFrameIdx === 2) {
+      const fA = itemA?.reprojectedFlux || itemA?.flux || obs1?.flux;
+      const fB = itemB?.reprojectedFlux || itemB?.flux || obs2?.flux;
+      if (fA && fB && fA.length === fB.length) {
+        if (mathMode === 'addition') {
+          const sum = new Float32Array(fA.length);
+          for (let i = 0; i < fA.length; i++) {
+            sum[i] = (fA[i] + fB[i]) * 0.5;
+          }
+          return Array.from(sum);
+        }
+        // Default: subtraction difference
+        const diff = new Float32Array(fA.length);
+        for (let i = 0; i < fA.length; i++) {
+          diff[i] = fB[i] - fA[i];
+        }
+        return Array.from(diff);
+      }
+      return diffObs?.diff || null;
+    }
     return obs1?.flux || null;
-  }, [currentResult, currentFrameIdx, obs1, obs2, diffObs]);
+  }, [currentResult, currentFrameIdx, timelineObservations, epochAIdx, epochBIdx, mathMode, obs1, obs2, diffObs]);
 
   const isCurrentDifference = currentFrameIdx === 2;
 
   // Canonical Colormap Resolution
   const effectiveColormap: ColormapMode = useMemo(() => {
     if (customColormap) return customColormap;
-    if (isCurrentDifference) return 'diff_diverging';
+    if (isCurrentDifference) {
+      return mathMode === 'addition' ? 'infrared_warm' : 'diff_diverging';
+    }
     if (activeLens === 'colors') {
       return activeBandIdx === 0 ? 'infrared_warm' : activeBandIdx === 1 ? 'inferno' : 'viridis';
     }
     if (activeLens === 'doubt') return 'grayscale';
     return 'infrared_warm';
-  }, [customColormap, isCurrentDifference, activeLens, activeBandIdx]);
+  }, [customColormap, isCurrentDifference, mathMode, activeLens, activeBandIdx]);
 
   // Target Display Name
   const targetDisplayName = useMemo(() => {
@@ -221,6 +352,36 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </span>
             )}
           </div>
+
+          {/* FOV Presets selector (Phase 1 & 4) */}
+          {currentResult?.targetCoords && (
+            <div className="hidden lg:flex items-center gap-1 px-1.5 py-0.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono ml-1">
+              <span className="text-[10px] text-slate-400 px-1 font-semibold uppercase">FOV</span>
+              {[
+                { label: "3.3'", sizePix: 32 },
+                { label: "6.6'", sizePix: 64 },
+                { label: "11.6'", sizePix: 112 },
+                { label: "16.5'", sizePix: 160 },
+              ].map((fov) => (
+                <button
+                  key={fov.sizePix}
+                  type="button"
+                  onClick={() => {
+                    if (currentResult?.targetCoords) {
+                      onSearchTarget(currentResult.targetCoords.ra, currentResult.targetCoords.dec, fov.sizePix);
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded-lg transition cursor-pointer text-xs ${
+                    (obs1?.width || 64) === fov.sizePix
+                      ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {fov.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
@@ -367,9 +528,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 epoch1Date={obs1?.metadata?.date_obs}
                 epoch2Date={obs2?.metadata?.date_obs}
                 cadenceSeconds={currentResult?.compatibility?.startToStartCadenceSec ?? 128.9}
+                observations={timelineObservations}
+                epochAIdx={epochAIdx}
+                epochBIdx={epochBIdx}
+                onSelectEpochA={(idx) => {
+                  setEpochAIdx(idx);
+                  setCurrentFrameIdx(0);
+                }}
+                onSelectEpochB={(idx) => {
+                  setEpochBIdx(idx);
+                  setCurrentFrameIdx(1);
+                }}
+                mathMode={mathMode}
+                onChangeMathMode={setMathMode}
+                targetName={targetDisplayName}
                 activeBandIdx={activeBandIdx}
                 onSelectBandIdx={setActiveBandIdx}
                 availableBands={availableBands}
+                onOpenSpectrumModal={() => setShowSpectralExplorer(true)}
+                onOpenDetectorStackModal={() => setShowDetectorStacking(true)}
                 isDoubtOverlayActive={isDoubtOverlayActive}
                 onToggleDoubtOverlay={() => setIsDoubtOverlayActive(!isDoubtOverlayActive)}
                 selectedFlagPixel={selectedFlagPixel}
@@ -509,6 +686,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           setShowDictionary(true);
         }}
       />
+
+      {/* BONUS A: DETECTOR ARRAY INVERSE-VARIANCE STACKING MODAL */}
+      <DetectorStackingModal
+        isOpen={showDetectorStacking}
+        onClose={() => setShowDetectorStacking(false)}
+        language={language}
+        stacks={detectorStacks as any}
+      />
+
+      {/* BONUS B: 102 SPECTRAL BANDS & EXTRACTED SED MODAL */}
+      {showSpectralExplorer && (
+        <SpectralExplorerModal
+          onClose={() => setShowSpectralExplorer(false)}
+          selectedCandidate={selectedCandidate}
+          extractedSpectrum={extractedSpectrum}
+          targetCoords={currentResult?.targetCoords}
+          language={language}
+        />
+      )}
     </div>
   );
 };

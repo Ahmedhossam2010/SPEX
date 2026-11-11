@@ -10,14 +10,19 @@ import { InvestigationResult, ChallengeTarget } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal';
+import { FamousObjectsView } from './components/FamousObjectsView';
+import { FamousObject, getFamousObjectById } from './science/famousObjects';
+
+export type AppTab = 'home' | 'explore' | 'famous' | 'game' | 'cases' | 'about';
 
 export function App() {
-  const getInitialTab = (): 'home' | 'explore' | 'game' | 'cases' | 'about' => {
+  const getInitialTab = (): AppTab => {
     if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get('tab');
     if (tabParam === 'explore' || path === 'explore') return 'explore';
+    if (tabParam === 'famous' || path === 'famous') return 'famous';
     if (tabParam === 'game' || path === 'game') return 'game';
     if (tabParam === 'cases' || path === 'cases') return 'cases';
     if (tabParam === 'about' || path === 'about') return 'about';
@@ -25,10 +30,10 @@ export function App() {
     return 'home';
   };
 
-  const [activeTab, setActiveTabState] = useState<'home' | 'explore' | 'game' | 'cases' | 'about'>(getInitialTab);
+  const [activeTab, setActiveTabState] = useState<AppTab>(getInitialTab);
 
   // Navigate tab and synchronize browser history pathname
-  const setActiveTab = (tab: 'home' | 'explore' | 'game' | 'cases' | 'about', replace = false) => {
+  const setActiveTab = (tab: AppTab, replace = false) => {
     setActiveTabState(tab);
     if (typeof window !== 'undefined') {
       const targetPath = tab === 'home' ? '/' : `/${tab}`;
@@ -117,6 +122,7 @@ export function App() {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
       if (tabParam === 'explore' || path === 'explore') setActiveTabState('explore');
+      else if (tabParam === 'famous' || path === 'famous') setActiveTabState('famous');
       else if (tabParam === 'game' || path === 'game') setActiveTabState('game');
       else if (tabParam === 'cases' || path === 'cases') setActiveTabState('cases');
       else if (tabParam === 'about' || path === 'about') setActiveTabState('about');
@@ -135,6 +141,7 @@ export function App() {
     const raParam = params.get('ra');
     const decParam = params.get('dec');
     const langParam = params.get('lang');
+    const targetParam = params.get('target');
     const fovParam = params.get('fov');
     const sizePixParam = fovParam ? Math.round((parseFloat(fovParam) * 60) / 6.2) : undefined;
     const epochAParam = params.get('epochA') || '1';
@@ -153,6 +160,11 @@ export function App() {
     } else if (raParam && decParam) {
       const p = parseCoordinateInput(`${raParam}, ${decParam}`);
       if (p) parsedCoords = { ra: p.ra, dec: p.dec };
+    } else if (targetParam) {
+      const fam = getFamousObjectById(targetParam);
+      if (fam) {
+        parsedCoords = { ra: fam.ra, dec: fam.dec };
+      }
     }
 
     // Fetch curated real cases on startup
@@ -263,6 +275,52 @@ export function App() {
     setFallbackQuery(null);
     loadCase(caseId, undefined, options);
     setActiveTab('explore');
+  };
+
+  const handleSelectFamousObject = (obj: FamousObject) => {
+    setFallbackQuery(null);
+    const sizePix = Math.round((obj.suggestedFovArcmin * 60) / 6.2);
+    const coords = { ra: obj.ra, dec: obj.dec };
+
+    // Create a ChallengeTarget compatibility object
+    const targetObj: ChallengeTarget = {
+      id: obj.challengeTargetId || `target-${obj.id}`,
+      name: obj.name,
+      ra: obj.ra,
+      dec: obj.dec,
+      constellation: obj.constellation,
+      scienceType: obj.classification,
+      description: obj.shortDescriptionEn,
+      qr2Coverage: obj.spherexStatus === 'Covered (QR2)' ? 'covered' : 'outside_footprint',
+      angularDistanceDegToNEP: 0,
+      recommendedBenchmarkId: obj.id,
+      expectedBehavior: obj.scientificExplanationEn,
+      pmRaMasYr: obj.pmRaMasYr,
+      pmDecMasYr: obj.pmDecMasYr,
+      coordinateEpochYear: obj.coordinateEpochYear,
+      coordinateVerification: obj.coordinateVerification,
+    };
+
+    setSelectedTarget(targetObj);
+    setExploreScreen('hunt');
+    setActiveTab('explore');
+
+    if (obj.id === 'barnards-star') {
+      loadCase('case-barnards-star', undefined, { sizePix });
+    } else if (obj.id === 'wise-0855') {
+      loadCase('case-wise-0855', undefined, { sizePix });
+    } else {
+      loadCase(cases[0]?.id || 'case-nep-var-01', coords, { sizePix });
+    }
+
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      urlParams.set('target', obj.id);
+      urlParams.set('ra', obj.ra.toFixed(5));
+      urlParams.set('dec', obj.dec.toFixed(5));
+      urlParams.set('fov', String(obj.suggestedFovArcmin));
+      window.history.replaceState({ tab: 'explore' }, '', `/explore?${urlParams.toString()}`);
+    }
   };
 
   const handleClearFallback = () => {
@@ -398,6 +456,13 @@ export function App() {
             isScientistMode={isScientistMode}
             onToggleScientistMode={handleToggleScientistMode}
             selectedTarget={selectedTarget}
+          />
+        )}
+
+        {activeTab === 'famous' && (
+          <FamousObjectsView
+            language={language}
+            onSelectObject={handleSelectFamousObject}
           />
         )}
 

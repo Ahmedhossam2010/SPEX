@@ -15,10 +15,19 @@ import {
   Sparkles,
   ChevronUp,
   X,
+  Activity,
+  Layers,
+  Sliders,
+  Maximize2,
 } from 'lucide-react';
 import { LensButton, LensMode } from '../../design/components/LensButton';
 import { Language, translations } from '../../utils/translations';
-import { CandidateDetection, InvestigationResult } from '../../science/types';
+import { CandidateDetection } from '../../science/types';
+import {
+  ObservationTimelineSelector,
+  ObservationItem,
+  ImageMathMode,
+} from './ObservationTimelineSelector';
 
 export interface FourLensesDockProps {
   activeLens: LensMode | null;
@@ -34,10 +43,22 @@ export interface FourLensesDockProps {
   epoch1Date?: string;
   epoch2Date?: string;
   cadenceSeconds?: number;
+  // Enhanced Timeline & Baseline props
+  observations?: ObservationItem[];
+  epochAIdx?: number;
+  epochBIdx?: number;
+  onSelectEpochA?: (idx: number) => void;
+  onSelectEpochB?: (idx: number) => void;
+  mathMode?: ImageMathMode;
+  onChangeMathMode?: (mode: ImageMathMode) => void;
+  targetName?: string;
+  dataRelease?: string;
   // COLORS Lens Props
   activeBandIdx: number;
   onSelectBandIdx: (idx: number) => void;
   availableBands: Array<{ id: number; name: string; range: string; wavelength: number }>;
+  onOpenSpectrumModal?: () => void;
+  onOpenDetectorStackModal?: () => void;
   // DOUBT Lens Props
   isDoubtOverlayActive: boolean;
   onToggleDoubtOverlay: () => void;
@@ -64,9 +85,20 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
   epoch1Date,
   epoch2Date,
   cadenceSeconds = 128.9,
+  observations = [],
+  epochAIdx = 0,
+  epochBIdx = 1,
+  onSelectEpochA,
+  onSelectEpochB,
+  mathMode = 'subtraction',
+  onChangeMathMode,
+  targetName = 'Astronomical Target',
+  dataRelease = 'SPHEREx QR2 (Level 2B)',
   activeBandIdx,
   onSelectBandIdx,
   availableBands,
+  onOpenSpectrumModal,
+  onOpenDetectorStackModal,
   isDoubtOverlayActive,
   onToggleDoubtOverlay,
   selectedFlagPixel,
@@ -80,116 +112,86 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
   const isRtl = language === 'ar';
   const t = translations[language];
 
+  // Default observations list if none provided
+  const fallbackObs: ObservationItem[] = [
+    {
+      index: 1,
+      obsId: '2025W18_1B_0001_1',
+      mjd: 60793.541849,
+      date: epoch1Date || '2025-04-28T13:00:15.755Z',
+      band: 'Band 1 (0.75 - 1.11 µm)',
+      wavelengthUm: 0.93,
+      detector: 'D1',
+      durationSec: 115.1,
+    },
+    {
+      index: 2,
+      obsId: '2025W18_1B_0001_2',
+      mjd: 60793.543341,
+      date: epoch2Date || '2025-04-28T13:02:24.686Z',
+      band: 'Band 1 (0.75 - 1.11 µm)',
+      wavelengthUm: 0.93,
+      detector: 'D1',
+      durationSec: 115.1,
+    },
+  ];
+
+  const obsListToUse = observations && observations.length > 0 ? observations : fallbackObs;
+
   return (
-    <div className={`flex flex-col items-center w-full max-w-2xl sm:max-w-3xl mx-auto px-2 sm:px-3 ${className}`}>
+    <div className={`flex flex-col items-center w-full max-w-2xl sm:max-w-4xl mx-auto px-2 sm:px-3 ${className}`}>
       {/* CONTEXTUAL CONTROL DRAWER (Floats immediately above the 4-lens dock) */}
       {activeLens && (
-        <div className="w-full mb-2 bg-[#0C0E14]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3 sm:p-4 shadow-[0_8px_32px_rgba(0,0,0,0.85)] animate-slide-up">
+        <div className="w-full mb-2 bg-[#0C0E14]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3 sm:p-4 shadow-[0_8px_32px_rgba(0,0,0,0.85)] animate-slide-up max-h-[50vh] sm:max-h-[60vh] overflow-y-auto">
           {/* ========================================================== */}
-          {/* LENS 1: TIME CONTROLS */}
+          {/* LENS 1: TIME CONTROLS (INTELLIGENT TIMELINE & BASELINE) */}
           {/* ========================================================== */}
           {activeLens === 'time' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-[#FFB900]" />
-                  <span className="font-mono text-xs font-bold text-slate-100 uppercase tracking-wide">
-                    {isRtl ? 'عدسة الزمن والتعاقب الفلكي' : 'TIME LENS · TEMPORAL COMPARISON'}
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-[#FFB900] bg-[#FFB900]/10 border border-[#FFB900]/30 px-2 py-0.5 rounded">
-                  {cadenceSeconds.toFixed(1)}s {isRtl ? 'بين اللقطتين' : 'Cadence'}
+              <ObservationTimelineSelector
+                observations={obsListToUse}
+                epochAIdx={epochAIdx}
+                epochBIdx={epochBIdx}
+                onSelectEpochA={(idx) => onSelectEpochA?.(idx)}
+                onSelectEpochB={(idx) => onSelectEpochB?.(idx)}
+                currentPlayIdx={currentFrameIdx}
+                onSelectPlayIdx={onSelectFrameIdx}
+                isPlaying={isPlaying}
+                onTogglePlay={onTogglePlay}
+                mathMode={mathMode}
+                onChangeMathMode={(m) => onChangeMathMode?.(m)}
+                language={language}
+                targetName={targetName}
+                dataRelease={dataRelease}
+              />
+
+              {/* Curtain Divider Button */}
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/10">
+                <span className="text-xs text-slate-400 font-mono">
+                  {isRtl ? 'أدوات المقارنة البصرية المباشرة:' : 'Direct Visual Compare Tools:'}
                 </span>
-              </div>
 
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                {/* Observation Chips */}
-                <div data-tour="epoch_selector" className="flex items-center gap-1.5 p-1 bg-black/40 rounded-xl border border-white/5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isCurtainActive) onToggleCurtain();
-                      onSelectFrameIdx(0);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
-                      !isCurtainActive && currentFrameIdx === 0
-                        ? 'bg-[#00D3F3] text-slate-950 shadow-md font-bold'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {isRtl ? 'الرصدة 1 (قبل)' : 'Visit 1 (Before)'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isCurtainActive) onToggleCurtain();
-                      onSelectFrameIdx(1);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
-                      !isCurtainActive && currentFrameIdx === 1
-                        ? 'bg-[#FFB900] text-slate-950 shadow-md font-bold'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {isRtl ? 'الرصدة 2 (بعد)' : 'Visit 2 (After)'}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (isCurtainActive) onToggleCurtain();
-                      onSelectFrameIdx(2);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
-                      !isCurtainActive && currentFrameIdx === 2
-                        ? 'bg-purple-400 text-slate-950 shadow-md font-bold'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {isRtl ? 'خريطة الفارق (2 - 1)' : 'Difference (2 - 1)'}
-                  </button>
-                </div>
-
-                {/* Play / Pause & Curtain Compare */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={onTogglePlay}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-200 text-xs font-mono transition cursor-pointer"
-                  >
-                    {isPlaying ? <Pause className="w-3.5 h-3.5 text-amber-400" /> : <Play className="w-3.5 h-3.5 text-emerald-400" />}
-                    <span>{isPlaying ? (isRtl ? 'إيقاف' : 'Pause') : (isRtl ? 'تشغيل التعاقب' : 'Blink Sequence')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onToggleCurtain}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono text-xs font-semibold transition cursor-pointer select-none ${
-                      isCurtainActive
-                        ? 'border-[#FFB900] bg-[#FFB900] text-slate-950 shadow-[0_0_16px_rgba(255,185,0,0.5)]'
-                        : 'border-white/15 bg-black/40 text-slate-300 hover:border-amber-400/50 hover:text-white'
-                    }`}
-                  >
-                    <SplitSquareVertical className="w-3.5 h-3.5" />
-                    <span>{isCurtainActive ? (isRtl ? 'إغلاق الستارة' : 'Close Curtain') : (isRtl ? 'ستارة المقارنة التفاعلية' : 'Compare Curtain')}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Timestamp & Scientific Cadence Disclosure */}
-              <div className="text-[11px] font-mono text-slate-400 bg-black/30 p-2.5 rounded-xl border border-white/5 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <span className="text-slate-500">{isRtl ? 'توقيت الرصد الفعلي: ' : 'Authentic Timestamps: '}</span>
-                  <span className="text-slate-200">
-                    {currentFrameIdx === 0 ? epoch1Date || '2025-04-28 13:00:15 UTC' : epoch2Date || '2025-04-28 13:02:24 UTC'}
+                <button
+                  type="button"
+                  data-tour="curtain_divider"
+                  onClick={onToggleCurtain}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono text-xs font-semibold transition cursor-pointer select-none ${
+                    isCurtainActive
+                      ? 'border-[#FFB900] bg-[#FFB900] text-slate-950 shadow-[0_0_16px_rgba(255,185,0,0.5)]'
+                      : 'border-white/15 bg-black/40 text-slate-300 hover:border-amber-400/50 hover:text-white'
+                  }`}
+                >
+                  <SplitSquareVertical className="w-3.5 h-3.5" />
+                  <span>
+                    {isCurtainActive
+                      ? isRtl
+                        ? 'إغلاق الستارة'
+                        : 'Close Curtain'
+                      : isRtl
+                      ? 'ستارة المقارنة التفاعلية'
+                      : 'Compare Curtain'}
                   </span>
-                </div>
-                <div className="text-[10px] text-amber-300/90">
-                  {isRtl
-                    ? 'الفارق الزمني قصير (~دقيقتان) لقياس الحركة النجمية السريعة وثبات الحقل.'
-                    : 'Authentic intra-visit interval (~2.1 min) tracing proper motion & photometric stability.'}
-                </div>
+                </button>
               </div>
             </div>
           )}
@@ -207,7 +209,7 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
                   </span>
                 </div>
                 <span className="text-[10px] font-mono text-[#00D3F3] bg-[#00D3F3]/10 border border-[#00D3F3]/30 px-2 py-0.5 rounded">
-                  0.75 – 5.0 µm
+                  0.75 – 5.0 µm (102 Channels)
                 </span>
               </div>
 
@@ -230,6 +232,31 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
                     </div>
                   </button>
                 ))}
+              </div>
+
+              {/* Bonus Actions: Spectral Extraction & Detector Stacks */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                {onOpenSpectrumModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenSpectrumModal}
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 font-mono text-xs font-semibold transition cursor-pointer"
+                  >
+                    <Activity className="w-4 h-4 text-cyan-400" />
+                    <span>{isRtl ? 'استخراج الطيف المباشر (Bonus B)' : 'On-the-Fly Spectrum (Bonus B)'}</span>
+                  </button>
+                )}
+
+                {onOpenDetectorStackModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenDetectorStackModal}
+                    className="flex items-center justify-center gap-2 p-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-mono text-xs font-semibold transition cursor-pointer"
+                  >
+                    <Layers className="w-4 h-4 text-amber-400" />
+                    <span>{isRtl ? 'تجميع كواشف SPHEREx الست (Bonus A)' : '6 Detector Array Stacks (Bonus A)'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Scientific Color Explanation */}
@@ -412,7 +439,7 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
         <LensButton
           id="time"
           label={t.lensTime || 'TIME'}
-          sublabel={isRtl ? 'تعاقب اللقطات والمسار' : 'FRAME BLINK & TRAILS'}
+          sublabel={isRtl ? 'الخط الزمني والتعاقب' : 'TIMELINE & BLINK'}
           icon={<Clock className="w-4 h-4 sm:w-5 sm:h-5 text-[#FFB900]" />}
           isActive={activeLens === 'time'}
           onClick={() => onSelectLens(activeLens === 'time' ? null : 'time')}
