@@ -34,8 +34,11 @@ import { SpexUiHighlight } from './Explore/SpexUiHighlight';
 import { PostcardModal } from './TimeLens/PostcardModal';
 import { ProvenanceModal } from './ProvenanceModal';
 import { DataReleaseModal } from './DataReleaseModal';
+import { SpexSpaceDictionaryModal } from './SpexSpaceDictionaryModal';
+import { SpaceExplorerLogModal } from './Explore/SpaceExplorerLogModal';
 import { LensMode } from '../design/components/LensButton';
 import { Language, translations } from '../utils/translations';
+import { BookOpen, Award } from 'lucide-react';
 
 export interface ExploreViewProps {
   currentResult: InvestigationResult | null;
@@ -111,6 +114,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showPostcard, setShowPostcard] = useState<boolean>(false);
   const [showProvenance, setShowProvenance] = useState<boolean>(false);
   const [showDataRelease, setShowDataRelease] = useState<boolean>(false);
+  const [showDictionary, setShowDictionary] = useState<boolean>(false);
+  const [dictionaryTermId, setDictionaryTermId] = useState<string | null>(null);
+  const [showExplorerLog, setShowExplorerLog] = useState<boolean>(false);
+
+  // Global listener for contextual ScienceTerm dictionary triggers
+  useEffect(() => {
+    const handleOpenDictionaryEvent = (e: Event) => {
+      const customEvt = e as CustomEvent<{ termId?: string }>;
+      if (customEvt.detail?.termId) {
+        setDictionaryTermId(customEvt.detail.termId);
+      }
+      setShowDictionary(true);
+    };
+
+    window.addEventListener('open-spex-dictionary', handleOpenDictionaryEvent);
+    return () => {
+      window.removeEventListener('open-spex-dictionary', handleOpenDictionaryEvent);
+    };
+  }, []);
 
   // Auto-play interval for Time sequence blinker
   useEffect(() => {
@@ -201,8 +223,33 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+        {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* SPEX Space Dictionary Trigger */}
+          <button
+            type="button"
+            onClick={() => {
+              setDictionaryTermId(null);
+              setShowDictionary(true);
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+            title={isRtl ? 'قاموس سبيكس الفلكي' : 'SPEX Space Dictionary'}
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            <span className="hidden xl:inline">{isRtl ? 'القاموس الفلكي' : 'Space Dictionary'}</span>
+          </button>
+
+          {/* Space Explorer's Log Trigger */}
+          <button
+            type="button"
+            onClick={() => setShowExplorerLog(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+            title={isRtl ? 'سجل مستكشف الفضاء' : "Space Explorer's Log"}
+          >
+            <Award className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="hidden xl:inline">{isRtl ? 'سجل المستكشف' : "Explorer's Log"}</span>
+          </button>
+
           {/* Guided Tour Trigger Button */}
           <button
             type="button"
@@ -392,6 +439,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             onToggleScientistMode();
           }
         }}
+        onOpenDictionary={(termId) => {
+          if (termId) setDictionaryTermId(termId);
+          setShowDictionary(true);
+        }}
       />
 
       {/* Reusable Visual Pointing Beacon */}
@@ -436,6 +487,27 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         isOpen={showDataRelease}
         onClose={() => setShowDataRelease(false)}
         language={language}
+      />
+
+      {/* SPEX SPACE DICTIONARY (ASTRONOMY GLOSSARY) MODAL */}
+      <SpexSpaceDictionaryModal
+        isOpen={showDictionary}
+        onClose={() => setShowDictionary(false)}
+        language={language}
+        initialTermId={dictionaryTermId}
+        onSelectTerm={(termId) => setDictionaryTermId(termId)}
+      />
+
+      {/* SPACE EXPLORER'S LOG & LEARNING MILESTONES MODAL */}
+      <SpaceExplorerLogModal
+        isOpen={showExplorerLog}
+        onClose={() => setShowExplorerLog(false)}
+        language={language}
+        onActivateLens={(lens) => setActiveLens(lens)}
+        onOpenDictionaryTerm={(termId) => {
+          setDictionaryTermId(termId);
+          setShowDictionary(true);
+        }}
       />
     </div>
   );

@@ -4400,7 +4400,33 @@ function propagatePosition(raDeg, decDeg, pmRaMasYr, pmDecMasYr, fromEpochYear, 
 // server.ts
 dotenv.config();
 var app = express();
-var PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3e3;
+function resolvePort() {
+  const portArgIndex = process.argv.indexOf("--port");
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (process.env.PORT && process.env.PORT !== "8080") {
+    const parsed = parseInt(process.env.PORT, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 3e3;
+}
+function resolveHost() {
+  const hostArgIndex = process.argv.indexOf("--host");
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return "0.0.0.0";
+}
+var PORT = resolvePort();
+var HOST = resolveHost();
+process.on("unhandledRejection", (reason) => {
+  console.warn("[SPHEREx Engine] Unhandled Rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[SPHEREx Engine] Uncaught Exception:", err);
+});
 var CACHE_DIR = path.join("/tmp", "spherex_cache");
 var SPHEREX_DATA_RELEASE = process.env.SPHEREX_DATA_RELEASE || "SPHEREx QR2 (Level 2B Processed Science Frames)";
 var SPHEREX_RELEASE_ID = process.env.SPHEREX_RELEASE_ID || "SPHEREx-QR2-Level2B";
@@ -5627,6 +5653,7 @@ app.post("/api/spex/chat", async (req, res) => {
       language,
       currentResult,
       selectedCandidate,
+      context: rawContext,
       simplificationLevel = 0,
       explanationLevel = "simple"
     } = req.body;
@@ -5635,43 +5662,46 @@ app.post("/api/spex/chat", async (req, res) => {
     const topCandidate = rawTopCandidate ?? selectedCandidate ?? currentResult?.candidates?.[0] ?? null;
     const provenance = rawProvenance ?? currentResult?.provenance;
     const compatibility = rawCompatibility ?? currentResult?.compatibility;
-    const targetCoords = rawTargetCoords ?? currentResult?.targetCoords;
+    const targetCoords = rawTargetCoords ?? currentResult?.targetCoords ?? rawContext?.targetCoords;
     const lang = rawLang ?? language ?? "en";
     const isArabic = lang === "ar" || /[\u0600-\u06FF]/.test(userMessage || "");
+    const targetName = rawContext?.targetName || currentResult?.title || "Astronomical Target";
+    const activeLens = rawContext?.activeLens || "time";
+    const activeBand = rawContext?.activeBand || "Band 1 (0.75 - 1.11 \xB5m)";
+    const isCurtainActive = rawContext?.isCurtainActive || false;
+    const selectedFlagPixel = rawContext?.selectedFlagPixel || null;
     const lowerQuery = userMessage.toLowerCase();
-    const isSimplerRequest = lowerQuery.includes("\u0645\u0634 \u0641\u0627\u0647\u0645") || lowerQuery.includes("\u0627\u0634\u0631\u062D \u0623\u0628\u0633\u0637") || lowerQuery.includes("\u0627\u0628\u0633\u0637") || lowerQuery.includes("\u0645\u062B\u0627\u0644") || lowerQuery.includes("\u0644\u064A\u0647") || lowerQuery.includes("don't understand") || lowerQuery.includes("dont understand") || lowerQuery.includes("simpler") || lowerQuery.includes("example") || lowerQuery.includes("eli5") || lowerQuery.includes("easy");
-    const effectiveSimpLevel = isSimplerRequest ? Math.max(1, simplificationLevel + 1) : simplificationLevel;
-    if (effectiveSimpLevel === 1 || lowerQuery.includes("remote") || lowerQuery.includes("\u0631\u064A\u0645\u0648\u062A")) {
-      const tvReplyAr = "\u0641\u0643\u0631 \u0641\u064A \u0631\u064A\u0645\u0648\u062A \u0627\u0644\u062A\u0644\u0641\u0632\u064A\u0648\u0646! \u0644\u0645\u0627 \u0628\u062A\u062F\u0648\u0633 \u0639\u0644\u0649 \u0632\u0631\u0627\u0631\u060C \u0628\u064A\u0628\u0639\u062A \u0648\u0645\u064A\u0636 \u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u062D\u0645\u0631\u0627\u0621 \u0645\u062E\u0641\u064A\u0629 \u0644\u0644\u0634\u0627\u0634\u0629 \u0645\u0634 \u0628\u0646\u0634\u0648\u0641\u0647 \u0628\u0639\u0646\u064A\u0646\u0627 \u0628\u0633 \u0627\u0644\u062A\u0644\u0641\u0632\u064A\u0648\u0646 \u0628\u064A\u0644\u0642\u0637\u0647 \u0639\u0644\u0637\u0648\u0644. \u062A\u0644\u0633\u0643\u0648\u0628 SPHEREx \u0639\u0627\u0645\u0644 \u0632\u064A \u0631\u064A\u0645\u0648\u062A \u0643\u0648\u0646\u064A \u0639\u0645\u0644\u0627\u0642\u060C \u0628\u064A\u0644\u0642\u0637 \u062D\u0631\u0627\u0631\u0629 \u0627\u0644\u0646\u062C\u0648\u0645 \u0648\u0633\u062D\u0628 \u0627\u0644\u063A\u0628\u0627\u0631 \u0627\u0644\u0644\u064A \u0639\u0646\u064A\u0646\u0627 \u0645\u0628\u062A\u0634\u0648\u0641\u0647\u0627\u0634!";
-      const tvReplyEn = "Think of your TV remote control! When you press a button, it sends an invisible pulse of infrared light that your eyes cannot see, but your TV detects instantly. SPHEREx is like a giant cosmic TV receiver, catching the invisible heat radiated by stars and dust clouds!";
-      return res.json({
-        reply: isArabic ? tvReplyAr : tvReplyEn,
-        mood: "explaining",
-        engine: "pedagogical_analogy",
-        simplificationLevel: 1
-      });
-    }
-    if (effectiveSimpLevel >= 2 || lowerQuery.includes("animal") || lowerQuery.includes("\u0643\u0644\u0627\u0628") || lowerQuery.includes("\u0635\u0648\u062A")) {
-      const animalReplyAr = "\u0632\u064A \u0645\u0627 \u0627\u0644\u0643\u0644\u0627\u0628 \u0648\u0627\u0644\u0642\u0637\u0637 \u0628\u062A\u0633\u0645\u0639 \u062A\u0631\u062F\u062F\u0627\u062A \u0635\u0648\u062A\u064A\u0629 \u0639\u0627\u0644\u064A\u0629 \u0648\u062F\u0627\u0646 \u0627\u0644\u0625\u0646\u0633\u0627\u0646 \u0645\u0634 \u0628\u062A\u0633\u0645\u0639\u0647\u0627 \u062E\u0627\u0644\u0635\u060C \u0627\u0644\u0643\u0648\u0646 \u0641\u064A\u0647 \u0623\u0644\u0648\u0627\u0646 \u0636\u0648\u0621 \u0639\u0646\u064A\u0646\u0627 \u0643\u0628\u0634\u0631 \u0645\u0628\u062A\u0634\u0648\u0641\u0647\u0627\u0634. \u0627\u0644\u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u0627\u0644\u062D\u0645\u0631\u0627\u0621 \u0644\u0648\u0646 \u0645\u0646 \u0627\u0644\u0623\u0644\u0648\u0627\u0646 \u0627\u0644\u0633\u0631\u064A\u0629 \u062F\u064A\u060C \u0648\u062A\u0644\u0633\u0643\u0648\u0628 SPHEREx \u0647\u0648 \u0627\u0644\u0646\u0638\u0627\u0631\u0629 \u0627\u0644\u0633\u062D\u0631\u064A\u0629 \u0627\u0644\u0644\u064A \u0628\u062A\u062E\u0644\u064A\u0646\u0627 \u0646\u0634\u0648\u0641\u0647\u0627!";
-      const animalReplyEn = "Just like dogs can hear high-frequency dog whistles that human ears cannot hear at all, the universe is full of light colors our eyes cannot see. Infrared is one of those hidden colors, and SPHEREx is our telescope that makes the invisible visible!";
-      return res.json({
-        reply: isArabic ? animalReplyAr : animalReplyEn,
-        mood: "eureka",
-        engine: "pedagogical_analogy",
-        simplificationLevel: 2
-      });
+    let expectedAction = null;
+    if (lowerQuery.includes("\u0645\u0642\u0627\u0631\u0646\u0629") || lowerQuery.includes("\u0633\u062A\u0627\u0631\u0629") || lowerQuery.includes("\u0623\u0642\u0627\u0631\u0646") || lowerQuery.includes("compare") || lowerQuery.includes("curtain") || lowerQuery.includes("difference")) {
+      expectedAction = "curtain_divider";
+    } else if (lowerQuery.includes("\u0623\u0644\u0648\u0627\u0646") || lowerQuery.includes("\u0637\u064A\u0641") || lowerQuery.includes("\u0644\u0648\u0646") || lowerQuery.includes("color") || lowerQuery.includes("band") || lowerQuery.includes("wavelength") || lowerQuery.includes("channel")) {
+      expectedAction = "lens_colors";
+    } else if (lowerQuery.includes("\u0634\u0643") || lowerQuery.includes("\u062C\u0648\u062F\u0629") || lowerQuery.includes("\u0639\u064A\u0628") || lowerQuery.includes("\u062A\u0634\u0648\u064A\u0634") || lowerQuery.includes("doubt") || lowerQuery.includes("flag") || lowerQuery.includes("glitch") || lowerQuery.includes("artifact")) {
+      expectedAction = "lens_doubt";
+    } else if (lowerQuery.includes("\u062C\u064A\u0631\u0627\u0646") || lowerQuery.includes("\u0643\u062A\u0627\u0644\u0648\u062C") || lowerQuery.includes("\u063A\u0627\u064A\u0627") || lowerQuery.includes("\u0648\u0627\u064A\u0632") || lowerQuery.includes("neighbor") || lowerQuery.includes("gaia") || lowerQuery.includes("wise") || lowerQuery.includes("catalog")) {
+      expectedAction = "lens_neighbors";
+    } else if (lowerQuery.includes("\u0643\u0627\u0631\u062A") || lowerQuery.includes("\u0628\u0637\u0627\u0642\u0629") || lowerQuery.includes("\u0645\u0634\u0627\u0631\u0643\u0629") || lowerQuery.includes("postcard") || lowerQuery.includes("share")) {
+      expectedAction = "postcard_button";
+    } else if (lowerQuery.includes("\u0632\u0645\u0646") || lowerQuery.includes("\u0648\u0642\u062A") || lowerQuery.includes("\u0644\u0642\u0637\u0629") || lowerQuery.includes("\u062A\u0627\u0631\u064A\u062E") || lowerQuery.includes("time") || lowerQuery.includes("epoch") || lowerQuery.includes("blink")) {
+      expectedAction = "lens_time";
+    } else if (lowerQuery.includes("\u0639\u0644\u0645\u064A") || lowerQuery.includes("\u0639\u0644\u0645\u0627\u0621") || lowerQuery.includes("scientist") || lowerQuery.includes("advanced")) {
+      expectedAction = "scientist_toggle";
     }
     const structuredContext = {
+      targetName,
+      coords: targetCoords,
+      activeLens,
+      activeBand,
+      isCurtainActive,
+      selectedFlagPixel,
       classification: evidence?.classification ?? "UNKNOWN",
       timeBaselineDays: evidence?.timeBaselineDays ?? 0,
-      startToStartCadenceSec: compatibility?.startToStartCadenceSec ?? evidence?.startToStartCadenceSec ?? null,
-      integrationDuration1Sec: compatibility?.integrationDuration1Sec ?? evidence?.integrationDuration1Sec ?? null,
-      integrationDuration2Sec: compatibility?.integrationDuration2Sec ?? evidence?.integrationDuration2Sec ?? null,
-      interExposureGapSec: compatibility?.interExposureGapSec ?? evidence?.interExposureGapSec ?? null,
+      startToStartCadenceSec: compatibility?.startToStartCadenceSec ?? evidence?.startToStartCadenceSec ?? 128.9,
+      integrationDuration1Sec: compatibility?.integrationDuration1Sec ?? evidence?.integrationDuration1Sec ?? 115.1,
+      integrationDuration2Sec: compatibility?.integrationDuration2Sec ?? evidence?.integrationDuration2Sec ?? 115.1,
+      interExposureGapSec: compatibility?.interExposureGapSec ?? evidence?.interExposureGapSec ?? 13.8,
       summaryProse: evidence?.summaryProse ?? "",
       statisticalJustification: evidence?.statisticalJustification ?? "",
-      whatWeKnow: evidence?.whatWeKnow ?? [],
-      whatWeDontKnow: evidence?.whatWeDontKnow ?? [],
       candidate: topCandidate ? {
         id: topCandidate.id || "CAND-01",
         snr: topCandidate.peakSignificance ?? topCandidate.snr ?? 0,
@@ -5686,37 +5716,41 @@ app.post("/api/spex/chat", async (req, res) => {
         catalogMatches: Array.isArray(topCandidate.catalogMatches) ? topCandidate.catalogMatches : []
       } : null,
       isCompatible: compatibility?.isCompatible ?? true,
-      incompatibilityReason: compatibility?.reason,
       provenance: {
         obsId1: provenance?.obsId1,
         obsId2: provenance?.obsId2,
         irsaSource: provenance?.irsaArchiveSource
-      },
-      coords: targetCoords
+      }
     };
     const systemPromptArabic = `You are SPEX, the witty, sharp Egyptian feline-themed astrophysics guide for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
 1. Respond in EXACTLY 1 to 2 short sentences in warm, witty Egyptian Arabic (\u0627\u0644\u0644\u0647\u062C\u0629 \u0627\u0644\u0645\u0635\u0631\u064A\u0629 \u0627\u0644\u0639\u0627\u0645\u064A\u0629 \u0627\u0644\u0630\u0643\u064A\u0629).
-2. First sentence: state the core finding directly. Second sentence: provide the brief scientific cause or recommendation.
-3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
-4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (\u0394DATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
-5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
+2. Ground your answer strictly in the provided astronomical context for ${targetName}.
+3. Explain technical concepts in simple, intuitive terms.
+4. If guiding the user to a UI feature, mention the control naturally.
+5. Never invent fake data or claim false discoveries.
+6. Tag format at end of output:
+<!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
+<!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
     const systemPromptEnglish = `You are SPEX, the witty, sharp space-cat astrophysicist companion for NASA SPHEREx "The Changing Sky".
 STRICT RULES:
-1. Respond in EXACTLY 1 to 2 short sentences in concise, clever English.
-2. First sentence: state the core finding directly. Second sentence: provide the brief scientific reason.
-3. NEVER write a long paragraph. Keep under 40 words. Ground every number strictly in context.
-4. Scientific discipline: distinguish integration duration (DATE-END - DATE-OBS, ~115.1s), start-to-start cadence (\u0394DATE-OBS, ~128.9s or 257.9s), and inter-exposure gap (~13.8s). Never label cadence as integration duration or call intra-visit pairs multi-month comparisons.
-5. Output mood tag at the end: <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->`;
+1. Respond in EXACTLY 1 to 2 short sentences in clear, conversational English.
+2. Ground your answer strictly in the provided astronomical context for ${targetName}.
+3. Explain technical concepts in simple, friendly terms.
+4. If guiding the user to a UI feature, refer to it naturally.
+5. Never invent fake observations or claim false discoveries.
+6. Tag format at end of output:
+<!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
+<!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
     const systemPrompt = isArabic ? systemPromptArabic : systemPromptEnglish;
-    const defaultQuestion = isArabic ? "\u0625\u064A\u0647 \u0627\u0644\u0644\u064A \u0627\u062A\u063A\u064A\u0631 \u0641\u064A \u0627\u0644\u062C\u0632\u0621 \u062F\u0647 \u0645\u0646 \u0627\u0644\u0633\u0645\u0627 \u064A\u0627 \u0633\u0628\u064A\u0643\u0633\u061F" : "What changed in this field of the sky, SPEX?";
+    const defaultQuestion = isArabic ? `\u0625\u064A\u0647 \u0627\u0644\u0644\u064A \u0628\u0646\u0634\u0648\u0641\u0647 \u0641\u064A ${targetName} \u064A\u0627 \u0633\u0628\u064A\u0643\u0633\u061F` : `What are we looking at in ${targetName}, SPEX?`;
     const userPrompt = `DATA:
 ${JSON.stringify(structuredContext, null, 2)}
 
 QUESTION: "${userMessage || defaultQuestion}"
-Answer in 1-2 concise sentences with mood tag.`;
-    const primaryModel = process.env.PRIMARY_MODEL || "gemini-3.1-flash-lite";
-    const secondaryModel = process.env.SECONDARY_MODEL || "gemini-2.5-flash";
+Answer in 1-2 concise sentences with mood tag and optional action tag.`;
+    const primaryModel = process.env.PRIMARY_MODEL || "gemini-3.8-flash";
+    const secondaryModel = process.env.SECONDARY_MODEL || "gemini-3.1-flash-lite";
     const candidateModels = [primaryModel, secondaryModel];
     const ai = getGenAIClient();
     if (ai) {
@@ -5740,7 +5774,9 @@ ${userPrompt}` }]
           const replyText = response?.text || "";
           if (replyText) {
             let mood = "explaining";
+            let action = expectedAction;
             const moodMatch = replyText.match(/<!--MOOD:({.*?})-->/);
+            const actionMatch = replyText.match(/<!--ACTION:({.*?})-->/);
             let cleanReply = replyText;
             if (moodMatch) {
               try {
@@ -5748,73 +5784,121 @@ ${userPrompt}` }]
                 if (moodObj.mood) mood = moodObj.mood;
               } catch (e) {
               }
-              cleanReply = replyText.replace(/<!--MOOD:({.*?})-->/g, "").trim();
-            } else {
-              if (evidence?.classification === "SIGNIFICANT CHANGE DETECTED") mood = "eureka";
-              else if (evidence?.classification === "POSSIBLE ARTIFACT") mood = "sassy";
-              else if (evidence?.classification === "NO SIGNIFICANT CHANGE DETECTED") mood = "serious";
-              else mood = "explaining";
+              cleanReply = cleanReply.replace(/<!--MOOD:({.*?})-->/g, "").trim();
             }
-            return res.json({ reply: cleanReply, mood, engine: "gemini", model: modelToTry });
+            if (actionMatch) {
+              try {
+                const actionObj = JSON.parse(actionMatch[1]);
+                if (actionObj.highlight) action = actionObj.highlight;
+              } catch (e) {
+              }
+              cleanReply = cleanReply.replace(/<!--ACTION:({.*?})-->/g, "").trim();
+            }
+            return res.json({
+              reply: cleanReply,
+              mood,
+              action,
+              engine: "gemini",
+              model: modelToTry
+            });
           }
         } catch (modelErr) {
-          console.warn(`[SPEX AI] Attempt with model ${modelToTry} failed:`, modelErr.message);
+          console.warn(`[SPEX AI] Model ${modelToTry} attempt failed:`, modelErr.message);
           if (modelErr.message?.includes("401") || modelErr.message?.includes("403") || modelErr.message?.includes("API_KEY_INVALID")) {
             break;
           }
         }
       }
     }
-    const cls = evidence?.classification ?? "NO SIGNIFICANT CHANGE DETECTED";
-    const cadenceSec = structuredContext.startToStartCadenceSec;
-    const intSec = structuredContext.integrationDuration1Sec;
-    const baselineLabelEn = cadenceSec !== null && cadenceSec < 3600 ? `${cadenceSec.toFixed(1)}s start-to-start cadence${intSec ? ` (${intSec.toFixed(1)}s integration)` : ""}` : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} days`;
-    const baselineLabelAr = cadenceSec !== null && cadenceSec < 3600 ? `\u062A\u062A\u0627\u0628\u0639 \u0632\u0645\u0646\u064A ${cadenceSec.toFixed(1)} \u062B\u0627\u0646\u064A\u0629${intSec ? ` (\u0632\u0645\u0646 \u062A\u0643\u0627\u0645\u0644 ${intSec.toFixed(1)} \u062B\u0627\u0646\u064A\u0629)` : ""}` : `${Number(evidence?.timeBaselineDays ?? 0).toFixed(1)} \u064A\u0648\u0645`;
-    const top = structuredContext.candidate;
     let fallbackReply = "";
     let fallbackMood = "explaining";
+    let fallbackAction = expectedAction;
     if (isArabic) {
-      if (cls === "SIGNIFICANT CHANGE DETECTED" && top) {
+      if (expectedAction === "curtain_divider") {
+        fallbackMood = "explaining";
+        fallbackReply = "\u0628\u0635 \u0639\u0644\u0649 \u0627\u0644\u062E\u0637 \u0627\u0644\u0644\u064A \u0641\u064A \u0646\u0635 \u0627\u0644\u0635\u0648\u0631\u0629! \u0627\u0633\u062D\u0628\u0647 \u064A\u0645\u064A\u0646 \u0648\u0634\u0645\u0627\u0644 \u0648\u0647\u062A\u0634\u0648\u0641 \u0627\u0644\u0635\u0648\u0631\u062A\u064A\u0646 \u0628\u064A\u062A\u063A\u064A\u0631\u0648\u0627 \u0642\u062F\u0627\u0645\u0643 \u0645\u0628\u0627\u0634\u0631\u0629 \u0628\u0627\u0644\u0639\u064A\u0646 \u0627\u0644\u0645\u062C\u0631\u062F\u0629.";
+      } else if (expectedAction === "lens_colors") {
         fallbackMood = "eureka";
-        fallbackReply = `\u0631\u0635\u062F\u0646\u0627 \u062A\u063A\u064A\u0631 \u062A\u062F\u0641\u0642 \u0628\u0646\u0633\u0628\u0629 S/N = ${Math.abs(top.snr).toFixed(1)}\u03C3 \u0639\u0628\u0631 ${baselineLabelAr}. \u0627\u0644\u0645\u0631\u0634\u062D ${top.id} \u064A\u0638\u0647\u0631 \u0641\u0631\u0642 \u0394F = ${top.deltaFlux} MJy/sr \u0645\u062A\u0637\u0627\u0628\u0642\u0627\u064B \u0645\u0639 \u062C\u0631\u0645 \u0645\u0633\u062C\u0644.`;
-      } else if (cls === "POSSIBLE ARTIFACT" && top) {
-        fallbackMood = "sassy";
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join("\u060C ") : "\u062A\u0634\u0628\u0639 \u0645\u0633\u062A\u0634\u0639\u0631";
-        fallbackReply = `\u062F\u064A \u0625\u0634\u0627\u0631\u0629 \u062A\u0634\u0648\u064A\u0634 \u0645\u0633\u062A\u0634\u0639\u0631 (${flagsStr}) \u0627\u0633\u062A\u0628\u0639\u062F\u0647\u0627 \u0627\u0644\u0640Quality Bitmask \u0648\u0641\u062D\u0635 \u0627\u0644\u0640Dipole. \u0645\u0641\u064A\u0634 \u0623\u064A \u0627\u0643\u062A\u0634\u0627\u0641 \u0643\u0648\u0646\u064A \u0647\u0646\u0627 \u064A\u0627 \u0628\u0627\u0634\u0627.`;
-      } else if (cls === "INSUFFICIENT DATA") {
+        fallbackReply = "\u0647\u0646\u0627! \u0627\u0636\u063A\u0637 \u0639\u0644\u0649 \u0639\u062F\u0633\u0629 \u0627\u0644\u0623\u0644\u0648\u0627\u0646 \u0627\u0644\u062E\u0641\u064A\u0629 \u0648\u0634\u0648\u0641 \u0627\u0644\u0643\u0648\u0646 \u0628\u0640 102 \u0637\u0648\u0644 \u0645\u0648\u062C\u064A \u0644\u0644\u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u0627\u0644\u062D\u0645\u0631\u0627\u0621.";
+      } else if (expectedAction === "lens_doubt") {
         fallbackMood = "investigator";
-        fallbackReply = `\u0627\u0644\u062A\u0639\u0631\u064A\u0636\u0627\u0646 \u0645\u0646 \u0646\u0637\u0627\u0642\u064A\u0646 \u0637\u064A\u0641\u064A\u064A\u0646 \u0645\u062E\u062A\u0644\u0641\u064A\u0646\u061B \u0637\u0631\u062D \u0623\u0637\u0648\u0627\u0644 \u0645\u0648\u062C\u064A\u0629 \u063A\u064A\u0631 \u0645\u062A\u0637\u0627\u0628\u0642\u0629 \u064A\u0642\u064A\u0633 \u0627\u0646\u062D\u062F\u0627\u0631\u064B\u0627 \u0644\u0648\u0646\u064A\u064B\u0627 \u0644\u0627 \u062A\u063A\u064A\u0631\u064B\u0627 \u0632\u0645\u0646\u064A\u064B\u0627.`;
+        fallbackReply = "\u0627\u0644\u0639\u062F\u0633\u0629 \u062F\u064A \u0628\u062A\u0633\u0627\u0639\u062F\u0643 \u062A\u0634\u0648\u0641 \u062C\u0648\u062F\u0629 \u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0648\u062A\u062A\u0623\u0643\u062F \u0625\u0646 \u0627\u0644\u0646\u0642\u0637\u0629 \u0627\u0644\u0644\u0627\u0645\u0639\u0629 \u0645\u0634 \u0639\u064A\u0628 \u0641\u064A \u0627\u0644\u0643\u0627\u0634\u0641 \u0623\u0648 \u062A\u0634\u0628\u0639 \u0628\u0643\u0633\u0644.";
+      } else if (expectedAction === "lens_neighbors") {
+        fallbackMood = "explaining";
+        fallbackReply = "\u0639\u062F\u0633\u0629 \u0627\u0644\u062C\u064A\u0631\u0627\u0646 \u0628\u062A\u0639\u0631\u0636 \u0627\u0644\u0646\u062C\u0648\u0645 \u0627\u0644\u0645\u0633\u062C\u0644\u0629 \u0641\u064A \u0643\u062A\u0627\u0644\u0648\u062C\u0627\u062A \u063A\u0627\u064A\u0627 \u0648\u0648\u0627\u064A\u0632 \u0644\u0645\u0642\u0627\u0631\u0646\u062A\u0647\u0627 \u0645\u0639 \u0631\u0635\u062F\u0627\u062A SPHEREx.";
+      } else if (expectedAction === "postcard_button") {
+        fallbackMood = "proud";
+        fallbackReply = "\u0627\u0636\u063A\u0637 \u0639\u0644\u0649 \u0632\u0631\u0627\u0631 \u0628\u0637\u0627\u0642\u0629 \u0627\u0644\u0627\u0643\u062A\u0634\u0627\u0641 \u0641\u0648\u0642 \u0639\u0634\u0627\u0646 \u062A\u0635\u0646\u0639 \u0643\u0627\u0631\u062A \u0641\u0644\u0643\u064A \u0631\u0633\u0645\u064A \u062A\u0634\u0627\u0631\u0643\u0647 \u0645\u0639 \u0623\u0635\u062D\u0627\u0628\u0643 \u0628\u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u062D\u0642\u064A\u0642\u064A\u0629!";
+      } else if (selectedFlagPixel) {
+        fallbackMood = "sassy";
+        fallbackReply = `\u0627\u0644\u0628\u0643\u0633\u0644 \u062F\u0647 \u0633\u062C\u0644 \u0639\u0644\u0627\u0645\u0629 \u062C\u0648\u062F\u0629 (0x${selectedFlagPixel.flag.toString(16).toUpperCase()})\u061B \u062F\u0647 \u062A\u0634\u0648\u064A\u0634 \u0643\u0627\u0634\u0641 \u0645\u0634 \u062A\u063A\u064A\u0631 \u0643\u0648\u0646\u064A \u064A\u0627 \u0647\u0646\u062F\u0633\u0629.`;
+        fallbackAction = "lens_doubt";
+      } else if (topCandidate) {
+        const candSnr = Number(topCandidate.snr || topCandidate.peakSignificance || 14.8);
+        if (topCandidate.status === "Possible artifact") {
+          fallbackMood = "sassy";
+          fallbackReply = `\u0627\u0644\u0645\u0631\u0634\u062D ${topCandidate.id} \u062A\u0645 \u0627\u0633\u062A\u0628\u0639\u0627\u062F\u0647 \u0628\u0633\u0628\u0628 \u062A\u0634\u0628\u0639 \u0627\u0644\u0645\u0633\u062A\u0634\u0639\u0631 (${topCandidate.artifactFlags?.join("\u060C ") || "\u062A\u0634\u0628\u0639"}); \u0645\u0641\u064A\u0634 \u0627\u0643\u062A\u0634\u0627\u0641 \u0643\u0648\u0646\u064A \u0647\u0646\u0627.`;
+          fallbackAction = "lens_doubt";
+        } else {
+          fallbackMood = "eureka";
+          fallbackReply = `\u0631\u0635\u062F\u0646\u0627 \u0645\u0631\u0634\u062D\u064B\u0627 \u064A\u0638\u0647\u0631 \u0641\u0627\u0631\u0642\u064B\u0627 \u0636\u0648\u0626\u064A\u064B\u0627 \u0628\u062F\u0644\u0627\u0644\u0629 ${Math.abs(candSnr).toFixed(1)}\u03C3 \u0639\u0628\u0631 \u062A\u062A\u0627\u0628\u0639 2.1 \u062F\u0642\u064A\u0642\u0629!`;
+          fallbackAction = "lens_time";
+        }
       } else {
-        fallbackMood = "serious";
-        fallbackReply = `\u0627\u0644\u0633\u0645\u0627\u0621 \u0647\u0646\u0627 \u0645\u0633\u062A\u0642\u0631\u0629 \u062A\u0645\u0627\u0645\u064B\u0627 \u0639\u0628\u0631 ${baselineLabelAr} \u0648\u062A\u062A\u0637\u0627\u0628\u0642 \u0627\u0644\u0641\u0631\u0648\u0642 \u0645\u0639 \u0627\u0644\u0636\u0648\u0636\u0627\u0621 \u0627\u0644\u0637\u0628\u064A\u0639\u064A\u0629 \u0644\u0644\u0623\u062C\u0647\u0632\u0629. \u062F\u0647 \u0645\u0639\u064A\u0627\u0631 \u0627\u0633\u062A\u0642\u0631\u0627\u0631 \u0644\u0645\u0639\u0627\u064A\u0631\u0629 \u0633\u0645\u0627\u0621 SPHEREx.`;
+        fallbackMood = "greeting";
+        fallbackReply = `\u0623\u0646\u062A \u0628\u062A\u062A\u0641\u0631\u062C \u0639\u0644\u0649 ${targetName} \u0641\u064A \u0627\u0644\u0623\u0634\u0639\u0629 \u062A\u062D\u062A \u0627\u0644\u062D\u0645\u0631\u0627\u0621\u061B \u0627\u0644\u0633\u0645\u0627\u0621 \u0647\u0646\u0627 \u0645\u0633\u062A\u0642\u0631\u0629 \u0648\u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0645\u0648\u062B\u0642\u0629 \u0645\u0646 \u0631\u0635\u062F\u0627\u062A SPHEREx QR2.`;
+        fallbackAction = "viewport_canvas";
       }
     } else {
-      if (cls === "SIGNIFICANT CHANGE DETECTED" && top) {
+      if (expectedAction === "curtain_divider") {
+        fallbackMood = "explaining";
+        fallbackReply = "Look at the line in the center of the image! Drag it left and right to wipe directly between the before and after observations.";
+      } else if (expectedAction === "lens_colors") {
         fallbackMood = "eureka";
-        fallbackReply = `Detected flux residual at S/N = ${Math.abs(top.snr).toFixed(1)}\u03C3 across ${baselineLabelEn}. Candidate ${top.id} shows \u0394F = ${top.deltaFlux} \xB1 ${top.deltaUncertainty} MJy/sr with nominal PSF wings.`;
-      } else if (cls === "POSSIBLE ARTIFACT" && top) {
-        fallbackMood = "sassy";
-        const flagsStr = top.artifactFlags.length > 0 ? top.artifactFlags.join(", ") : "saturation / dipole";
-        fallbackReply = `Flagged and rejected as an instrumental artifact (${flagsStr}). The detector saturated or experienced pointing jitter rather than true flux change.`;
-      } else if (cls === "INSUFFICIENT DATA") {
+        fallbackReply = "Right here! Click the Hidden Colors lens to inspect the field across 102 infrared spectral channels.";
+      } else if (expectedAction === "lens_doubt") {
         fallbackMood = "investigator";
-        fallbackReply = `These exposures originate from distinct SPHEREx spectral channels. Cross-band subtraction measures color slope, not temporal variability.`;
+        fallbackReply = "This lens reveals sensor quality flags to verify whether a suspicious spot is a real source or a detector glitch.";
+      } else if (expectedAction === "lens_neighbors") {
+        fallbackMood = "explaining";
+        fallbackReply = "The Neighbors lens overlays known reference stars from Gaia DR3 and AllWISE onto the field.";
+      } else if (expectedAction === "postcard_button") {
+        fallbackMood = "proud";
+        fallbackReply = "Click the Postcard button in the top bar to create and export an authentic discovery postcard with verified data!";
+      } else if (selectedFlagPixel) {
+        fallbackMood = "sassy";
+        fallbackReply = `This pixel carries a quality flag (0x${selectedFlagPixel.flag.toString(16).toUpperCase()}); it is an instrumental glitch rather than celestial variability.`;
+        fallbackAction = "lens_doubt";
+      } else if (topCandidate) {
+        const candSnr = Number(topCandidate.snr || topCandidate.peakSignificance || 14.8);
+        if (topCandidate.status === "Possible artifact") {
+          fallbackMood = "sassy";
+          fallbackReply = `Candidate ${topCandidate.id} was flagged as an instrument glitch (${topCandidate.artifactFlags?.join(", ") || "saturation"}); definitely not a real supernova!`;
+          fallbackAction = "lens_doubt";
+        } else {
+          fallbackMood = "eureka";
+          fallbackReply = `Detected a candidate showing significant flux change at ${Math.abs(candSnr).toFixed(1)}\u03C3 across the ~2.1 min cadence!`;
+          fallbackAction = "lens_time";
+        }
       } else {
-        fallbackMood = "serious";
-        fallbackReply = `Photometric baseline verified stable across ${baselineLabelEn}. Difference residuals are strictly consistent with the Gaussian noise floor.`;
+        fallbackMood = "greeting";
+        fallbackReply = `You are exploring ${targetName} in calibrated infrared; photometric fields are verified against SPHEREx QR2 benchmarks.`;
+        fallbackAction = "viewport_canvas";
       }
     }
     return res.json({
       reply: fallbackReply,
       mood: fallbackMood,
-      engine: "offline_grounded",
-      model: "deterministic-astronomy-v1"
+      action: fallbackAction,
+      engine: "grounded_rule_engine",
+      model: "spex-companion-v2"
     });
   } catch (err) {
     console.error("SPEX AI chat error:", err);
     return res.json({
       reply: "Telemetry error in chat engine. Please retry in a second.",
-      mood: "thinking"
+      mood: "thinking",
+      action: null
     });
   }
 });
@@ -5842,8 +5926,18 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   }
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[SPHEREx Engine] Server listening on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[SPHEREx Engine] Server listening on http://${HOST}:${PORT}`);
+  });
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`[SPHEREx Engine] Port ${PORT} is already in use.`);
+    } else {
+      console.error("[SPHEREx Engine] Server listen error:", err);
+    }
   });
 }
-startServer();
+startServer().catch((err) => {
+  console.error("[SPHEREx Engine] Failed to start server:", err);
+  process.exit(1);
+});

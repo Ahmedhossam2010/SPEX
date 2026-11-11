@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Maximize2,
   Volume2,
+  BookOpen,
 } from 'lucide-react';
 import { Language } from '../../utils/translations';
 import { SpexPortrait } from '../../spex/SpexPortrait';
@@ -27,6 +28,7 @@ export interface SpexCompanionProps {
   onOpenTour: () => void;
   onHighlightElement?: (targetId: string) => void;
   onOpenScientistMode?: () => void;
+  onOpenDictionary?: (termId?: string) => void;
   className?: string;
 }
 
@@ -50,6 +52,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   onOpenTour,
   onHighlightElement,
   onOpenScientistMode,
+  onOpenDictionary,
   className = '',
 }) => {
   const isRtl = language === 'ar';
@@ -262,8 +265,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
       {/* PERSISTENT FLOATING SPEX MASCOT & PROACTIVE SPEECH BUBBLE */}
       {/* ============================================================== */}
       <div
-        className={`fixed bottom-4 sm:bottom-6 z-40 flex flex-col gap-2.5 pointer-events-auto ${
-          isRtl ? 'right-4 sm:right-6 items-end' : 'left-4 sm:left-6 items-start'
+        className={`fixed bottom-22 sm:bottom-6 z-40 flex flex-col gap-2.5 pointer-events-auto ${
+          isRtl ? 'right-3 sm:right-6 items-end' : 'left-3 sm:left-6 items-start'
         } ${className}`}
       >
         {/* Proactive Speech Bubble (Floats cleanly ABOVE the mascot button) */}
@@ -353,8 +356,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
       {/* ============================================================== */}
       {isOpen && (
         <div
-          className={`fixed bottom-24 sm:bottom-20 z-50 w-[92vw] sm:w-[420px] max-h-[580px] h-[520px] bg-[#0C0E14]/98 backdrop-blur-2xl border border-[#FFB900]/40 rounded-2xl shadow-[0_20px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-slate-100 animate-slide-up ${
-            isRtl ? 'right-4 sm:right-6' : 'left-4 sm:left-6'
+          className={`fixed bottom-36 sm:bottom-20 z-50 w-[calc(100vw-1.5rem)] sm:w-[420px] max-h-[580px] h-[520px] bg-[#0C0E14]/98 backdrop-blur-2xl border border-[#FFB900]/40 rounded-2xl shadow-[0_20px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-slate-100 animate-slide-up ${
+            isRtl ? 'right-3 sm:right-6' : 'left-3 sm:left-6'
           }`}
           dir={isRtl ? 'rtl' : 'ltr'}
         >
@@ -378,6 +381,17 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
             </div>
 
             <div className="flex items-center gap-1">
+              {onOpenDictionary && (
+                <button
+                  type="button"
+                  onClick={() => onOpenDictionary()}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-white/10 transition cursor-pointer text-xs font-mono"
+                  title={isRtl ? 'قاموس الفضاء' : 'Space Dictionary'}
+                >
+                  <BookOpen className="w-4 h-4" />
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onOpenTour}

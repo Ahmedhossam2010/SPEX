@@ -141,6 +141,22 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Desktop Quick Controls */}
         <div className="hidden md:flex items-center gap-2">
+          {/* Space Dictionary Button */}
+          <button
+            type="button"
+            onClick={() => {
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('open-spex-dictionary', { detail: {} }));
+              }
+            }}
+            title={isRtl ? 'قاموس سبيكس الفلكي' : 'SPEX Space Dictionary'}
+            aria-label="Open SPEX Space Dictionary"
+            className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 text-xs font-mono transition-all cursor-pointer shadow-xs active:scale-95"
+          >
+            <BookOpen className="h-4 w-4 text-amber-500" />
+            <span className="font-bold hidden lg:inline">{isRtl ? 'قاموس الفضاء' : 'Dictionary'}</span>
+          </button>
+
           {/* Scientist Mode Toggle */}
           {onToggleScientistMode && (
             <button
@@ -276,7 +292,26 @@ export const Header: React.FC<HeaderProps> = ({
               })}
             </div>
 
-            {/* Quick Actions Footer: Scientist Mode, Theme and Language */}
+            {/* Quick Actions Footer: Space Dictionary, Scientist Mode, Theme and Language */}
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('open-spex-dictionary', { detail: {} }));
+                }
+                setMobileMenuOpen(false);
+              }}
+              className="w-full flex items-center justify-between p-3.5 min-h-[48px] rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-mono font-bold transition-all cursor-pointer active:scale-95"
+            >
+              <div className="flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-amber-500" />
+                <span>{isRtl ? 'قاموس سبيكس الفلكي' : 'SPEX Space Dictionary'}</span>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-300">
+                {isRtl ? 'فتح' : 'OPEN'}
+              </span>
+            </button>
+
             {onToggleScientistMode && (
               <button
                 type="button"

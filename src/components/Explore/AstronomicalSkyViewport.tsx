@@ -640,9 +640,9 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
         </button>
       </div>
 
-      {/* FLOATING INSPECTOR HUD READOUT (Bottom-Left) */}
+      {/* FLOATING INSPECTOR HUD READOUT (Top-Left under FOV indicator) */}
       {hoverCoord && (
-        <div className="absolute bottom-3 left-3 z-20 pointer-events-none bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/15 font-mono text-[11px] text-slate-200 flex flex-wrap items-center gap-3 shadow-lg">
+        <div className="absolute top-18 sm:top-20 left-3 z-20 pointer-events-none bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/15 font-mono text-[11px] text-slate-200 flex flex-wrap items-center gap-3 shadow-xl max-w-[calc(100vw-2rem)]">
           <div className="flex items-center gap-1">
             <span className="text-[#00D3F3]">X,Y:</span>
             <span>

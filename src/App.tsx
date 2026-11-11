@@ -9,6 +9,7 @@ import { Screen1Sky } from './components/Screen1Sky';
 import { InvestigationResult, ChallengeTarget } from './science/types';
 import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
+import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal';
 
 export function App() {
   const getInitialTab = (): 'home' | 'explore' | 'game' | 'cases' | 'about' => {
@@ -70,6 +71,24 @@ export function App() {
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
   const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
+  const [globalDictionaryOpen, setGlobalDictionaryOpen] = useState(false);
+  const [globalDictionaryTermId, setGlobalDictionaryTermId] = useState<string | null>(null);
+
+  // Global listener for dictionary requests from anywhere in the app
+  useEffect(() => {
+    const handleOpenDict = (e: Event) => {
+      const customEvt = e as CustomEvent<{ termId?: string }>;
+      if (customEvt.detail?.termId) {
+        setGlobalDictionaryTermId(customEvt.detail.termId);
+      }
+      setGlobalDictionaryOpen(true);
+    };
+
+    window.addEventListener('open-spex-dictionary', handleOpenDict);
+    return () => {
+      window.removeEventListener('open-spex-dictionary', handleOpenDict);
+    };
+  }, []);
 
   // Initialize theme from localStorage
   useEffect(() => {
@@ -400,6 +419,15 @@ export function App() {
 
         {activeTab === 'about' && <AboutView language={language} />}
       </main>
+
+      {/* Global SPEX Space Dictionary Modal */}
+      <SpexSpaceDictionaryModal
+        isOpen={globalDictionaryOpen}
+        onClose={() => setGlobalDictionaryOpen(false)}
+        language={language}
+        initialTermId={globalDictionaryTermId}
+        onSelectTerm={(termId) => setGlobalDictionaryTermId(termId)}
+      />
     </div>
   );
 }

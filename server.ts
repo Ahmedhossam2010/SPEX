@@ -45,7 +45,37 @@ import { parseCoordinateInput, sexagesimalToDecimal, decimalToSexagesimal } from
 import { propagatePosition, julianYearFromMjd } from './src/science/properMotion';
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+function resolvePort(): number {
+  const portArgIndex = process.argv.indexOf('--port');
+  if (portArgIndex !== -1 && process.argv[portArgIndex + 1]) {
+    const parsed = parseInt(process.argv[portArgIndex + 1], 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  if (process.env.PORT && process.env.PORT !== '8080') {
+    const parsed = parseInt(process.env.PORT, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return 3000;
+}
+
+function resolveHost(): string {
+  const hostArgIndex = process.argv.indexOf('--host');
+  if (hostArgIndex !== -1 && process.argv[hostArgIndex + 1]) {
+    return process.argv[hostArgIndex + 1];
+  }
+  return '0.0.0.0';
+}
+
+const PORT = resolvePort();
+const HOST = resolveHost();
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('[SPHEREx Engine] Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[SPHEREx Engine] Uncaught Exception:', err);
+});
 const CACHE_DIR = path.join('/tmp', 'spherex_cache');
 
 // Configurable Data Release Paths via Environment Variables (Task 9)
@@ -1885,9 +1915,20 @@ async function startServer() {
     app.use(vite.middlewares);
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[SPHEREx Engine] Server listening on http://0.0.0.0:${PORT}`);
+  const server = app.listen(PORT, HOST, () => {
+    console.log(`[SPHEREx Engine] Server listening on http://${HOST}:${PORT}`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[SPHEREx Engine] Port ${PORT} is already in use.`);
+    } else {
+      console.error('[SPHEREx Engine] Server listen error:', err);
+    }
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('[SPHEREx Engine] Failed to start server:', err);
+  process.exit(1);
+});

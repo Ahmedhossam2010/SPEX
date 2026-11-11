@@ -9,6 +9,7 @@ interface ScienceTermProps {
   showSimpleLabel?: boolean;
   overrideLabel?: React.ReactNode;
   className?: string;
+  onOpenDictionary?: (termKey: string) => void;
 }
 
 export const ScienceTerm: React.FC<ScienceTermProps> = ({
@@ -17,6 +18,7 @@ export const ScienceTerm: React.FC<ScienceTermProps> = ({
   showSimpleLabel = true,
   overrideLabel,
   className = '',
+  onOpenDictionary,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -162,6 +164,26 @@ export const ScienceTerm: React.FC<ScienceTermProps> = ({
             <p className="text-[11px] font-mono text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-lg p-2 border border-slate-200 dark:border-white/[0.04]">
               {isRtl ? term.technicalDetailsAr : term.technicalDetailsEn}
             </p>
+          </div>
+
+          {/* 4. Direct Link to Full SPEX Space Dictionary */}
+          <div className="mt-3 pt-2 border-t border-slate-100 dark:border-white/[0.08]">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsOpen(false);
+                if (onOpenDictionary) {
+                  onOpenDictionary(term.id);
+                } else if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('open-spex-dictionary', { detail: { termId: term.id } }));
+                }
+              }}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-mono font-semibold transition cursor-pointer"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'عرض في قاموس الفضاء الشامل' : 'Open in SPEX Space Dictionary'}</span>
+            </button>
           </div>
         </div>
       )}
