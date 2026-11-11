@@ -706,6 +706,8 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
     // Coordinate validation and dynamic survey coverage determination (Task 1)
     let ep1: CuratedEpoch | undefined;
     let ep2: CuratedEpoch | undefined;
+    let matchingCase: CuratedCase | undefined;
+    let liveEpochs: CuratedEpoch[] | undefined;
 
     if (customCoords) {
       if (
@@ -724,7 +726,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       }
 
       // Check if coordinates match one of our curated benchmark cases (e.g. Barnard's Star, WISE 0855, NEP)
-      const matchingCase = CURATED_CASES.find(
+      matchingCase = CURATED_CASES.find(
         (c) => WCS.angularSeparationArcsec(ra, dec, c.ra, c.dec) <= 300
       );
 
@@ -740,6 +742,7 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
         try {
           const tapResp = await fetch(tapUrl, {
             headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+            signal: AbortSignal.timeout(3500),
           });
           if (tapResp.ok) {
             const tapJson: any = await tapResp.json();
@@ -814,6 +817,30 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
             wavelength_um: Number(em2.toFixed(2)),
             date: new Date(((parseFloat(row2[4]) - 40587) * 86400 * 1000)).toISOString(),
           };
+
+          if (detList.length >= 3) {
+            const topRows = detList.slice(0, 5);
+            try {
+              liveEpochs = await Promise.all(
+                topRows.map(async (row) => {
+                  const rObsId = String(row[0]);
+                  const rAcc = String(row[8]);
+                  const rEm = ((parseFloat(row[6]) + parseFloat(row[7])) / 2) * 1e6;
+                  const resolved = await resolveFitsUrl(rAcc, rObsId, chosenDet);
+                  return {
+                    obs_id: rObsId,
+                    fits_url: resolved.url,
+                    mjd: Number(((parseFloat(row[4]) + parseFloat(row[5])) / 2).toFixed(6)),
+                    band: bandName,
+                    wavelength_um: Number(rEm.toFixed(2)),
+                    date: new Date((parseFloat(row[4]) - 40587) * 86400 * 1000).toISOString(),
+                  };
+                })
+              );
+            } catch (liveErr) {
+              console.info('[Process] Could not resolve all live multi-epoch URLs:', liveErr);
+            }
+          }
         }
       }
     }
@@ -1027,7 +1054,10 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       access_format: 'application/fits',
     };
 
-    // If case has multi-epoch visits, load all available visits for sequential timeline viewer
+    // If case has multi-epoch visits, load all available visits for sequential timeline viewer.
+    // Scientifically crucial: Use curated case epochs ONLY when coordinates correspond to that case
+    // (!isCustomSearch || matchingCase). Unmatched custom coordinates must NEVER be queried
+    // against an unrelated benchmark case's FITS files, avoiding IRSA 422 survey footprint mismatches.
     let multiEpochArray: Array<{
       epochIndex: number;
       obsId: string;
@@ -1041,9 +1071,13 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
       wcs: any;
     }> | undefined = undefined;
 
-    if (selectedCase.epochs && selectedCase.epochs.length >= 3) {
+    const epochsToUse = (!isCustomSearch || matchingCase)
+      ? selectedCase.epochs
+      : liveEpochs;
+
+    if (epochsToUse && epochsToUse.length >= 3) {
       try {
-        const visitPromises = selectedCase.epochs.map(async (ep, idx) => {
+        const visitPromises = epochsToUse.map(async (ep, idx) => {
           const resF = await getFITSCutout(ep.fits_url, centerRa, centerDec, sizePix);
           const parsed = FITSReader.parse(resF.buffer);
           const epDateObs =
@@ -1068,9 +1102,16 @@ app.post('/api/spherex/process', async (req: Request, res: Response) => {
             wcs: parsed.wcs,
           };
         });
-        multiEpochArray = await Promise.all(visitPromises);
-      } catch (multiErr) {
-        console.warn('Could not load full multi-epoch sequence; continuing with 2-epoch difference:', multiErr);
+        const settled = await Promise.allSettled(visitPromises);
+        const validVisits = settled
+          .filter((s): s is PromiseFulfilledResult<any> => s.status === 'fulfilled')
+          .map((s) => s.value);
+
+        if (validVisits.length >= 2) {
+          multiEpochArray = validVisits;
+        }
+      } catch (multiErr: any) {
+        console.info('[Process] Multi-epoch sequence unavailable; continuing with 2-epoch difference:', multiErr?.message || multiErr);
       }
     }
 
@@ -1256,6 +1297,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     try {
       const tapResp = await fetch(tapUrl, {
         headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+        signal: AbortSignal.timeout(3500),
       });
       if (tapResp.ok) {
         const json: any = await tapResp.json();

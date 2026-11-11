@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { Spex3DGame } from './3d/Spex3DGame';
 import { SpexTaskStationGame } from './SpexTaskStationGame';
 import { CosmicDetectiveGame } from './CosmicDetectiveGame';
 import { Language } from '../utils/translations';
-import { Gamepad2, BookOpen, Compass, ArrowLeft } from 'lucide-react';
+import { Gamepad2, Box, BookOpen, Compass, ArrowLeft } from 'lucide-react';
 import { gameAudio } from './utils/gameAudio';
 
 interface SpexAdventureGameProps {
@@ -17,8 +18,8 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
   onBackToHome,
 }) => {
   const isAr = language === 'ar';
-  // Mode: 'station' for the 2D Top-Down Task Station Game, 'cases' for Detective Case files
-  const [viewMode, setViewMode] = useState<'station' | 'cases'>('station');
+  // Default mode: '3d' for the 3D Space Station Game, '2d' for the 2D Task Station, 'cases' for Detective Case files
+  const [viewMode, setViewMode] = useState<'3d' | '2d' | 'cases'>('3d');
 
   return (
     <div className="relative w-full max-w-7xl mx-auto px-2 sm:px-4 py-3" dir={isAr ? 'rtl' : 'ltr'}>
@@ -42,16 +43,32 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
               type="button"
               onClick={() => {
                 gameAudio.playClick();
-                setViewMode('station');
+                setViewMode('3d');
               }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                viewMode === 'station'
+                viewMode === '3d'
                   ? 'bg-obs-amber text-slate-950 shadow-[0_0_12px_rgba(245,166,35,0.4)]'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
+              <Box className="w-3.5 h-3.5" />
+              <span>{isAr ? 'محطة الفضاء 3D' : '3D Station'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick();
+                setViewMode('2d');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                viewMode === '2d'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
               <Gamepad2 className="w-3.5 h-3.5" />
-              <span>{isAr ? 'محطة المهام 2D' : 'Task Station'}</span>
+              <span>{isAr ? 'محطة المهام 2D' : '2D Station (Classic)'}</span>
             </button>
 
             <button
@@ -85,7 +102,13 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
       </div>
 
       {/* Main View Area */}
-      {viewMode === 'station' ? (
+      {viewMode === '3d' ? (
+        <Spex3DGame
+          language={language}
+          onBackToExplore={onExitToExplore}
+          onBackToHome={onBackToHome}
+        />
+      ) : viewMode === '2d' ? (
         <SpexTaskStationGame
           language={language}
           onExitToExplore={onExitToExplore}
