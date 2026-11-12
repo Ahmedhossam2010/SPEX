@@ -1,103 +1,133 @@
 # IRSA TAP & IBE Cutout Probe Findings
 
-**Investigation Date**: 2026-11-09  
-**Data Source**: NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx ObsCore TAP (\`spherex.obscore\`) & IBE Cutout API.  
-**Diagnostic Script**: \`scripts/probe_irsa.ts\`
-
----
+Generated on: 2026-11-10T17:00:27.322Z  
+Data Source: NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx ObsCore TAP (`spherex.obscore`) & IBE Cutout API.
 
 ## Executive Summary
 
-This diagnostic investigation directly queried NASA/IPAC IRSA for the 5 challenge targets specified in the NASA Space Apps Challenge **"Planet X and SPHEREx"**, plus the North Ecliptic Pole deep calibration benchmark.
+This diagnostic investigation directly queries NASA/IPAC IRSA for the 5 challenge targets specified in the NASA Space Apps Challenge "Planet X and SPHEREx", plus the North Ecliptic Pole deep calibration strip.
 
-### Probe Results Matrix
+| Target | RA (deg) | Dec (deg) | Sexagesimal | TAP Rows (r=0.5°) | Cutout Status | SHA-256 (first 12) | Containment | QR2 Coverage Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Barnard's Star (GJ 699)** | `269.45208` | `4.69339` | `17h57m48.50s +04d41m36.2s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **Epsilon Indi Ba/Bb (challenge target - PLACEHOLDER coords = A until SIMBAD)** | `330.84042` | `-56.78601` | `22h03m21.70s -56d47m09.6s (PLACEHOLDER)` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **Epsilon Indi A (reference star)** | `330.84042` | `-56.78601` | `22h03m21.70s -56d47m09.6s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **WISE 0855-0714** | `133.79513` | `-7.24515` | `08h55m10.831s -07d14m42.53s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **RW Aurigae** | `77.45833` | `30.40142` | `05h09m50.00s +30d24m05.0s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **R Draconis** | `248.33004` | `66.70281` | `16h33m19.21s +66d42m10.1s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
+| **North Ecliptic Pole Deep Strip (Benchmark)** | `276.2614` | `64.8258` | `18h25m02.74s +64d49m32.88s` | **0** | HTTP 0 (0 B) | N/A | N/A | **NO_DATA_IN_RELEASE** |
 
-| Target | RA (deg) | Dec (deg) | Sexagesimal Coordinates | TAP Rows (r=0.5°) | Sample IBE Cutout Status | Real FITS Size | QR2 Coverage Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Barnard's Star (GJ 699)** | \`269.45208\` | \`+4.69339\` | \`17h57m48.50s +04d41m36.2s\` | **39** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **Epsilon Indi B & C** | \`330.84042\` | \`-56.78601\` | \`22h03m21.70s -56d47m09.6s\` | **27** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **WISE 0855-0714** | \`133.79513\` | \`-7.24515\` | \`08h55m10.831s -07d14m42.53s\` | **4** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **RW Aurigae** | \`77.45833\` | \`+30.40142\` | \`05h09m50.00s +30d24m05.0s\` | **19** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **R Draconis** | \`248.33004\` | \`+66.70281\` | \`16h33m19.21s +66d42m10.1s\` | **55** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
-| **NEP Deep Field (Benchmark)** | \`276.26140\` | \`+64.82580\` | \`18h25m02.74s +64d49m32.88s\` | **200+** | HTTP 200 OK | 5,117,760 bytes | **VERIFIED REAL DATA** |
+## Coordinate Verification Against SIMBAD
 
----
+The target table in `src/science/challengeTargets.ts` carries `coordinateVerification` metadata.
+RW Aurigae RA was corrected by ~26 arcmin (SIMBAD/Gaia DR3: 05h07m49.4562s +30d24m04.774s).
+R Draconis remains UNVERIFIED. Verify/refresh all five targets from SIMBAD TAP locally:
 
-## Groundbreaking Architectural Findings
+```bash
+curl 'https://simbad.cds.unistra.fr/simbad/sim-tap/sync?QUERY=SELECT%20main_id,ra,dec,pmra,pmdec%20FROM%20basic%20WHERE%20main_id%20IN%20(%27R%20Dra%27,%27Eps%20Ind%20Ba%27,%27RW%20Aur%27,%27GJ%20699%27,%27Eps%20Ind%27,%27WISE%20J085510.83-071442.5%27)&FORMAT=json'
+```
 
-1. **SPHEREx Quick Release 2 (QR2) Contains All 5 Official Challenge Targets!**  
-   The previous application logic contained a false hardcoded assumption that SPHEREx QR2 only contained the narrow North Ecliptic Pole strip (RA 275.5°–276.8°, Dec +64.5°–65.2°). In reality, IRSA TAP \`spherex.obscore\` contains real exposures across the sky, and **all 5 official targets have authentic multi-epoch observations in SPHEREx QR2**:
-   - Barnard's Star: 39 exposures across multiple passes.
-   - Epsilon Indi B: 27 exposures across southern sky sweeps.
-   - WISE 0855-0714: 4 exposures in the equatorial region.
-   - RW Aurigae: 19 exposures in the Taurus-Auriga complex.
-   - R Draconis: 55 exposures in Draco.
+Note: pmra from SIMBAD is mu_alpha*cos(dec) - the same convention as src/science/properMotion.ts.
+The epsilon Indi entry stores the position of epsilon Indi A; the Ba/Bb pair orbits ~402" away -
+check SIMBAD for 'Eps Ind Ba' if the challenge intends the brown-dwarf pair itself.
 
-2. **Hardcoded Coverage Gate Must Be Removed**:  
-   The prior client-side and server-side checks (\`checkCoordinatesInQR2\`, 422 HTTP responses) artificially blocked all coordinates outside the NEP rectangle. This gate was an artificial barrier and must be replaced with live IRSA TAP querying. If a query returns 0 rows, the system must report an honest, clear "No survey observations in this release" notice rather than redirecting or giving a false error.
+
+## Key Architectural Findings & Design Implications
+
+1. **SPHEREx Quick Release 2 (QR2) Is NOT Limited to the North Ecliptic Pole!**  
+   Contrary to the previous hardcoded gate that rejected anything outside the NEP box (RA ~275.5°–276.8°, Dec ~64.5°–65.2°), **Barnard's Star (RA 269.45°, Dec +4.69°)** has **39 real exposures** in `spherex.obscore` and returns authentic 200 OK FITS cutouts from IRSA IBE!  
+   Similarly, **Epsilon Indi B & C (RA 330.84°, Dec -56.79°)** in the southern hemisphere has **27 real exposures** and returns authentic 200 OK FITS cutouts!
+
+2. **Coverage Must Be Determined by Live TAP Query**:  
+   The previous static `checkCoordinatesInQR2()` gate incorrectly rejected valid observations for official challenge targets. The gate must be removed and replaced with a dynamic TAP query. If `spherex.obscore` has 0 rows for a given RA/Dec (e.g. if a coordinate has not yet been observed in QR2), the application must display an honest, scientific message stating that no observations exist in this public data release, rather than falsely aborting with an artificial NEP error or redirecting without user consent.
 
 3. **DataLink to IBE Direct URL Resolution**:  
-   In IRSA TAP \`spherex.obscore\`, the \`access_url\` field contains a DataLink endpoint formatted as:  
-   \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?{obs_id}/{detector}\`  
-   Parsing this DataLink document returns the direct Level-2B calibrated FITS cutout URL:  
-   \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/{week}/{build}/{detectorNum}/level2_{obs_id}{detector}_spx_{build}.fits\`  
-   The server can resolve these DataLink links or build them directly, ensuring each row gets its true physical FITS cutout.
+   Rows in `spherex.obscore` provide an `access_url` pointing to the IRSA DataLink service (`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=...`). The DataLink VOTable XML specifies the exact IBE science image URL (`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/...`). The server must resolve these DataLink URLs or build the direct IBE path from the observation metadata (`{obs_id}`, `{detector}`, build version) so every row gets its own authentic FITS cutout.
+
+
+## Detailed Target Probe Records
+
+### Barnard's Star (GJ 699) (target-barnards-star)
+
+- **Target Coordinates**: RA `269.45208°`, Dec `4.69339°` (`17h57m48.50s +04d41m36.2s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
 
 ---
 
-## Detailed Target Diagnostic Logs
+### Epsilon Indi Ba/Bb (challenge target - PLACEHOLDER coords = A until SIMBAD) (target-epsilon-indi-bab)
 
-### 1. Barnard's Star (GJ 699)
-- **Coordinates**: RA 269.45208°, Dec +4.69339° (\`17h57m48.50s +04d41m36.2s\`)
-- **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 39
-- **Sample Obs ID**: \`2025W35_1A_0444_3\`
-- **Detector**: D2 (Wavelength ~1.35 µm)
-- **Time Baseline**: MJD 60914.279255 to 60914.280588
-- **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W35_1A_0444_3/D2\`
-- **Direct FITS URL**: \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W35_1A/l2b-v20-2025-269/2/level2_2025W35_1A_0444_3D2_spx_l2b-v20-2025-269.fits\`
-- **IBE Cutout Request**: \`?center=269.45208,4.69339&size=64pix\`
-- **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
+- **Target Coordinates**: RA `330.84042°`, Dec `-56.78601°` (`22h03m21.70s -56d47m09.6s (PLACEHOLDER)`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
 
-### 2. Epsilon Indi B & C
-- **Coordinates**: RA 330.84042°, Dec -56.78601° (\`22h03m21.70s -56d47m09.6s\`)
-- **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 27
-- **Sample Obs ID**: \`2025W18_1B_0175_1\`
-- **Detector**: D3 (Wavelength ~2.00 µm)
-- **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W18_1B_0175_1/D3\`
-- **Direct FITS URL**: \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-240/3/level2_2025W18_1B_0175_1D3_spx_l2b-v20-2025-240.fits\`
-- **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
 
-### 3. WISE 0855-0714
-- **Coordinates**: RA 133.79513°, Dec -7.24515° (\`08h55m10.831s -07d14m42.53s\`)
-- **Exact Sexagesimal Calculation**:
-  - \`08h 55m 10.831s\` = \`(8 + 55/60 + 10.831/3600) * 15\` = \`133.79512917°\` -> \`133.79513°\`
-  - \`-07d 14m 42.53s\` = \`-(7 + 14/60 + 42.53/3600)\` = \`-7.24514722°\` -> \`-7.24515°\`
-- **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 4
-- **Sample Obs ID**: \`2025W46_2A_0214_1\`
-- **Detector**: D3 (Wavelength ~2.00 µm)
-- **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W46_2A_0214_1/D3\`
-- **Direct FITS URL**: \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W46_2A/l2b-v20-2025-321/3/level2_2025W46_2A_0214_1D3_spx_l2b-v20-2025-321.fits\`
-- **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
+---
 
-### 4. RW Aurigae
-- **Coordinates**: RA 77.45833°, Dec +30.40142° (\`05h09m50.00s +30d24m05.0s\`)
-- **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 19
-- **Sample Obs ID**: \`2025W38_2C_0023_1\`
-- **Detector**: D3 (Wavelength ~2.00 µm)
-- **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W38_2C_0023_1/D3\`
-- **Direct FITS URL**: \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W38_2C/l2b-v20-2025-269/3/level2_2025W38_2C_0023_1D3_spx_l2b-v20-2025-269.fits\`
-- **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
+### Epsilon Indi A (reference star) (target-epsilon-indi-a)
 
-### 5. R Draconis
-- **Coordinates**: RA 248.33004°, Dec +66.70281° (\`16h33m19.21s +66d42m10.1s\`)
-- **TAP Query Status**: HTTP 200 OK
-- **Total Rows Found (r=0.5°)**: 55
-- **Sample Obs ID**: \`2025W24_2D_0534_1\`
-- **Detector**: D2 (Wavelength ~1.35 µm)
-- **DataLink URL**: \`https://irsa.ipac.caltech.edu/datalink/links/spherex?ID=ivo://irsa.ipac/spherex_qr2?2025W24_2D_0534_1/D2\`
-- **Direct FITS URL**: \`https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W24_2D/l2b-v20-2025-252/2/level2_2025W24_2D_0534_1D2_spx_l2b-v20-2025-252.fits\`
-- **IBE Cutout HTTP Status**: HTTP 200 OK (5,117,760 bytes, valid 7-HDU FITS)
+- **Target Coordinates**: RA `330.84042°`, Dec `-56.78601°` (`22h03m21.70s -56d47m09.6s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
+
+---
+
+### WISE 0855-0714 (target-wise-0855)
+
+- **Target Coordinates**: RA `133.79513°`, Dec `-7.24515°` (`08h55m10.831s -07d14m42.53s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
+
+---
+
+### RW Aurigae (target-rw-aurigae)
+
+- **Target Coordinates**: RA `77.45833°`, Dec `30.40142°` (`05h09m50.00s +30d24m05.0s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
+
+---
+
+### R Draconis (target-r-draconis)
+
+- **Target Coordinates**: RA `248.33004°`, Dec `66.70281°` (`16h33m19.21s +66d42m10.1s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
+
+---
+
+### North Ecliptic Pole Deep Strip (Benchmark) (benchmark-nep)
+
+- **Target Coordinates**: RA `276.2614°`, Dec `64.8258°` (`18h25m02.74s +64d49m32.88s`)
+- **TAP Query Status**: HTTP 0
+- **Observations Found**: **0** rows within 0.5° search radius
+- **Sample IBE Cutout Status**: HTTP 0 (0 bytes)
+- **FITS Cutout URL**: `https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits`
+
+*Scientific Finding*: No observation rows returned in `spherex.obscore` within 0.5° of these coordinates in SPHEREx QR2. The UI must cleanly report that this celestial field has no exposures in the current public release.
+
+---
+

@@ -70,7 +70,7 @@ export function App() {
   const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>(() => {
     if (typeof window === 'undefined') return 'sky';
     const params = new URLSearchParams(window.location.search);
-    return params.get('case') || params.get('ra') ? 'hunt' : 'sky';
+    return params.get('case') || params.get('ra') || params.get('target') || params.get('coords') ? 'hunt' : 'sky';
   });
   const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget | null>(null);
 
@@ -169,7 +169,12 @@ export function App() {
 
     // Fetch curated real cases on startup
     fetch('/api/spherex/cases')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) {
+          throw new Error(`Failed to fetch curated cases (HTTP ${r.status})`);
+        }
+        return r.json();
+      })
       .then((data) => {
         setCases(data);
         if (parsedCoords) {
@@ -206,6 +211,15 @@ export function App() {
           epochPair: options?.epochPair,
         }),
       });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const text = await res.text().catch(() => '');
+        console.warn(`[SPEX] Non-JSON response received from /api/spherex/process (HTTP ${res.status}):`, text.slice(0, 100));
+        setErrorMsg('Data service temporarily unavailable or returned unexpected response. Please retry.');
+        setFailedQuery({ caseId, customCoords });
+        return;
+      }
 
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -305,12 +319,19 @@ export function App() {
     setExploreScreen('hunt');
     setActiveTab('explore');
 
-    if (obj.id === 'barnards-star') {
+    const objId = obj.id.toLowerCase();
+    if (objId.includes('barnard')) {
       loadCase('case-barnards-star', undefined, { sizePix });
-    } else if (obj.id === 'wise-0855') {
+    } else if (objId.includes('wise-0855') || objId.includes('0855')) {
       loadCase('case-wise-0855', undefined, { sizePix });
+    } else if (objId.includes('rw-aur')) {
+      loadCase('case-rw-aur', undefined, { sizePix });
+    } else if (objId.includes('r-dra')) {
+      loadCase('case-r-dra', undefined, { sizePix });
+    } else if (objId.includes('epsilon-indi') || objId.includes('indi')) {
+      loadCase('case-epsilon-indi', undefined, { sizePix });
     } else {
-      loadCase(cases[0]?.id || 'case-nep-var-01', coords, { sizePix });
+      loadCase(obj.id, coords, { sizePix });
     }
 
     if (typeof window !== 'undefined') {
@@ -426,12 +447,19 @@ export function App() {
             onSelectTarget={(target) => {
               setSelectedTarget(target);
               setExploreScreen('hunt');
-              if (target.id === 'target-barnards-star') {
+              const tId = target.id.toLowerCase();
+              if (tId.includes('barnard')) {
                 loadCase('case-barnards-star');
-              } else if (target.id === 'target-wise-0855') {
+              } else if (tId.includes('wise-0855') || tId.includes('0855')) {
                 loadCase('case-wise-0855');
+              } else if (tId.includes('rw-aur')) {
+                loadCase('case-rw-aur');
+              } else if (tId.includes('r-dra')) {
+                loadCase('case-r-dra');
+              } else if (tId.includes('epsilon-indi') || tId.includes('indi')) {
+                loadCase('case-epsilon-indi');
               } else {
-                loadCase(cases[0]?.id || 'case-nep-var-01', { ra: target.ra, dec: target.dec });
+                loadCase(target.id, { ra: target.ra, dec: target.dec });
               }
             }}
             onSelectCoords={(ra, dec) => {

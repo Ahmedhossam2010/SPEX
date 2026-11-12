@@ -252,17 +252,17 @@ export interface ChallengeTarget {
   /** Julian epoch of the listed ra/dec coordinates (J2000.0 = 2000.0). */
   coordinateEpochYear?: number;
   /** How the coordinates were verified against an authoritative catalog. */
-  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
+  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'VERIFIED_SPITZER_WISE' | 'UNVERIFIED';
   /** Source the verified coordinates came from (set when coordinateVerification is set). */
   coordinateSource?: string;
+  /** Whether this target needs primary catalog / SIMBAD cross-check confirmation before trusting centering. */
+  needsPrimaryCheck?: boolean;
   /** Whether the epoch of the stored ra/dec is known. When false, proper-motion propagation is provisional. */
   coordinateEpochKnown?: boolean;
   /** Human-readable note about which epoch the stored coordinates refer to. */
   coordinateEpochNote?: string;
   /** Role of this entry in the challenge target list. */
   role?: 'challenge_target' | 'reference_star';
-  /** Flag to indicate if primary check is required before relying on proper-motion or coordinates. */
-  needsPrimaryCheck?: boolean;
 }
 
 export interface SpectralBandInfo {
@@ -393,6 +393,16 @@ export interface InvestigationResult {
   };
   isSimulated?: boolean;
   simulatedLabel?: string;
+  sourceClassification?: 'REAL_SPHEREX_DATA' | 'REFERENCE_DATA' | 'EDUCATIONAL_SIMULATION' | 'DATA_UNAVAILABLE';
+  availabilityStatus?: {
+    isAvailable: boolean;
+    reasonEn: string;
+    reasonAr: string;
+    scheduledRelease?: string;
+    distanceToNEPDeg?: number;
+    catalogSource?: string;
+    verifiedCoordinates?: { ra: number; dec: number };
+  };
   timeSeries?: any;
   detectorStacks?: any;
   spectrumAtCenter?: any;

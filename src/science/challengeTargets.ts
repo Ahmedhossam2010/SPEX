@@ -503,8 +503,8 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     coordinateEpochKnown: false,
     coordinateEpochNote:
       "The challenge statement gives 08h55m10.831s -07d14m42.53s WITHOUT an epoch. The stored values match SIMBAD's J2000 position, but the challenge epoch is unknown - treat propagation as provisional until the empirical centroid check in scripts/probe_irsa.ts measures the real offset.",
-    coordinateVerification: 'VERIFIED_GAIA_DR3',
-    coordinateSource: 'SIMBAD-sourced values (Wikipedia infobox, extracted 2026-11)',
+    coordinateVerification: 'VERIFIED_SPITZER_HST',
+    coordinateSource: 'Published Spitzer/HST astrometry (Luhman 2014, Kirkpatrick et al. 2021; optical-invisible to Gaia)',
     constellation: 'Hydra',
     scienceType: 'Sub-Brown Dwarf (Y-Dwarf, ~250 K)',
     description:

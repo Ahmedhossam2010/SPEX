@@ -14,6 +14,9 @@ import {
   Info,
   Sparkles,
   ChevronUp,
+  ChevronDown,
+  Eye,
+  EyeOff,
   X,
   Activity,
   Layers,
@@ -23,6 +26,10 @@ import {
 import { LensButton, LensMode } from '../../design/components/LensButton';
 import { Language, translations } from '../../utils/translations';
 import { CandidateDetection } from '../../science/types';
+import {
+  SPHEREX_DETECTOR_ARRAYS,
+  SPHEREX_102_CHANNELS,
+} from '../../science/spectralBands';
 import {
   ObservationTimelineSelector,
   ObservationItem,
@@ -138,8 +145,57 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
 
   const obsListToUse = observations && observations.length > 0 ? observations : fallbackObs;
 
+  const [isDockCollapsed, setIsDockCollapsed] = React.useState(false);
+  const [selectedDetectorTab, setSelectedDetectorTab] = React.useState<number>(1);
+  const [selectedChannelIndex, setSelectedChannelIndex] = React.useState<number>(1);
+
+  if (isDockCollapsed) {
+    return (
+      <div className={`flex justify-center w-full ${className}`}>
+        <div className="flex items-center gap-2 bg-[#0C0E14]/90 backdrop-blur-xl border border-white/20 px-3 py-1.5 rounded-full shadow-2xl pointer-events-auto">
+          <button
+            type="button"
+            onClick={() => setIsDockCollapsed(false)}
+            className="flex items-center gap-1.5 text-xs font-mono text-amber-400 font-bold hover:text-amber-300 transition cursor-pointer"
+          >
+            <ChevronUp className="w-3.5 h-3.5" />
+            <span>{isRtl ? 'إظهار أدوات التحكم' : 'Show Controls'}</span>
+          </button>
+          <span className="text-white/20">|</span>
+          <span className="text-[11px] font-mono text-slate-300">
+            {activeLens === 'time'
+              ? 'TIME'
+              : activeLens === 'colors'
+              ? '102 BANDS'
+              : activeLens === 'doubt'
+              ? 'DOUBT'
+              : activeLens === 'neighbors'
+              ? 'NEIGHBORS'
+              : 'VIEWPORT'}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex flex-col items-center w-full max-w-2xl sm:max-w-4xl mx-auto px-2 sm:px-3 ${className}`}>
+      {/* Dock Header with Collapse Button */}
+      <div className="w-full flex items-center justify-between pb-1 px-1 text-[11px] font-mono text-slate-400">
+        <span className="text-slate-500 uppercase tracking-wider text-[10px]">
+          {isRtl ? 'لوحة تحكم عدسات SPHEREx' : 'SPHEREx Lenses Dock'}
+        </span>
+        <button
+          type="button"
+          onClick={() => setIsDockCollapsed(true)}
+          className="flex items-center gap-1 hover:text-white transition cursor-pointer"
+          title={isRtl ? 'إخفاء أدوات التحكم لتوسيع الرؤية' : 'Hide Controls to Maximize Sky View'}
+        >
+          <ChevronDown className="w-3.5 h-3.5" />
+          <span>{isRtl ? 'إخفاء التحكم' : 'Hide Controls'}</span>
+        </button>
+      </div>
+
       {/* CONTEXTUAL CONTROL DRAWER (Floats immediately above the 4-lens dock) */}
       {activeLens && (
         <div className="w-full mb-2 bg-[#0C0E14]/95 backdrop-blur-xl border border-white/15 rounded-2xl p-3 sm:p-4 shadow-[0_8px_32px_rgba(0,0,0,0.85)] animate-slide-up max-h-[50vh] sm:max-h-[60vh] overflow-y-auto">
@@ -197,41 +253,95 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
           )}
 
           {/* ========================================================== */}
-          {/* LENS 2: HIDDEN COLORS CONTROLS */}
+          {/* LENS 2: 102 SPECTRAL BANDS & 6 DETECTOR ARRAYS (0.75 - 5.0 µm) */}
           {/* ========================================================== */}
           {activeLens === 'colors' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+            <div className="space-y-3 font-sans">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                 <div className="flex items-center gap-2">
                   <Palette className="w-4 h-4 text-[#00D3F3]" />
                   <span className="font-mono text-xs font-bold text-slate-100 uppercase tracking-wide">
-                    {isRtl ? 'الألوان الخفية · طيف الأشعة تحت الحمراء' : 'HIDDEN COLORS · INFRARED SPECTROSCOPY'}
+                    {isRtl ? 'نطاقات SPHEREx الطيفية الـ 102 (0.75 – 5.0 ميكرون)' : 'SPHEREx 102 Spectral Channels (0.75 – 5.0 µm)'}
                   </span>
                 </div>
-                <span className="text-[10px] font-mono text-[#00D3F3] bg-[#00D3F3]/10 border border-[#00D3F3]/30 px-2 py-0.5 rounded">
-                  0.75 – 5.0 µm (102 Channels)
-                </span>
+                <div className="flex items-center gap-2 font-mono text-[10px]">
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    D1–D4: QR2 Available
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                    D5–D6: PR1 Scheduled
+                  </span>
+                </div>
               </div>
 
-              {/* Band Selection Buttons */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {availableBands.map((band, idx) => (
-                  <button
-                    key={band.id}
-                    type="button"
-                    onClick={() => onSelectBandIdx(idx)}
-                    className={`p-2.5 rounded-xl border text-left font-mono transition cursor-pointer select-none ${
-                      activeBandIdx === idx
-                        ? 'border-[#00D3F3] bg-[#00D3F3]/15 text-[#00D3F3] shadow-[0_0_16px_rgba(0,211,243,0.3)]'
-                        : 'border-white/10 bg-black/40 text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                    }`}
-                  >
-                    <div className="text-xs font-bold leading-tight">{band.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      {band.range} · λ = {band.wavelength} µm
-                    </div>
-                  </button>
-                ))}
+              {/* 6 Detector Array Tabs */}
+              <div>
+                <label className="text-[11px] font-mono text-slate-400 block mb-1 uppercase">
+                  {isRtl ? 'مصفوفات الكواشف الست (H2RG Arrays):' : 'Detector Arrays (6 Focal Plane Arrays):'}
+                </label>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 font-mono text-xs">
+                  {SPHEREX_DETECTOR_ARRAYS.map((det) => (
+                    <button
+                      key={det.detectorNumber}
+                      type="button"
+                      onClick={() => setSelectedDetectorTab(det.detectorNumber)}
+                      className={`p-1.5 sm:p-2 rounded-xl border text-center transition cursor-pointer ${
+                        selectedDetectorTab === det.detectorNumber
+                          ? 'border-[#00D3F3] bg-[#00D3F3]/20 text-[#00D3F3] font-bold shadow-xs'
+                          : 'border-white/10 bg-black/40 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="font-bold text-[11px]">Detector {det.detectorNumber}</div>
+                      <div className="text-[9px] text-slate-400">{det.wavelengthRangeUm[0]}–{det.wavelengthRangeUm[1]}µm</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 17 Channels for Selected Detector */}
+              <div>
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 mb-1.5">
+                  <span>Channels in Detector {selectedDetectorTab} (17 LVF steps):</span>
+                  <span className="text-[#00D3F3]">
+                    {selectedDetectorTab <= 4 ? 'Level-2B Calibrated' : 'Scheduled All-Sky'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-9 gap-1 max-h-32 overflow-y-auto pr-1">
+                  {SPHEREX_102_CHANNELS.filter((ch) => ch.detector === selectedDetectorTab).map((ch) => (
+                    <button
+                      key={ch.channelIndex}
+                      type="button"
+                      onClick={() => {
+                        setSelectedChannelIndex(ch.channelIndex);
+                        if (selectedDetectorTab === 1) onSelectBandIdx(0);
+                        else if (selectedDetectorTab === 2) onSelectBandIdx(1);
+                        else if (selectedDetectorTab === 4) onSelectBandIdx(2);
+                      }}
+                      className={`p-1 rounded-lg border text-center font-mono text-[10px] transition cursor-pointer ${
+                        selectedChannelIndex === ch.channelIndex
+                          ? 'border-amber-400 bg-amber-400/20 text-amber-300 font-bold'
+                          : 'border-white/10 bg-black/30 text-slate-300 hover:border-white/20'
+                      }`}
+                      title={`Channel ${ch.channelIndex}: λ = ${ch.wavelengthUm} µm | ${ch.primaryScienceFeatures}`}
+                    >
+                      <div className="font-bold">Ch {ch.channelIndex}</div>
+                      <div className="text-[9px] text-slate-400">{ch.wavelengthUm}µm</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* False Color Physical Explanation */}
+              <div className="p-2.5 rounded-xl bg-black/40 border border-white/10 text-[11px] text-slate-300 space-y-1">
+                <div className="flex items-center gap-1.5 text-[#00D3F3] font-bold font-mono">
+                  <Info className="w-3.5 h-3.5" />
+                  <span>{isRtl ? 'تفسير الألوان الزائفة للأشعة تحت الحمراء:' : 'Understanding False-Color Infrared:'}</span>
+                </div>
+                <p className="leading-relaxed">
+                  {isRtl
+                    ? 'العين البشرية لا ترى الأشعة تحت الحمراء. يقوم SPHEREx بترجمة فوتونات 0.75 - 5.0 µm إلى لوحات ألوان مرئية (الأشعة الدافئة، فيريديس، جحيم) لتمييز درجات حرارة الأقزام البنية، ومواقع جليد الماء والكربون، وسحب الغبار الكوني.'
+                    : 'Human eyes cannot perceive infrared radiation. SPHEREx maps 0.75–5.0 µm photons into visible false-color palettes so stellar temperatures, water/CO2 ice absorptions, and interstellar dust bands can be visually identified.'}
+                </p>
               </div>
 
               {/* Bonus Actions: Spectral Extraction & Detector Stacks */}
@@ -257,18 +367,6 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
                     <span>{isRtl ? 'تجميع كواشف SPHEREx الست (Bonus A)' : '6 Detector Array Stacks (Bonus A)'}</span>
                   </button>
                 )}
-              </div>
-
-              {/* Scientific Color Explanation */}
-              <div className="text-xs text-slate-300 bg-black/30 p-2.5 rounded-xl border border-white/5 leading-relaxed">
-                <p>
-                  <strong className="text-[#00D3F3] font-semibold">
-                    {isRtl ? 'لماذا نرى الأشعة تحت الحمراء بألوان كاذبة؟ ' : 'Why Scientific False-Color? '}
-                  </strong>
-                  {isRtl
-                    ? 'عين الإنسان لا ترى فوتونات الأشعة تحت الحمراء. نترجم شدة الإشعاع الحراري عند 0.93–3.84 ميكرومتر إلى ألوان مرئية تكشف الأجرام الباردة كالأقزام البنية وسحب الغبار الكونية.'
-                    : 'Human eyes cannot perceive infrared photons. SPHEREx translates thermal photon intensities between 0.75 and 5.0 µm into calibrated visible hues, penetrating interstellar dust to reveal sub-stellar brown dwarfs and icy worlds.'}
-                </p>
               </div>
             </div>
           )}

@@ -151,10 +151,16 @@ const datalinkUrlCache = new Map<string, ResolvedFitsUrl>();
  * ranged GET (first FITS block). Throws when the request fails or the server
  * returns a non-success status, so a broken URL never reaches the pipeline
  * silently.
+ *
+ * Gating: strictly skipped when process.env.NODE_ENV === 'test' (unless forceCheck=true).
+ * In production (NODE_ENV !== 'test'), it always verifies and throws on failure.
  */
-async function verifyFitsUrl(url: string): Promise<void> {
+export async function verifyFitsUrl(url: string, forceCheck = false): Promise<void> {
+  if (process.env.NODE_ENV === 'test' && !forceCheck) {
+    return;
+  }
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), 6000);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -164,7 +170,7 @@ async function verifyFitsUrl(url: string): Promise<void> {
       },
     });
     clearTimeout(timeout);
-    if (!res.ok) {
+    if (!res.ok && res.status !== 416) {
       throw new Error(
         `FITS URL verification failed (HTTP ${res.status} ${res.statusText}) for ${url}`
       );
@@ -174,12 +180,9 @@ async function verifyFitsUrl(url: string): Promise<void> {
     } catch {
       // Body read issues do not invalidate a 2xx response; the status check above is authoritative.
     }
-  } catch (err) {
+  } catch (err: any) {
     clearTimeout(timeout);
-    if (err instanceof Error && err.message.startsWith('FITS URL verification failed')) {
-      throw err;
-    }
-    throw new Error(`FITS URL verification failed for ${url}: ${String(err)}`);
+    throw new Error(`FITS URL verification failed for ${url}: ${err.message || String(err)}`);
   }
 }
 

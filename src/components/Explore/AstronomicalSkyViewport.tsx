@@ -49,6 +49,18 @@ export interface AstronomicalSkyViewportProps {
   isLoading?: boolean;
   targetName?: string;
   fovArcmin?: number;
+  sourceClassification?: 'REAL_SPHEREX_DATA' | 'REFERENCE_DATA' | 'EDUCATIONAL_SIMULATION' | 'DATA_UNAVAILABLE';
+  availabilityStatus?: {
+    isAvailable: boolean;
+    reasonEn: string;
+    reasonAr: string;
+    scheduledRelease?: string;
+    distanceToNEPDeg?: number;
+    catalogSource?: string;
+    verifiedCoordinates?: { ra: number; dec: number };
+  };
+  targetCoords?: { ra: number; dec: number };
+  onSelectBenchmark?: (caseId: string) => void;
   className?: string;
 }
 
@@ -85,10 +97,16 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
   isLoading = false,
   targetName,
   fovArcmin = 6.6,
+  sourceClassification,
+  availabilityStatus,
+  targetCoords,
+  onSelectBenchmark,
   className = '',
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];
+
+  const isUnavailable = sourceClassification === 'DATA_UNAVAILABLE' || (availabilityStatus && !availabilityStatus.isAvailable);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -673,6 +691,94 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
               <span className="text-slate-400 text-[10px]">MJy/sr</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* UNAVAILABLE TARGET IN CURRENT RELEASE (Truthful scientific disclosure) */}
+      {isUnavailable && (
+        <div className="absolute inset-0 z-30 pointer-events-auto bg-[#030712]/85 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-6 text-center select-text">
+          {/* Central Target Reticle */}
+          <div className="relative w-28 h-28 mb-4 flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 rounded-full border border-dashed border-[#00D3F3]/40 animate-spin" style={{ animationDuration: '30s' }} />
+            <div className="absolute inset-4 rounded-full border border-amber-500/30" />
+            <div className="absolute inset-8 rounded-full border border-[#00D3F3]/60" />
+            <div className="absolute w-full h-[1px] bg-gradient-to-r from-transparent via-[#00D3F3]/70 to-transparent" />
+            <div className="absolute h-full w-[1px] bg-gradient-to-b from-transparent via-[#00D3F3]/70 to-transparent" />
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+          </div>
+
+          {/* Telemetry Card */}
+          <div className="max-w-xl w-full bg-[#0C0E14]/90 border border-white/15 rounded-2xl p-4 sm:p-5 shadow-2xl text-left space-y-3 font-sans">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+                <h3 className="text-sm font-bold text-slate-100 font-mono tracking-tight">
+                  {targetName || 'Astronomical Target'} · {isRtl ? 'خارج نطاق إصدار QR2' : 'Outside QR2 Polar Footprint'}
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                {availabilityStatus?.scheduledRelease || 'PR1 All-Sky Scheduled'}
+              </span>
+            </div>
+
+            {/* Coordinates & Metadata */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 font-mono text-xs text-slate-300">
+              <div className="bg-black/40 p-2 rounded-lg border border-white/5">
+                <span className="text-slate-500 text-[10px] block">RIGHT ASCENSION</span>
+                <span className="font-bold text-[#FFB900]">
+                  {targetCoords?.ra ? `${targetCoords.ra.toFixed(4)}°` : 'Verified'}
+                </span>
+              </div>
+              <div className="bg-black/40 p-2 rounded-lg border border-white/5">
+                <span className="text-slate-500 text-[10px] block">DECLINATION</span>
+                <span className="font-bold text-[#FFB900]">
+                  {targetCoords?.dec !== undefined ? `${targetCoords.dec >= 0 ? '+' : ''}${targetCoords.dec.toFixed(4)}°` : 'Verified'}
+                </span>
+              </div>
+              <div className="bg-black/40 p-2 rounded-lg border border-white/5 col-span-2 sm:col-span-1">
+                <span className="text-slate-500 text-[10px] block">DISTANCE TO NEP</span>
+                <span className="font-bold text-[#00D3F3]">
+                  {availabilityStatus?.distanceToNEPDeg ? `~${availabilityStatus.distanceToNEPDeg.toFixed(1)}°` : '> 60°'}
+                </span>
+              </div>
+            </div>
+
+            {/* Scientific Explanation */}
+            <p className="text-xs text-slate-300 leading-relaxed font-sans">
+              {isRtl
+                ? availabilityStatus?.reasonAr ||
+                  'يقتصر الإصدار الأولي العام الحالي (QR2) على رصدات الشريط العميق للقطب الشمالي لمسار الشمس ومواقع التحقق المرجعية. ستكون بيانات هذا الجرم متاحة بالكامل في مسح السماء الشامل (PR1).'
+                : availabilityStatus?.reasonEn ||
+                  'The current public release (QR2) covers deep observations centered on the North Ecliptic Pole (NEP). Full all-sky near-infrared spectral coverage of this target will be accessible in Public Release 1 (PR1).'}
+            </p>
+
+            {/* Benchmark Switch Action Buttons */}
+            <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-mono text-slate-400">
+                {isRtl ? 'فحص بيانات QR2 الحقيقية المتاحة:' : 'Inspect Available QR2 Data:'}
+              </span>
+              <div className="flex items-center gap-2 font-mono text-xs">
+                {onSelectBenchmark && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onSelectBenchmark('case-barnards-star')}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold transition cursor-pointer"
+                    >
+                      Barnard&apos;s Star (QR2)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSelectBenchmark('case-nep-var-01')}
+                      className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold transition cursor-pointer"
+                    >
+                      NEP Benchmark (QR2)
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

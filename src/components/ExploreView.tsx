@@ -113,6 +113,18 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [showTour, setShowTour] = useState<boolean>(false);
   const [highlightedTargetId, setHighlightedTargetId] = useState<string | null>(null);
 
+  // Auto-launch guided tour for first-time visitors (Phase 6)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const tourDone = localStorage.getItem('spex_tour_completed');
+    if (!tourDone) {
+      const timer = setTimeout(() => {
+        setShowTour(true);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   // Modals
   const [showPostcard, setShowPostcard] = useState<boolean>(false);
   const [showProvenance, setShowProvenance] = useState<boolean>(false);
@@ -155,7 +167,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     const sizePix = currentResult.epoch1?.width || 64;
 
     fetch(`/api/spherex/timeseries?ra=${ra}&dec=${dec}&sizePix=${sizePix}&caseId=${caseId}`)
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok && r.headers.get('content-type')?.includes('application/json') ? r.json() : null))
       .then((data) => {
         if (data?.frames && Array.isArray(data.frames) && data.frames.length > 0) {
           setTimeseriesFrames(data.frames);
@@ -510,6 +522,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               isLoading={isLoading}
               targetName={targetDisplayName}
               fovArcmin={currentResult?.fovArcmin || 6.6}
+              sourceClassification={currentResult?.sourceClassification}
+              availabilityStatus={currentResult?.availabilityStatus}
+              targetCoords={currentResult?.targetCoords}
+              onSelectBenchmark={(caseId) => onSelectCase(caseId)}
               className="w-full h-full"
             />
 

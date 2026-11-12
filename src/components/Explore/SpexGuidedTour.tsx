@@ -178,6 +178,12 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
   }, [currentStep]);
 
   useEffect(() => {
+    if (isOpen) {
+      setCurrentStepIdx(0);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
     if (!isOpen) return;
 
     if (currentStep?.prepareAction) {
@@ -197,11 +203,18 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
   if (!isOpen) return null;
 
+  const handleFinish = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('spex_tour_completed', 'true');
+    }
+    onClose();
+  };
+
   const handleNext = () => {
     if (currentStepIdx < steps.length - 1) {
       setCurrentStepIdx((prev) => prev + 1);
     } else {
-      onClose();
+      handleFinish();
     }
   };
 
@@ -315,7 +328,7 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleFinish}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
             title={isRtl ? 'إغلاق الجولة' : 'Close Tour'}
           >
@@ -332,7 +345,7 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
         <div className="flex items-center justify-between pt-2 border-t border-white/10">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleFinish}
             className="text-[11px] font-mono text-slate-400 hover:text-slate-200 transition cursor-pointer px-2 py-1"
           >
             {isRtl ? 'تخطي الجولة' : 'Skip Tour'}

@@ -300,8 +300,8 @@ export const FAMOUS_OBJECTS_CATALOG: FamousObject[] = [
     pmRaMasYr: -8123.7,
     pmDecMasYr: 673.2,
     coordinateEpochYear: 2000.0,
-    coordinateVerification: 'VERIFIED_GAIA_DR3',
-    catalogReferences: ['AllWISE J085510.83-071442.5', 'SIMBAD WISE J085510.83-071442.5'],
+    coordinateVerification: 'VERIFIED_SPITZER_HST',
+    catalogReferences: ['AllWISE J085510.83-071442.5', 'SIMBAD WISE J085510.83-071442.5', 'Spitzer/HST Astrometry (Luhman 2014)'],
     shortDescriptionEn: 'The coldest known sub-stellar object outside the solar system (~250 K), with water-ice cloud evidence.',
     shortDescriptionAr: 'أبرد جرم دون نجمي معروف خارج النظام الشمسي (~250 كلفن)، وتوجد مؤشرات قوية على سحب من جليد الماء في غلافه الجوي.',
     scientificExplanationEn: 'Discovered in 2014 by Kevin Luhman, WISE 0855 is colder than freezing (T ~ -20°C to 0°C). It is nearly invisible in optical light but detectable in thermal infrared Band 4 (2.76 µm) and Band 6 (4.8 µm). Its high proper motion exceeds 8.1″/year.',
@@ -511,7 +511,15 @@ export const FAMOUS_OBJECTS_CATALOG: FamousObject[] = [
 ];
 
 export function getFamousObjectById(id: string): FamousObject | undefined {
-  return FAMOUS_OBJECTS_CATALOG.find((obj) => obj.id.toLowerCase() === id.toLowerCase());
+  if (!id) return undefined;
+  const clean = id.toLowerCase().replace(/^target-/, '').replace(/^case-/, '');
+  return FAMOUS_OBJECTS_CATALOG.find(
+    (obj) =>
+      obj.id.toLowerCase() === id.toLowerCase() ||
+      obj.id.toLowerCase().replace(/^target-/, '') === clean ||
+      (obj.challengeTargetId && obj.challengeTargetId.toLowerCase() === id.toLowerCase()) ||
+      (obj.challengeTargetId && obj.challengeTargetId.toLowerCase().replace(/^target-/, '') === clean)
+  );
 }
 
 export function searchFamousObjects(query: string, category: FamousCategory = 'All'): FamousObject[] {

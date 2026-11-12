@@ -80,6 +80,7 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
 
   const [activeFilter, setActiveFilter] = useState<TimeRangeFilter>('LONGEST');
   const [isExpanded, setIsExpanded] = useState(false);
+  const [unavailableFilterNotice, setUnavailableFilterNotice] = useState<string | null>(null);
 
   // Chronologically sort all observations
   const sortedObs = useMemo(() => {
@@ -173,6 +174,7 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
   // Intelligent preset selector
   const handleApplyPreset = (filter: TimeRangeFilter) => {
     setActiveFilter(filter);
+    setUnavailableFilterNotice(null);
     if (sortedObs.length < 2) return;
 
     if (filter === 'LONGEST' && longestPair) {
@@ -200,19 +202,23 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
     }
 
     if (filter === 'MONTHS') {
-      const pair = findPairWithDelta(30, Infinity);
+      const pair = findPairWithDelta(28, Infinity);
       if (pair) {
         onSelectEpochA(pair.a);
         onSelectEpochB(pair.b);
+      } else {
+        setUnavailableFilterNotice('No matching observation pair is currently available for this time range.');
       }
       return;
     }
 
     if (filter === 'WEEKS') {
-      const pair = findPairWithDelta(7, 30);
+      const pair = findPairWithDelta(7, 28);
       if (pair) {
         onSelectEpochA(pair.a);
         onSelectEpochB(pair.b);
+      } else {
+        setUnavailableFilterNotice('No matching observation pair is currently available for this time range.');
       }
       return;
     }
@@ -222,6 +228,16 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
       if (pair) {
         onSelectEpochA(pair.a);
         onSelectEpochB(pair.b);
+      } else {
+        setUnavailableFilterNotice('No matching observation pair is currently available for this time range.');
+      }
+      return;
+    }
+
+    if (filter === 'ALL') {
+      if (longestPair) {
+        onSelectEpochA(longestPair.bestA);
+        onSelectEpochB(longestPair.bestB);
       }
       return;
     }
@@ -355,8 +371,29 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
         </div>
       </div>
 
+      {/* Unavailable Filter Interval Notice */}
+      {unavailableFilterNotice && (
+        <div className="mt-2.5 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-xs font-mono flex items-center justify-between gap-2 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+            <span>
+              {isRtl
+                ? 'لا يتوفر حالياً زوج رصدات متطابق ضمن هذا النطاق الزمني.'
+                : unavailableFilterNotice}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setUnavailableFilterNotice(null)}
+            className="text-[11px] underline text-slate-400 hover:text-white cursor-pointer px-1 shrink-0"
+          >
+            {isRtl ? 'إغلاق' : 'Dismiss'}
+          </button>
+        </div>
+      )}
+
       {/* Manual Epoch Pair Comparison Selectors & Honest Baseline Disclosure Card */}
-      <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      <div data-tour="epoch_selector" className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
         {/* Epoch 1 (Earlier / Reference) Selector */}
         <div className="md:col-span-4 bg-black/40 p-2.5 rounded-xl border border-white/5 space-y-1">
           <div className="flex items-center justify-between text-[11px] font-mono">
