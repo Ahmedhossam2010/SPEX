@@ -209,7 +209,7 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
   // Attempt resolving from DataLink XML
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
     const res = await fetch(accessUrl, {
       signal: controller.signal,
       headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
@@ -217,10 +217,20 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
     clearTimeout(timeout);
     if (res.ok) {
       const xml = await res.text();
-      const match = xml.match(/<TD>(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^<]+\.fits)<\/TD>/);
-      if (match && match[1]) {
-        await verifyFitsUrl(match[1]);
-        const resolved: ResolvedFitsUrl = { url: match[1], resolvedBy: 'datalink' };
+      // Match absolute science level-2B FITS URL or relative path inside DataLink table
+      const absMatch = xml.match(/<TD>(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^<]+level2[^<]+\.fits)<\/TD>/i);
+      let targetUrl = absMatch ? absMatch[1] : '';
+      if (!targetUrl) {
+        const relMatch = xml.match(/<TD>(spherex\/[^<]+level2[^<]+\.fits)<\/TD>/i) ||
+                         xml.match(/spherex\/[^\s"'<>]+level2[^\s"'<>]+\.fits/i);
+        if (relMatch) {
+          const rawRel = relMatch[1] || relMatch[0];
+          targetUrl = rawRel.startsWith('http') ? rawRel : `https://irsa.ipac.caltech.edu/ibe/data/${rawRel}`;
+        }
+      }
+      if (targetUrl) {
+        await verifyFitsUrl(targetUrl);
+        const resolved: ResolvedFitsUrl = { url: targetUrl, resolvedBy: 'datalink' };
         datalinkUrlCache.set(accessUrl, resolved);
         return resolved;
       }

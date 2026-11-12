@@ -79,11 +79,97 @@ process.on('uncaughtException', (err) => {
 });
 const CACHE_DIR = path.join('/tmp', 'spherex_cache');
 
+// Concurrency limit for IRSA cutout downloads (max 4 parallel)
+class Semaphore {
+  private running = 0;
+  private queue: (() => void)[] = [];
+  constructor(private max: number) {}
+  async acquire(): Promise<() => void> {
+    if (this.running < this.max) {
+      this.running++;
+      return () => this.release();
+    }
+    return new Promise((resolve) => {
+      this.queue.push(() => {
+        this.running++;
+        resolve(() => this.release());
+      });
+    });
+  }
+  private release() {
+    this.running--;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+const cutoutSemaphore = new Semaphore(4);
+
 // Configurable Data Release Paths via Environment Variables (Task 9)
 const SPHEREX_DATA_RELEASE = process.env.SPHEREX_DATA_RELEASE || 'SPHEREx QR2 (Level 2B Processed Science Frames)';
 const SPHEREX_RELEASE_ID = process.env.SPHEREX_RELEASE_ID || 'SPHEREx-QR2-Level2B';
 const SPHEREX_BASE_URL = process.env.SPHEREX_BASE_URL || 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2';
 const SPHEREX_TAP_TABLE = process.env.SPHEREX_TAP_TABLE || 'spherex.obscore';
+
+/**
+ * Universal ADQL query directly testing genuine detector polygon s_region coverage.
+ * Replaces hardcoded coordinate boxes with the authoritative IRSA TAP result.
+ */
+async function queryIrsaTapObs(ra: number, dec: number, limit = 50): Promise<Array<{
+  obs_id: string;
+  s_ra: number;
+  s_dec: number;
+  instrument_name: string;
+  t_min: number;
+  t_max: number;
+  em_min: number;
+  em_max: number;
+  access_url: string;
+}>> {
+  const adql = `SELECT TOP ${limit} obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',${ra},${dec}),s_region)=1 ORDER BY t_min ASC`;
+  const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(adql)}&FORMAT=csv`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(tapUrl, {
+      headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) {
+      console.warn(`[TAP] HTTP ${res.status}: ${res.statusText}`);
+      return [];
+    }
+    const csv = await res.text();
+    const lines = csv.trim().split('\n').filter((l) => l.trim().length > 0);
+    if (lines.length <= 1) return [];
+    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const match = lines[i].match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g) || lines[i].split(',');
+      const cleanCols = match.map((c) => c.trim().replace(/^"|"$/g, ''));
+      const obj: any = {};
+      headers.forEach((h, idx) => {
+        obj[h] = cleanCols[idx] || '';
+      });
+      rows.push({
+        obs_id: String(obj.obs_id || ''),
+        s_ra: parseFloat(obj.s_ra) || 0,
+        s_dec: parseFloat(obj.s_dec) || 0,
+        instrument_name: String(obj.instrument_name || 'SPHEREx'),
+        t_min: parseFloat(obj.t_min) || 0,
+        t_max: parseFloat(obj.t_max) || 0,
+        em_min: parseFloat(obj.em_min) || 0,
+        em_max: parseFloat(obj.em_max) || 0,
+        access_url: String(obj.access_url || ''),
+      });
+    }
+    return rows;
+  } catch (err: any) {
+    clearTimeout(timeout);
+    console.warn(`[TAP] Query failed for RA ${ra}, Dec ${dec}: ${err.message}`);
+    return [];
+  }
+}
 
 if (!fs.existsSync(CACHE_DIR)) {
   fs.mkdirSync(CACHE_DIR, { recursive: true });
@@ -513,11 +599,12 @@ async function getFITSCutout(
   fitsUrl: string,
   ra: number,
   dec: number,
-  sizePix = 64
+  sizePix = 64,
+  obsId?: string
 ): Promise<{ buffer: Buffer; checksum: string }> {
   const cacheKey = crypto
     .createHash('md5')
-    .update(`${fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`)
+    .update(`${obsId || fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`)
     .digest('hex');
   const cacheFile = path.join(CACHE_DIR, `${cacheKey}.fits`);
   const persistentFile = path.join(PERSISTENT_CACHE_DIR, `${cacheKey}.fits`);
@@ -551,6 +638,12 @@ async function getFITSCutout(
   }
 
   if (process.env.SPHEREX_OFFLINE === '1') {
+    const matchedFixture = findMatchingFixtureForUrl(fitsUrl);
+    if (matchedFixture && fs.existsSync(matchedFixture)) {
+      const buffer = fs.readFileSync(matchedFixture);
+      const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+      return { buffer, checksum };
+    }
     const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits'));
     if (cachedFiles.length > 0) {
       const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
@@ -560,16 +653,17 @@ async function getFITSCutout(
     }
   }
 
-  // Fetch cutout directly via IRSA IBE API with fast timeout
-  const cutoutUrl = `${fitsUrl}?center=${ra.toFixed(5)},${dec.toFixed(5)}&size=${sizePix}pix`;
+  // Fetch cutout directly via IRSA IBE API with 25s timeout and concurrency throttle
+  const cutoutUrl = fitsUrl.includes('?') ? fitsUrl : `${fitsUrl}?center=${ra.toFixed(5)},${dec.toFixed(5)}&size=${sizePix}pix`;
   console.log(`[IRSA IBE] Downloading cutout: ${cutoutUrl}`);
 
   let lastError: any = null;
-  const MAX_RETRIES = 1;
+  const MAX_RETRIES = 3;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const release = await cutoutSemaphore.acquire();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3500);
+    const timeout = setTimeout(() => controller.abort(), 25000);
 
     try {
       const res = await fetch(cutoutUrl, {
@@ -607,7 +701,12 @@ async function getFITSCutout(
       if (err.message?.includes('footprint') || err.message?.includes('survey coverage') || err.message?.includes('422')) {
         throw err;
       }
-      console.warn(`[IRSA IBE] Download attempt ${attempt} failed: ${err.message}.`);
+      console.warn(`[IRSA IBE] Download attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}.`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+      }
+    } finally {
+      release();
     }
   }
 
@@ -968,25 +1067,25 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       if (matchingCase) {
         selectedCase = matchingCase;
       } else {
-        // First check if coordinates are within the QR2 coverage footprint
-        const coordCheck = checkCoordinatesInQR2(ra, dec);
-        if (!coordCheck.inside) {
+        // Query live IRSA TAP to find real exposures covering this position within QR2 via authentic s_region
+        const tapObsList = await queryIrsaTapObs(ra, dec, 50);
+
+        if (tapObsList.length === 0) {
           const famousObj = getFamousObjectById(caseId) || FAMOUS_OBJECTS_CATALOG.find((o) => WCS.angularSeparationArcsec(ra, dec, o.ra, o.dec) <= 3600);
           return res.json({
             caseId: caseId || `target-${famousObj?.id || 'unobserved'}`,
             sourceMode: 'live',
             sourceClassification: 'DATA_UNAVAILABLE',
             title: famousObj ? `${famousObj.name}${famousObj.designation ? ` (${famousObj.designation})` : ''}` : `Target at RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°`,
-            description: famousObj ? famousObj.scientificExplanationEn : `Field coordinates outside the current SPHEREx QR2 survey footprint.`,
+            description: famousObj ? famousObj.scientificExplanationEn : `0 SPHEREx observations found for RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}° in ${SPHEREX_DATA_RELEASE}.`,
             targetCoords: { ra, dec },
             fovArcmin: fovArcmin || 6.6,
             sizePix,
             availabilityStatus: {
               isAvailable: false,
-              reasonEn: `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) lie ${coordCheck.distanceDeg.toFixed(1)}° away from the SPHEREx QR2 North Ecliptic Pole verification footprint. This object is scheduled for observation in the SPHEREx Public Release 1 (PR1 All-Sky) survey.`,
-              reasonAr: `تقع الإحداثيات (${ra.toFixed(4)}°، ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) على بعد ${coordCheck.distanceDeg.toFixed(1)}° من نطاق مسح القطب البروجي الشمالي (QR2). الجرم مجدول للرصد في مسح السماء الشامل (PR1 All-Sky).`,
+              reasonEn: `IRSA TAP: 0 SPHEREx observations found for coordinates RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}° in ${SPHEREX_DATA_RELEASE}.`,
+              reasonAr: `لم يتم العثور على أرصاد لمرصد SPHEREx في إصدار ${SPHEREX_DATA_RELEASE} للإحداثيات (${ra.toFixed(4)}°، ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°).`,
               scheduledRelease: 'SPHEREx Public Release 1 (PR1 All-Sky Survey, NASA/IPAC IRSA)',
-              distanceToNEPDeg: Number(coordCheck.distanceDeg.toFixed(1)),
               catalogSource: famousObj?.catalogReferences?.[0] || 'SIMBAD / Gaia DR3',
               verifiedCoordinates: { ra, dec },
             },
@@ -1007,15 +1106,14 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
               maxSignificance: 0,
               candidateCount: 0,
               timeBaselineDays: 0,
-              summaryProse: `No SPHEREx observations are currently available for this celestial position in the QR2 deep polar release. Authentic calibrated FITS data will become available during the PR1 All-Sky data release.`,
-              statisticalJustification: `Field coverage: 0 observations in SPHEREx QR2 (distance to NEP: ${coordCheck.distanceDeg.toFixed(1)}°).`,
+              summaryProse: `No SPHEREx observations are currently available for this celestial position in the QR2 archive. Authentic calibrated FITS data will become available during the PR1 All-Sky data release.`,
+              statisticalJustification: `Field coverage: 0 observations in SPHEREx QR2.`,
               whatWeKnow: [
                 `Verified celestial coordinates: RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°`,
                 famousObj?.classification ? `Astrophysical classification: ${famousObj.classification}` : 'Coordinates verified against astronomical reference catalogs',
-                `SPHEREx QR2 footprint is restricted to the North Ecliptic Pole deep monitoring strip (~0.39 sq deg)`,
               ],
               whatWeDontKnow: [
-                `Near-infrared multi-epoch difference photometry will be acquired during PR1 All-Sky operations`,
+                `Near-infrared multi-epoch difference photometry will be acquired during subsequent survey operations`,
               ],
             },
             provenance: {
@@ -1045,104 +1143,77 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
           });
         }
 
-        // Query live IRSA TAP to find real exposures at this position within QR2
-        const tapRadiusDeg = 0.35;
-        const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${tapRadiusDeg}))=1 ORDER BY t_min ASC`;
-        const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
-
-        let tapRows: any[] = [];
-        try {
-          const tapResp = await fetch(tapUrl, {
-            headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-            signal: AbortSignal.timeout(6000),
-          });
-          if (tapResp.ok) {
-            const tapJson: any = await tapResp.json();
-            tapRows = tapJson?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
-          }
-        } catch (tapErr: any) {
-          console.info('[Process] Live TAP query unavailable, utilizing curated benchmark archive.');
+        // Group by detector to select a physically compatible epoch pair
+        const rowsByDet: Record<string, typeof tapObsList> = {};
+        for (const obs of tapObsList) {
+          const detMatch = obs.access_url.match(/\/D([1-6])$/);
+          const det = detMatch ? `D${detMatch[1]}` : (obs.instrument_name.includes('D') ? obs.instrument_name : 'D1');
+          if (!rowsByDet[det]) rowsByDet[det] = [];
+          rowsByDet[det].push(obs);
         }
 
-        if (tapRows.length === 0) {
-          // If live TAP query timed out or returned zero rows, use the curated NEP benchmark exposures
-          ep1 = selectedCase.epoch1;
-          ep2 = selectedCase.epoch2;
-        } else {
-          // Group by detector to select a physically compatible epoch pair
-          const rowsByDet: Record<string, any[]> = {};
-          for (const r of tapRows) {
-            const acc = String(r[8]);
-            const inst = String(r[3] || '');
-            const detMatch = acc.match(/\/D([1-6])$/);
-            const det = detMatch ? `D${detMatch[1]}` : (inst.includes('D') ? inst : 'D1');
-            if (!rowsByDet[det]) rowsByDet[det] = [];
-            rowsByDet[det].push(r);
-          }
+        const chosenDet = Object.keys(rowsByDet).find((d) => rowsByDet[d].length >= 2) || Object.keys(rowsByDet)[0];
+        const detList = rowsByDet[chosenDet] || tapObsList;
 
-          const chosenDet = Object.keys(rowsByDet).find((d) => rowsByDet[d].length >= 2) || Object.keys(rowsByDet)[0];
-          const detList = rowsByDet[chosenDet] || tapRows;
+        const row1 = detList[0];
+        const row2 = detList.length > 1 ? detList[detList.length - 1] : detList[0];
 
-          const row1 = detList[0];
-          const row2 = detList.length > 1 ? detList[1] : detList[0];
+        const obsId1 = row1.obs_id;
+        const obsId2 = row2.obs_id;
+        const acc1 = row1.access_url;
+        const acc2 = row2.access_url;
+        const em1 = ((row1.em_min + row1.em_max) / 2) * 1e6;
+        const em2 = ((row2.em_min + row2.em_max) / 2) * 1e6;
 
-          const obsId1 = String(row1[0]);
-          const obsId2 = String(row2[0]);
-          const acc1 = String(row1[8]);
-          const acc2 = String(row2[8]);
-          const em1 = ((parseFloat(row1[6]) + parseFloat(row1[7])) / 2) * 1e6;
-          const em2 = ((parseFloat(row2[6]) + parseFloat(row2[7])) / 2) * 1e6;
+        const resolvedFits1 = await resolveFitsUrl(acc1, obsId1, chosenDet);
+        const resolvedFits2 = await resolveFitsUrl(acc2, obsId2, chosenDet);
+        console.info(
+          `[Process] FITS URL resolution: obs1=${resolvedFits1.resolvedBy}, obs2=${resolvedFits2.resolvedBy}`
+        );
 
-          const resolvedFits1 = await resolveFitsUrl(acc1, obsId1, chosenDet);
-          const resolvedFits2 = await resolveFitsUrl(acc2, obsId2, chosenDet);
-          console.info(
-            `[Process] FITS URL resolution: obs1=${resolvedFits1.resolvedBy}, obs2=${resolvedFits2.resolvedBy}`
-          );
+        const detNum = parseInt(chosenDet.replace(/\D/g, ''), 10) || 1;
+        const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+        const bandName = detArray ? detArray.name : `Detector ${chosenDet}`;
 
-          const detNum = parseInt(chosenDet.replace(/\D/g, ''), 10) || 1;
-          const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
-          const bandName = detArray ? detArray.name : `Detector ${chosenDet}`;
+        ep1 = {
+          obs_id: obsId1,
+          fits_url: resolvedFits1.url,
+          mjd: Number(((row1.t_min + row1.t_max) / 2).toFixed(6)),
+          band: bandName,
+          wavelength_um: Number(em1.toFixed(2)),
+          date: new Date(((row1.t_min - 40587) * 86400 * 1000)).toISOString(),
+        };
 
-          ep1 = {
-            obs_id: obsId1,
-            fits_url: resolvedFits1.url,
-            mjd: Number(((parseFloat(row1[4]) + parseFloat(row1[5])) / 2).toFixed(6)),
-            band: bandName,
-            wavelength_um: Number(em1.toFixed(2)),
-            date: new Date(((parseFloat(row1[4]) - 40587) * 86400 * 1000)).toISOString(),
-          };
+        ep2 = {
+          obs_id: obsId2,
+          fits_url: resolvedFits2.url,
+          mjd: Number(((row2.t_min + row2.t_max) / 2).toFixed(6)),
+          band: bandName,
+          wavelength_um: Number(em2.toFixed(2)),
+          date: new Date(((row2.t_min - 40587) * 86400 * 1000)).toISOString(),
+        };
 
-          ep2 = {
-            obs_id: obsId2,
-            fits_url: resolvedFits2.url,
-            mjd: Number(((parseFloat(row2[4]) + parseFloat(row2[5])) / 2).toFixed(6)),
-            band: bandName,
-            wavelength_um: Number(em2.toFixed(2)),
-            date: new Date(((parseFloat(row2[4]) - 40587) * 86400 * 1000)).toISOString(),
-          };
-
-          if (detList.length >= 3) {
-            const topRows = detList.slice(0, 5);
-            try {
-              liveEpochs = await Promise.all(
-                topRows.map(async (row) => {
-                  const rObsId = String(row[0]);
-                  const rAcc = String(row[8]);
-                  const rEm = ((parseFloat(row[6]) + parseFloat(row[7])) / 2) * 1e6;
-                  const resolved = await resolveFitsUrl(rAcc, rObsId, chosenDet);
-                  return {
-                    obs_id: rObsId,
-                    fits_url: resolved.url,
-                    mjd: Number(((parseFloat(row[4]) + parseFloat(row[5])) / 2).toFixed(6)),
-                    band: bandName,
-                    wavelength_um: Number(rEm.toFixed(2)),
-                    date: new Date((parseFloat(row[4]) - 40587) * 86400 * 1000).toISOString(),
-                  };
-                })
-              );
-            } catch (liveErr) {
-              console.info('[Process] Could not resolve all live multi-epoch URLs:', liveErr);
-            }
+        if (detList.length >= 3) {
+          const topRows = detList.slice(0, 5);
+          try {
+            liveEpochs = await Promise.all(
+              topRows.map(async (row) => {
+                const rObsId = row.obs_id;
+                const rAcc = row.access_url;
+                const rEm = ((row.em_min + row.em_max) / 2) * 1e6;
+                const resolved = await resolveFitsUrl(rAcc, rObsId, chosenDet);
+                return {
+                  obs_id: rObsId,
+                  fits_url: resolved.url,
+                  mjd: Number(((row.t_min + row.t_max) / 2).toFixed(6)),
+                  band: bandName,
+                  wavelength_um: Number(rEm.toFixed(2)),
+                  date: new Date((row.t_min - 40587) * 86400 * 1000).toISOString(),
+                };
+              })
+            );
+          } catch (liveErr) {
+            console.info('[Process] Could not resolve all live multi-epoch URLs:', liveErr);
           }
         }
       }
@@ -1592,6 +1663,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         WCS.angularSeparationArcsec(t.ra, t.dec, ra, dec) < 5
     );
 
+    // Query live IRSA TAP to find all exposures covering this position within QR2 via authentic s_region
     let exposures: Array<{
       obsId: string;
       detector: string;
@@ -1605,8 +1677,67 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       visitKey: string;
     }> = [];
 
-    // If we have a matched curated case with authentic Level-2B FITS data, use its epochs directly
-    if (matchingCase) {
+    // Support optional detector/band filter (e.g. ?band=3 or ?detector=D3)
+    const requestedDetector = String(req.query.detector || req.query.band || '').toUpperCase();
+    const cleanDet = requestedDetector.match(/D([1-6])/)
+      ? `D${requestedDetector.match(/D([1-6])/)![1]}`
+      : requestedDetector.match(/^[1-6]$/)
+      ? `D${requestedDetector}`
+      : null;
+
+    // Prioritize live IRSA TAP query for real exposures across the sky
+    const tapRows = await queryIrsaTapObs(ra, dec, 40);
+    if (tapRows.length > 0) {
+      // Group by detector to enforce same-band epoch sequences
+      const rowsByDet: Record<string, typeof tapRows> = {};
+      for (const row of tapRows) {
+        const detMatch = row.access_url.match(/\/D([1-6])$/);
+        const det = detMatch ? `D${detMatch[1]}` : (row.instrument_name.includes('D') ? row.instrument_name : 'D1');
+        if (!rowsByDet[det]) rowsByDet[det] = [];
+        rowsByDet[det].push(row);
+      }
+
+      const chosenDet = cleanDet && rowsByDet[cleanDet]?.length
+        ? cleanDet
+        : Object.keys(rowsByDet).sort((a, b) => rowsByDet[b].length - rowsByDet[a].length)[0] || 'D1';
+
+      const candidateRows = rowsByDet[chosenDet] || tapRows;
+      const MAX_FRAMES = 8;
+      const targetRows = candidateRows.slice(0, MAX_FRAMES);
+
+      // Concurrent DataLink resolution in parallel
+      exposures = await Promise.all(
+        targetRows.map(async (row) => {
+          const obsId = row.obs_id;
+          const inst = row.instrument_name;
+          const tMin = row.t_min;
+          const tMax = row.t_max;
+          const emMin = row.em_min;
+          const emMax = row.em_max;
+          const accessUrl = row.access_url;
+          const detMatch = accessUrl.match(/\/D([1-6])$/);
+          const detector = detMatch ? `D${detMatch[1]}` : (inst.includes('D') ? inst : 'D1');
+          const mjd = Number(((tMin + tMax) / 2).toFixed(6));
+          const date = new Date((mjd - 40587) * 86400 * 1000).toISOString();
+          const wavelengthUm = Number((((emMin + emMax) / 2) * 1e6).toFixed(2));
+          const visitKey = extractVisitKey(obsId);
+          const resolvedFitsTs = await resolveFitsUrl(accessUrl, obsId, detector);
+          return {
+            obsId,
+            detector,
+            accessUrl,
+            fitsUrl: resolvedFitsTs.url,
+            tMin,
+            tMax,
+            mjd,
+            date,
+            wavelengthUm,
+            visitKey,
+          };
+        })
+      );
+    } else if (matchingCase && (matchingCase.id.includes('nep') || matchingCase.id.includes('benchmark'))) {
+      // Offline fallback only for curated NEP verification benchmark files
       const caseEpochs = matchingCase.epochs || [matchingCase.epoch1, matchingCase.epoch2];
       exposures = caseEpochs.map((ep) => {
         const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
@@ -1624,86 +1755,6 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           visitKey: extractVisitKey(ep.obs_id),
         };
       });
-    } else {
-      // For general sky coordinates, check if within QR2 coverage footprint first
-      const coordCheck = checkCoordinatesInQR2(ra, dec);
-      if (!coordCheck.inside) {
-        return res.status(404).json({
-          error: `IRSA TAP: 0 SPHEREx observations found for RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°. This field has not yet been observed in ${SPHEREX_DATA_RELEASE}.`,
-          status: 'NO_OBSERVATIONS',
-          targetCoords: { ra, dec },
-        });
-      }
-
-      // Query TAP for observations covering this position within QR2
-      const tapRadiusDeg = 0.35;
-      const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url FROM ${SPHEREX_TAP_TABLE} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${tapRadiusDeg}))=1 ORDER BY t_min ASC`;
-      const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
-
-      try {
-        const tapResp = await fetch(tapUrl, {
-          headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-          signal: AbortSignal.timeout(6000),
-        });
-        if (tapResp.ok) {
-          const json: any = await tapResp.json();
-          const rows: any[] = json?.VOTABLE?.RESOURCE_ARRAY?.[0]?.TABLE?.DATA?.TABLEDATA ?? [];
-          for (const row of rows) {
-            const obsId = String(row[0]);
-            const inst = String(row[3] || '');
-            const tMin = parseFloat(row[4]);
-            const tMax = parseFloat(row[5]);
-            const emMin = parseFloat(row[6]);
-            const emMax = parseFloat(row[7]);
-            const accessUrl = String(row[8]);
-            const detMatch = accessUrl.match(/\/D([1-6])$/);
-            const detector = detMatch ? `D${detMatch[1]}` : (inst.includes('D') ? inst : 'D1');
-            const mjd = Number(((tMin + tMax) / 2).toFixed(6));
-            const date = new Date((mjd - 40587) * 86400 * 1000).toISOString();
-            const wavelengthUm = Number((((emMin + emMax) / 2) * 1e6).toFixed(2));
-            const visitKey = extractVisitKey(obsId);
-            const resolvedFitsTs = await resolveFitsUrl(accessUrl, obsId, detector);
-            const fitsUrl = resolvedFitsTs.url;
-
-            exposures.push({
-              obsId,
-              detector,
-              accessUrl,
-              fitsUrl,
-              tMin,
-              tMax,
-              mjd,
-              date,
-              wavelengthUm,
-              visitKey,
-            });
-          }
-        }
-      } catch (tapErr: any) {
-        console.info('[TimeSeries] Live TAP query unavailable, utilizing curated benchmark archive.');
-      }
-
-      // Fallback to NEP deep field benchmark exposures if TAP query yielded 0 rows
-      if (exposures.length === 0) {
-        const fallbackCase = selectedCase;
-        const caseEpochs = fallbackCase.epochs || [fallbackCase.epoch1, fallbackCase.epoch2];
-        exposures = caseEpochs.map((ep) => {
-          const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
-          const det = detMatch ? `D${detMatch[1] || detMatch[2]}` : 'D1';
-          return {
-            obsId: ep.obs_id,
-            detector: det,
-            accessUrl: ep.fits_url,
-            fitsUrl: ep.fits_url,
-            tMin: ep.mjd,
-            tMax: ep.mjd + 0.00133,
-            mjd: ep.mjd,
-            date: ep.date,
-            wavelengthUm: ep.wavelength_um,
-            visitKey: extractVisitKey(ep.obs_id),
-          };
-        });
-      }
     }
 
     if (exposures.length === 0) {
@@ -1714,9 +1765,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       });
     }
 
-    // Cap at 12 frames for smooth web playback and responsiveness
-    const MAX_FRAMES = 12;
-    const selectedExposures = exposures.slice(0, MAX_FRAMES);
+    const selectedExposures = exposures;
 
     // Frame mode (Phase 1 verification, item 2):
     // - 'sky' (DEFAULT): one common WCS grid centered on the target's position at a
@@ -1760,13 +1809,9 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         const targetDec = propExp ? propExp.dec : dec;
         const rawCenterRa = frameMode === 'sky' && refPropTs ? refPropTs.ra : targetRa;
         const rawCenterDec = frameMode === 'sky' && refPropTs ? refPropTs.dec : targetDec;
-        const cutoutCenterRa = matchingCase && WCS.angularSeparationArcsec(rawCenterRa, rawCenterDec, matchingCase.ra, matchingCase.dec) > 7200
-          ? matchingCase.ra
-          : rawCenterRa;
-        const cutoutCenterDec = matchingCase && WCS.angularSeparationArcsec(rawCenterRa, rawCenterDec, matchingCase.ra, matchingCase.dec) > 7200
-          ? matchingCase.dec
-          : rawCenterDec;
-        const cutout = await getFITSCutout(exp.fitsUrl, cutoutCenterRa, cutoutCenterDec, sizePix);
+        const cutoutCenterRa = rawCenterRa;
+        const cutoutCenterDec = rawCenterDec;
+        const cutout = await getFITSCutout(exp.fitsUrl, cutoutCenterRa, cutoutCenterDec, sizePix, exp.obsId);
         const parsed = FITSReader.parse(cutout.buffer);
         // Predicted target (mover) pixel position in THIS frame's WCS
         const pix = WCS.skyToPix(targetRa, targetDec, parsed.wcs);
