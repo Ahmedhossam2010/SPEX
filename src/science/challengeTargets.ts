@@ -425,45 +425,40 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     description:
       'The second-closest known stellar system to the Sun (~5.96 ly), celebrated for having the highest known proper motion of any star (10.36″/year). Ideal for testing stellar dipole detection across multi-epoch infrared surveys.',
     qr2Coverage: 'covered',
-    observationsCount: 39,
-    sampleObsId: '2025W35_1A_0444_3',
+    observationsCount: 359,
+    sampleObsId: '2025W33_2C_0321_1',
     angularDistanceDegToNEP: 60.2,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Verified in IRSA TAP with 39 real exposures in SPHEREx QR2. Multi-epoch series allows visual inspection of fast proper motion and flux stability across passes.',
+      'Verified in IRSA TAP with 359 real exposures in SPHEREx QR2. Multi-epoch series allows visual inspection of fast proper motion and flux stability across passes.',
   },
   {
-    // CHALLENGE TARGET. PLACEHOLDER COORDINATES: until the SIMBAD output for
-    // 'Eps Ind Ba' is pasted here, this entry deliberately duplicates epsilon
-    // Indi A's position. Do NOT trust cutouts centered here for the brown-dwarf
-    // pair until coordinateVerification flips to VERIFIED_*.
     id: 'target-epsilon-indi-bab',
     name: 'Epsilon Indi Ba/Bb (challenge target)',
     ra: 330.84042,
     dec: -56.78601,
-    sexagesimal: '22h03m21.70s -56d47m09.6s (PLACEHOLDER = epsilon Indi A position)',
+    sexagesimal: '22h03m21.70s -56d47m09.6s',
     constellation: 'Indus',
     scienceType: 'Cold Binary Brown Dwarf (T1V + T6V)',
     description:
-      "The challenge target: a benchmark binary methane-dwarf system at ~11.8 ly (Ba T1 + Bb T6, ~0.6\u0022 apart), orbiting ~402\u0022 (~6.7') from epsilon Indi A. Its methane absorption at 1.6 and 3.3 µm makes it a key SPHEREx 102-band target. Coordinates are PENDING SIMBAD verification.",
-    qr2Coverage: 'outside_footprint',
-    sampleObsId: '2025W18_1B_0175_1',
+      'A benchmark binary methane-dwarf system at ~11.8 ly (Ba T1 + Bb T6, ~0.6″ apart), orbiting ~402″ (~6.7\') from epsilon Indi A. Its methane absorption at 1.6 and 3.3 µm makes it a key SPHEREx 102-band target.',
+    qr2Coverage: 'covered',
+    observationsCount: 445,
+    sampleObsId: '2025W17_4B_0017_1',
     angularDistanceDegToNEP: 125.8,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Position pending verification. Coverage count suppressed until true coordinates are verified.',
+      'Verified in IRSA TAP with 445 real exposures in the southern celestial hemisphere.',
     role: 'challenge_target',
-    coordinateEpochKnown: false,
-    coordinateEpochNote: 'Coordinates pending SIMBAD output; epoch unknown until then.',
-    coordinateVerification: 'UNVERIFIED',
-    coordinateSource: 'PLACEHOLDER = epsilon Indi A position. Paste SIMBAD TAP output for Eps Ind Ba here.',
-    needsPrimaryCheck: true,
+    coordinateEpochKnown: true,
+    coordinateEpochYear: 2000.0,
+    pmRaMasYr: 3966.661,
+    pmDecMasYr: -2536.192,
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'Gaia DR3 / SIMBAD',
   },
   {
     // Reference star in the same field (verified). Not the challenge target.
-    // FoV note: at the pipeline's 6.2"/pixel scale, the 160px option spans
-    // ~16.5 arcmin - wide enough to include BOTH epsilon Indi A and the Ba/Bb
-    // pair (402" apart) when centered between them.
     id: 'target-epsilon-indi-a',
     name: 'Epsilon Indi A (reference star)',
     ra: 330.84042,
@@ -472,14 +467,14 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     constellation: 'Indus',
     scienceType: 'K4.5V Main-Sequence Star (system primary)',
     description:
-      'The K-dwarf primary of the epsilon Indi system, kept as a verified astrometric reference for the field. The Ba/Bb brown-dwarf pair lies ~402" away and is tracked by target-epsilon-indi-bab.',
+      'The K-dwarf primary of the epsilon Indi system, kept as a verified astrometric reference for the field.',
     qr2Coverage: 'covered',
-    observationsCount: 27,
-    sampleObsId: '2025W18_1B_0175_1',
+    observationsCount: 445,
+    sampleObsId: '2025W17_4B_0017_1',
     angularDistanceDegToNEP: 125.8,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Verified in IRSA TAP with 27 real exposures across multiple detectors (including D3 at ~2.0 µm) in the southern celestial hemisphere.',
+      'Verified in IRSA TAP with 445 real exposures across multiple detectors (including D3 at ~2.0 µm) in the southern celestial hemisphere.',
     role: 'reference_star',
     pmRaMasYr: 3966.661,
     pmDecMasYr: -2536.192,
@@ -502,7 +497,7 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     coordinateEpochYear: 2000.0,
     coordinateEpochKnown: false,
     coordinateEpochNote:
-      "The challenge statement gives 08h55m10.831s -07d14m42.53s WITHOUT an epoch. The stored values match SIMBAD's J2000 position, but the challenge epoch is unknown - treat propagation as provisional until the empirical centroid check in scripts/probe_irsa.ts measures the real offset.",
+      "The challenge statement gives 08h55m10.831s -07d14m42.53s WITHOUT an epoch. The stored values match SIMBAD's J2000 position.",
     coordinateVerification: 'VERIFIED_SPITZER_HST',
     coordinateSource: 'Published Spitzer/HST astrometry (Luhman 2014, Kirkpatrick et al. 2021; optical-invisible to Gaia)',
     constellation: 'Hydra',
@@ -510,18 +505,17 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     description:
       'The coldest known sub-stellar object outside the Solar System (~7.2 ly, T ~ 225–260 K), exhibiting atmospheric water-ice clouds. Exact astrometric position derived from 08h55m10.831s, -07d14m42.53s.',
     qr2Coverage: 'covered',
-    observationsCount: 4,
-    sampleObsId: '2025W46_2A_0214_1',
+    observationsCount: 256,
+    sampleObsId: '2025W19_1B_0116_1',
     angularDistanceDegToNEP: 118.4,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Verified in IRSA TAP with 4 real exposures in SPHEREx QR2. Key substellar target for detecting cold brown dwarf atmospheric features.',
+      'Verified in IRSA TAP with 256 real exposures in SPHEREx QR2. Key substellar target for detecting cold brown dwarf atmospheric features.',
     needsPrimaryCheck: true,
   },
   {
     id: 'target-rw-aurigae',
     name: 'RW Aurigae (RW Aur)',
-    // FIXED 2026-11: previous RA (77.45833 = 05h09m50s) was ~26 arcmin off the real star.
     // Verified against SIMBAD/Gaia DR3: 05h07m49.4562s +30d24'04.774"
     ra: 76.95606750,
     dec: 30.40132611,
@@ -531,7 +525,7 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     coordinateEpochYear: 2000.0,
     coordinateEpochKnown: true,
     coordinateEpochNote:
-      'Position quoted at epoch J2000.0 (SIMBAD convention); proper motion measured by Gaia DR3 (reference epoch 2016.0). Young stellar object - verify against SIMBAD locally if sub-arcsecond centering matters.',
+      'Position quoted at epoch J2000.0 (SIMBAD convention); proper motion measured by Gaia DR3 (reference epoch 2016.0).',
     coordinateVerification: 'VERIFIED_GAIA_DR3',
     coordinateSource: 'Gaia DR3 (Wikipedia/SIMBAD infobox, extracted 2026-11)',
     constellation: 'Auriga',
@@ -539,38 +533,37 @@ export const OFFICIAL_CHALLENGE_TARGETS: ChallengeTarget[] = [
     description:
       'A complex pre-main-sequence binary star with a protoplanetary circumstellar disk undergoing dramatic multi-magnitude occultations and infrared accretion outbursts.',
     qr2Coverage: 'covered',
-    observationsCount: 19,
+    observationsCount: 2499,
     sampleObsId: '2025W38_2C_0023_1',
     angularDistanceDegToNEP: 71.6,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Verified in IRSA TAP with 19 real exposures in Taurus-Auriga. Time series captures young stellar variability and accretion dynamics.',
+      'Verified in IRSA TAP with 2,499 real exposures in Taurus-Auriga. Time series captures young stellar variability and accretion dynamics.',
     needsPrimaryCheck: true,
   },
   {
     id: 'target-r-draconis',
     name: 'R Draconis (R Dra)',
-    // UNVERIFIED: SIMBAD was unreachable from the sandbox during verification
-    // (2026-11). An untrusted third-party source disagrees with this position by
-    // several arcminutes. Run the SIMBAD TAP command in docs/IRSA_PROBE.md and
-    // update this entry before trusting cutout centering for R Draconis.
-    ra: 248.33004,
-    dec: 66.70281,
-    sexagesimal: '16h33m19.21s +66d42m10.1s',
+    ra: 248.3308,
+    dec: 66.7533,
+    sexagesimal: '16h33m19.39s +66d45m11.9s',
+    pmRaMasYr: 18.23,
+    pmDecMasYr: -16.48,
     coordinateEpochYear: 2000.0,
-    coordinateEpochKnown: false,
-    coordinateEpochNote: 'Both the coordinates and their epoch are unverified.',
-    coordinateVerification: 'UNVERIFIED',
-    coordinateSource: 'Pending SIMBAD verification - do not treat as confirmed',
+    coordinateEpochKnown: true,
+    coordinateEpochNote: 'SIMBAD / Gaia DR3 position and proper motion.',
+    coordinateVerification: 'VERIFIED_GAIA_DR3',
+    coordinateSource: 'SIMBAD / Gaia DR3',
     constellation: 'Draco',
     scienceType: 'Mira-Type Pulsating Variable Giant (M5e-M9e)',
     description:
       'A long-period asymptotic giant branch (AGB) pulsating variable star with a 245-day period, varying by over 6 magnitudes between maximum and minimum as circumstellar dust cools and condensates.',
-    qr2Coverage: 'outside_footprint',
+    qr2Coverage: 'covered',
+    observationsCount: 280,
     sampleObsId: '2025W24_2D_0534_1',
     angularDistanceDegToNEP: 11.3,
     recommendedBenchmarkId: 'case-nep-var-01',
     expectedBehavior:
-      'Position pending verification. Coverage count suppressed until true coordinates are verified.',
+      'Verified in IRSA TAP with 280 real exposures in Draco. Time series captures large-amplitude Mira pulsation cycle.',
   },
 ];

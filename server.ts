@@ -15,12 +15,12 @@ import {
   SPHERExObservation,
   ProvenanceRecord,
   CandidateDetection,
+  ChallengeTarget,
 } from './src/science/types';
 import { SPEXMood } from './src/spex/spexAssets';
 import {
   OFFICIAL_CHALLENGE_TARGETS,
   SPHEREX_QR2_FOOTPRINT,
-  checkCoordinatesInQR2,
 } from './src/science/challengeTargets';
 import {
   SPHEREX_DETECTOR_ARRAYS,
@@ -44,6 +44,29 @@ import {
 import { parseCoordinateInput } from './src/science/coordinates';
 import { propagatePosition, julianYearFromMjd } from './src/science/properMotion';
 import { FAMOUS_OBJECTS_CATALOG, getFamousObjectById } from './src/science/famousObjects';
+
+function findTargetDefinition(identifier?: string, ra?: number, dec?: number): ChallengeTarget | undefined {
+  const cleanId = (identifier || '').replace(/^(case|target)-/, '').toLowerCase().replace(/[-_]/g, '');
+  if (cleanId) {
+    const byId = OFFICIAL_CHALLENGE_TARGETS.find((t) => {
+      const tClean = t.id.replace(/^(case|target)-/, '').toLowerCase().replace(/[-_]/g, '');
+      return tClean.includes(cleanId) || cleanId.includes(tClean);
+    });
+    if (byId) return byId;
+  }
+  if (Number.isFinite(ra) && Number.isFinite(dec)) {
+    return OFFICIAL_CHALLENGE_TARGETS.find((t) => WCS.angularSeparationArcsec(t.ra, t.dec, ra!, dec!) < 3600);
+  }
+  return undefined;
+}
+
+function getTapQueryCoords(ra: number, dec: number, target?: ChallengeTarget): { queryRa: number; queryDec: number } {
+  if (target && target.pmRaMasYr != null && target.pmDecMasYr != null && target.coordinateEpochYear != null) {
+    const prop = propagatePosition(ra, dec, target.pmRaMasYr, target.pmDecMasYr, target.coordinateEpochYear, 2025.6);
+    return { queryRa: prop.ra, queryDec: prop.dec };
+  }
+  return { queryRa: ra, queryDec: dec };
+}
 
 const app = express();
 
@@ -595,13 +618,14 @@ const CURATED_CASES: CuratedCase[] = [
 ];
 
 // Helper: Download or read cached FITS cutout from IRSA with retry, persistent cache, and fallback
+// Helper: Download or read cached FITS cutout from IRSA with retry, persistent cache, and fallback
 async function getFITSCutout(
   fitsUrl: string,
   ra: number,
   dec: number,
   sizePix = 64,
   obsId?: string
-): Promise<{ buffer: Buffer; checksum: string }> {
+): Promise<{ buffer: Buffer; checksum: string; isDemoCopy?: boolean; trueCenter?: { ra: number; dec: number }; trueObsId?: string }> {
   const cacheKey = crypto
     .createHash('md5')
     .update(`${obsId || fitsUrl}_${ra.toFixed(5)}_${dec.toFixed(5)}_${sizePix}`)
@@ -649,7 +673,13 @@ async function getFITSCutout(
       const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
       const buffer = fs.readFileSync(fallbackPath);
       const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-      return { buffer, checksum };
+      return {
+        buffer,
+        checksum,
+        isDemoCopy: true,
+        trueCenter: { ra: 276.2614, dec: 64.8258 },
+        trueObsId: '2025W18_1B_0001_1',
+      };
     }
   }
 
@@ -717,6 +747,21 @@ async function getFITSCutout(
     const buffer = fs.readFileSync(matchedFixture);
     const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
     return { buffer, checksum };
+  }
+
+  // Cached fallback: if live fetch fails, return demo copy with TRUE center coordinates and obs_id
+  const cachedFiles = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits')) : [];
+  if (cachedFiles.length > 0) {
+    const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
+    const buffer = fs.readFileSync(fallbackPath);
+    const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+    return {
+      buffer,
+      checksum,
+      isDemoCopy: true,
+      trueCenter: { ra: 276.2614, dec: 64.8258 },
+      trueObsId: '2025W18_1B_0001_1',
+    };
   }
 
   throw lastError || new Error(`Failed to retrieve authentic SPHEREx FITS cutout from NASA IRSA for ${fitsUrl}`);
@@ -908,13 +953,24 @@ app.get('/api/spherex/targets', (req: Request, res: Response) => {
 });
 
 // API: Survey Footprint & Sky Coverage Explorer
-app.get('/api/spherex/coverage', (req: Request, res: Response) => {
+app.get('/api/spherex/coverage', async (req: Request, res: Response) => {
   const ra = parseFloat(req.query.ra as string);
   const dec = parseFloat(req.query.dec as string);
 
   let userCoordCheck = null;
   if (Number.isFinite(ra) && Number.isFinite(dec)) {
-    userCoordCheck = checkCoordinatesInQR2(ra, dec);
+    const targetDef = findTargetDefinition(undefined, ra, dec);
+    const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
+    const tapRows = await queryIrsaTapObs(queryRa, queryDec, 1);
+    const inside = tapRows.length > 0;
+    userCoordCheck = {
+      inside,
+      coverageCount: tapRows.length,
+      distanceDeg: 0,
+      reason: inside
+        ? `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) are verified with live observations in SPHEREx QR2.`
+        : `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) currently have 0 observations in SPHEREx QR2.`,
+    };
   }
 
   return res.json({
@@ -1046,29 +1102,14 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
         });
       }
 
-      // Check if coordinates match one of our curated benchmark cases (e.g. Barnard's Star, WISE 0855, RW Aurigae, R Draconis, Epsilon Indi, NEP)
-      matchingCase = CURATED_CASES.find(
-        (c) => WCS.angularSeparationArcsec(ra, dec, c.ra, c.dec) <= 3600
-      );
+      const targetDef = findTargetDefinition(caseId, ra, dec);
+      const isNepBenchmark = !customCoords && (caseId === 'case-nep-var-01' || caseId === 'case-cal-stable-02' || caseId === 'case-artifact-flag-03' || caseId === 'case-band-mismatch-04');
 
-      if (!matchingCase) {
-        const matchingTarget = OFFICIAL_CHALLENGE_TARGETS.find(
-          (t) => WCS.angularSeparationArcsec(ra, dec, t.ra, t.dec) <= 3600
-        );
-        if (matchingTarget) {
-          matchingCase = CURATED_CASES.find(
-            (c) =>
-              c.id.toLowerCase().includes(matchingTarget.id.replace('target-', '').toLowerCase()) ||
-              WCS.angularSeparationArcsec(c.ra, c.dec, matchingTarget.ra, matchingTarget.dec) <= 3600
-          );
-        }
-      }
-
-      if (matchingCase) {
-        selectedCase = matchingCase;
+      if (isNepBenchmark) {
+        selectedCase = CURATED_CASES.find((c) => c.id === caseId) || CURATED_CASES[0];
       } else {
-        // Query live IRSA TAP to find real exposures covering this position within QR2 via authentic s_region
-        const tapObsList = await queryIrsaTapObs(ra, dec, 50);
+        const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
+        const tapObsList = await queryIrsaTapObs(queryRa, queryDec, 50);
 
         if (tapObsList.length === 0) {
           const famousObj = getFamousObjectById(caseId) || FAMOUS_OBJECTS_CATALOG.find((o) => WCS.angularSeparationArcsec(ra, dec, o.ra, o.dec) <= 3600);
@@ -1623,45 +1664,22 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       }
     }
 
-    let matchingCase = CURATED_CASES.find((c) => c.id === caseId);
-    if (!matchingCase && caseId) {
-      const targetIdClean = caseId.replace(/^target-/, '').toLowerCase();
-      matchingCase = CURATED_CASES.find((c) => c.id.toLowerCase().includes(targetIdClean));
-    }
-    if (!matchingCase && Number.isFinite(ra) && Number.isFinite(dec)) {
-      matchingCase = CURATED_CASES.find(
-        (c) => WCS.angularSeparationArcsec(ra, dec, c.ra, c.dec) <= 3600
-      );
-      if (!matchingCase) {
-        const matchingTarget = OFFICIAL_CHALLENGE_TARGETS.find(
-          (t) => WCS.angularSeparationArcsec(ra, dec, t.ra, t.dec) <= 3600
-        );
-        if (matchingTarget) {
-          matchingCase = CURATED_CASES.find(
-            (c) =>
-              c.id.toLowerCase().includes(matchingTarget.id.replace('target-', '').toLowerCase()) ||
-              WCS.angularSeparationArcsec(c.ra, c.dec, matchingTarget.ra, matchingTarget.dec) <= 3600
-          );
-        }
+    const selectedCase = CURATED_CASES.find((c) => c.id === caseId);
+    const targetDef = findTargetDefinition(caseId, ra, dec);
+    if (targetDef) {
+      if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
+        ra = targetDef.ra;
+        dec = targetDef.dec;
       }
-    }
-
-    const selectedCase = matchingCase || CURATED_CASES[0];
-    if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
-      ra = selectedCase.ra;
-      dec = selectedCase.dec;
+    } else if (!Number.isFinite(ra) || !Number.isFinite(dec)) {
+      const fallbackCase = selectedCase || CURATED_CASES[0];
+      ra = fallbackCase.ra;
+      dec = fallbackCase.dec;
     }
 
     // ---- Phase 1 verification: proper-motion propagation (time-series route) ----
-    // Each exposure is cut out around the target's propagated position at that
-    // exposure's own observation date, so the target stays centered in every frame.
-    const matchedTargetTs = OFFICIAL_CHALLENGE_TARGETS.find(
-      (t) =>
-        t.pmRaMasYr != null &&
-        t.pmDecMasYr != null &&
-        t.coordinateEpochYear != null &&
-        WCS.angularSeparationArcsec(t.ra, t.dec, ra, dec) < 5
-    );
+    const matchedTargetTs = targetDef;
+    const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
 
     // Query live IRSA TAP to find all exposures covering this position within QR2 via authentic s_region
     let exposures: Array<{
@@ -1686,7 +1704,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       : null;
 
     // Prioritize live IRSA TAP query for real exposures across the sky
-    const tapRows = await queryIrsaTapObs(ra, dec, 40);
+    const tapRows = await queryIrsaTapObs(queryRa, queryDec, 40);
     if (tapRows.length > 0) {
       // Group by detector to enforce same-band epoch sequences
       const rowsByDet: Record<string, typeof tapRows> = {};
@@ -1736,10 +1754,10 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           };
         })
       );
-    } else if (matchingCase && (matchingCase.id.includes('nep') || matchingCase.id.includes('benchmark'))) {
+    } else if (selectedCase && (selectedCase.id.includes('nep') || selectedCase.id.includes('benchmark'))) {
       // Offline fallback only for curated NEP verification benchmark files
-      const caseEpochs = matchingCase.epochs || [matchingCase.epoch1, matchingCase.epoch2];
-      exposures = caseEpochs.map((ep) => {
+      const caseEpochs = selectedCase.epochs || [selectedCase.epoch1, selectedCase.epoch2];
+      exposures = caseEpochs.map((ep: CuratedEpoch) => {
         const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
         const det = detMatch ? `D${detMatch[1] || detMatch[2]}` : 'D1';
         return {
@@ -1976,7 +1994,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           : undefined,
       fovArcmin,
       sizePix,
-      totalExposuresFound: exposures.length,
+      totalExposuresFound: tapRows.length > 0 ? tapRows.length : exposures.length,
       framesReturned: loadedFrames.length,
       frames: loadedFrames,
       pairs,

@@ -194,11 +194,11 @@ export async function verifyFitsUrl(url: string, forceCheck = false): Promise<vo
  */
 export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector?: string): Promise<ResolvedFitsUrl> {
   if (!accessUrl) {
-    const fallback = buildFallbackFitsUrl(obsId, detector);
-    console.warn(`[resolveFitsUrl] No access_url provided for ${obsId ?? 'unknown obs'}; using fallback URL`);
-    await verifyFitsUrl(fallback);
-    const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
-    return resolved;
+    if (process.env.NODE_ENV === 'test' || process.env.SPHEREX_OFFLINE === '1') {
+      const fallback = buildFallbackFitsUrl(obsId, detector);
+      return { url: fallback, resolvedBy: 'fallback' };
+    }
+    throw new Error(`[resolveFitsUrl] No access_url provided for ${obsId ?? 'unknown obs'}`);
   }
 
   const cached = datalinkUrlCache.get(accessUrl);
@@ -206,7 +206,7 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
     return cached;
   }
 
-  // Attempt resolving from DataLink XML
+  // Attempt resolving authentic science FITS URL from DataLink VOTable XML
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
@@ -217,41 +217,37 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
     clearTimeout(timeout);
     if (res.ok) {
       const xml = await res.text();
-      // Match absolute science level-2B FITS URL or relative path inside DataLink table
-      const absMatch = xml.match(/<TD>(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^<]+level2[^<]+\.fits)<\/TD>/i);
-      let targetUrl = absMatch ? absMatch[1] : '';
+      // Match science Level-2B FITS URL or relative path inside DataLink VOTable
+      const absMatch = xml.match(/<TD[^>]*>\s*(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^\s<"]+level2[^\s<"]+\.fits)\s*<\/TD>/i);
+      let targetUrl = absMatch ? absMatch[1].trim() : '';
       if (!targetUrl) {
-        const relMatch = xml.match(/<TD>(spherex\/[^<]+level2[^<]+\.fits)<\/TD>/i) ||
-                         xml.match(/spherex\/[^\s"'<>]+level2[^\s"'<>]+\.fits/i);
+        const relMatch = xml.match(/<TD[^>]*>\s*(spherex\/[^\s<"]+level2[^\s<"]+\.fits)\s*<\/TD>/i) ||
+                         xml.match(/(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/spherex\/[^\s"'<>]+level2[^\s"'<>]+\.fits)/i) ||
+                         xml.match(/(spherex\/qr2\/level2\/[^\s"'<>]+level2[^\s"'<>]+\.fits)/i);
         if (relMatch) {
-          const rawRel = relMatch[1] || relMatch[0];
+          const rawRel = (relMatch[1] || relMatch[0]).trim();
           targetUrl = rawRel.startsWith('http') ? rawRel : `https://irsa.ipac.caltech.edu/ibe/data/${rawRel}`;
         }
       }
       if (targetUrl) {
-        await verifyFitsUrl(targetUrl);
         const resolved: ResolvedFitsUrl = { url: targetUrl, resolvedBy: 'datalink' };
         datalinkUrlCache.set(accessUrl, resolved);
         return resolved;
       }
     }
-  } catch (verifyErr) {
-    if (verifyErr instanceof Error && verifyErr.message.startsWith('FITS URL verification failed')) {
-      // The URL the archive itself advertised is broken: surface the error, never
-      // pretend the fallback is the archive's real product.
-      throw verifyErr;
-    }
-    // Network/XML failure: graceful fallback below
+  } catch (dlErr: any) {
+    console.warn(`[resolveFitsUrl] DataLink fetch error for ${accessUrl}: ${dlErr.message}`);
   }
 
-  const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
-  console.warn(
-    `[resolveFitsUrl] DataLink resolution failed for ${obsId ?? accessUrl}; using fallback URL: ${fallback}`
-  );
-  await verifyFitsUrl(fallback);
-  const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
-  datalinkUrlCache.set(accessUrl, resolved);
-  return resolved;
+  // Test / offline fallback
+  if (process.env.NODE_ENV === 'test' || process.env.SPHEREX_OFFLINE === '1') {
+    const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
+    const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
+    datalinkUrlCache.set(accessUrl, resolved);
+    return resolved;
+  }
+
+  throw new Error(`DataLink resolution failed: could not extract level2 science FITS from ${accessUrl}`);
 }
 
 /**

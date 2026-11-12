@@ -7,7 +7,7 @@ import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { Screen1Sky } from './components/Screen1Sky';
 import { InvestigationResult, ChallengeTarget } from './science/types';
-import { checkCoordinatesInQR2, parseCoordinateInput } from './science/challengeTargets';
+import { parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
 import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal';
 import { FamousObjectsView } from './components/FamousObjectsView';
