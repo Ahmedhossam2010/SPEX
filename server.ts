@@ -43,7 +43,7 @@ import {
 } from './src/science/timeSeriesPipeline';
 import { parseCoordinateInput } from './src/science/coordinates';
 import { propagatePosition, julianYearFromMjd } from './src/science/properMotion';
-import { FAMOUS_OBJECTS_CATALOG } from './src/science/famousObjects';
+import { FAMOUS_OBJECTS_CATALOG, getFamousObjectById } from './src/science/famousObjects';
 
 const app = express();
 
@@ -898,6 +898,9 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       ? parseInt(req.body.sizePix, 10)
       : (req.query.sizePix ? parseInt(req.query.sizePix as string, 10) : undefined);
     const epochPair = (req.body?.epochPair || req.query.epochPair || '1-3') as string;
+    const validSizes = [32, 64, 112, 160];
+    const sizePix: number = requestedSizePix !== undefined && validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
+    const fovArcmin = Number(((sizePix * 6.2) / 60).toFixed(1));
 
     let customCoords = req.body?.customCoords;
     if (!customCoords && (req.query.ra !== undefined || req.query.coords !== undefined)) {
@@ -1144,11 +1147,6 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
         }
       }
     }
-
-    // Validate cutout size (FOV in pixels, default: 64 pix ~ 6.6 arcmin)
-    const validSizes = [32, 64, 112, 160];
-    const sizePix: number = requestedSizePix !== undefined && validSizes.includes(requestedSizePix) ? requestedSizePix : 64;
-    const fovArcmin = Number(((sizePix * 6.2) / 60).toFixed(1));
 
     // Determine which epoch pair to difference from selectedCase if not set by live query
     if (!ep1 || !ep2) {

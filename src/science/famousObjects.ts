@@ -27,7 +27,7 @@ export interface FamousObject {
   pmRaMasYr?: number;
   pmDecMasYr?: number;
   coordinateEpochYear: number;
-  coordinateVerification: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'UNVERIFIED';
+  coordinateVerification: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'VERIFIED_SPITZER_WISE' | 'VERIFIED_SPITZER_HST' | 'UNVERIFIED';
   catalogReferences: string[];
   shortDescriptionEn: string;
   shortDescriptionAr: string;
@@ -509,6 +509,8 @@ export const FAMOUS_OBJECTS_CATALOG: FamousObject[] = [
     suggestedFovArcmin: 6.6,
   },
 ];
+
+export const FAMOUS_OBJECTS = FAMOUS_OBJECTS_CATALOG;
 
 export function getFamousObjectById(id: string): FamousObject | undefined {
   if (!id) return undefined;

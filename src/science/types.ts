@@ -252,7 +252,7 @@ export interface ChallengeTarget {
   /** Julian epoch of the listed ra/dec coordinates (J2000.0 = 2000.0). */
   coordinateEpochYear?: number;
   /** How the coordinates were verified against an authoritative catalog. */
-  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'VERIFIED_SPITZER_WISE' | 'UNVERIFIED';
+  coordinateVerification?: 'VERIFIED_GAIA_DR3' | 'VERIFIED_SIMBAD' | 'VERIFIED_SPITZER_WISE' | 'VERIFIED_SPITZER_HST' | 'UNVERIFIED';
   /** Source the verified coordinates came from (set when coordinateVerification is set). */
   coordinateSource?: string;
   /** Whether this target needs primary catalog / SIMBAD cross-check confirmation before trusting centering. */
