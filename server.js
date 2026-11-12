@@ -460,7 +460,7 @@ var WCS = class {
 };
 
 // src/science/fitsReader.ts
-var FITSReader = class {
+var FITSReader = class _FITSReader {
   /**
    * Parse a raw FITS binary buffer (ArrayBuffer, Buffer, or Uint8Array)
    */
@@ -644,20 +644,33 @@ var FITSReader = class {
       wcsWaveMetadata
     };
   }
+  static {
+    this.SENTINEL_THRESHOLD = 1e10;
+  }
   static readFloat32Array(view, offset, count, bitpix) {
     const result = new Float32Array(count);
     let ptr = offset;
     if (bitpix === -32) {
       for (let i = 0; i < count; i++) {
         if (ptr + 4 <= view.byteLength) {
-          result[i] = view.getFloat32(ptr, false);
+          const val = view.getFloat32(ptr, false);
+          if (!Number.isFinite(val) || Math.abs(val) > _FITSReader.SENTINEL_THRESHOLD) {
+            result[i] = NaN;
+          } else {
+            result[i] = val;
+          }
         }
         ptr += 4;
       }
     } else if (bitpix === -64) {
       for (let i = 0; i < count; i++) {
         if (ptr + 8 <= view.byteLength) {
-          result[i] = Number(view.getFloat64(ptr, false));
+          const val = Number(view.getFloat64(ptr, false));
+          if (!Number.isFinite(val) || Math.abs(val) > _FITSReader.SENTINEL_THRESHOLD) {
+            result[i] = NaN;
+          } else {
+            result[i] = val;
+          }
         }
         ptr += 8;
       }
