@@ -598,7 +598,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
       {!isCurtainActive && (
         <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5 pointer-events-none">
           <div className="bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/10 font-mono text-[11px] text-slate-300 flex items-center gap-2">
-            <span className="text-[#00D3F3] font-bold">SPHEREx QR2</span>
+            <span className="text-[#00D3F3] font-bold">SPHEREx DR1/QR3/QR2</span>
             <span className="text-white/30">|</span>
             <span>FOV: {fovArcmin}′ (~{(fovArcmin * 60).toFixed(0)}″)</span>
             <span className="text-white/30">|</span>
@@ -713,11 +713,11 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
                 <h3 className="text-sm font-bold text-slate-100 font-mono tracking-tight">
-                  {targetName || 'Astronomical Target'} · {isRtl ? 'خارج نطاق إصدار QR2' : 'Outside QR2 Polar Footprint'}
+                  {targetName || 'Astronomical Target'} · {isRtl ? 'لم يكتمل الرصد بعد' : 'Awaiting Archive Coverage'}
                 </h3>
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                {availabilityStatus?.scheduledRelease || 'PR1 All-Sky Scheduled'}
+                {availabilityStatus?.scheduledRelease || 'DR1 / QR3 / QR2 Weekly Updates'}
               </span>
             </div>
 
@@ -747,15 +747,15 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
             <p className="text-xs text-slate-300 leading-relaxed font-sans">
               {isRtl
                 ? availabilityStatus?.reasonAr ||
-                  'يقتصر الإصدار الأولي العام الحالي (QR2) على رصدات الشريط العميق للقطب الشمالي لمسار الشمس ومواقع التحقق المرجعية. ستكون بيانات هذا الجرم متاحة بالكامل في مسح السماء الشامل (PR1).'
+                  'تقرأ المنصة أرشيف SPHEREx العام الحالي (DR1 / QR3 / QR2 مع تحديثات أسبوعية). إذا لم يظهر هذا الموقع في فحص البصمة الحية، جرّب أحد الأجرام الخمسة المرجعية أدناه.'
                 : availabilityStatus?.reasonEn ||
-                  'The current public release (QR2) covers deep observations centered on the North Ecliptic Pole (NEP). Full all-sky near-infrared spectral coverage of this target will be accessible in Public Release 1 (PR1).'}
+                  'This app reads the current SPHEREx public archive (DR1 / QR3 / QR2, weekly updates). If no exposures were matched at this exact pointing yet, inspect one of the live verified presets below.'}
             </p>
 
             {/* Benchmark Switch Action Buttons */}
             <div className="pt-2 border-t border-white/10 flex flex-wrap items-center justify-between gap-2">
               <span className="text-[11px] font-mono text-slate-400">
-                {isRtl ? 'فحص بيانات QR2 الحقيقية المتاحة:' : 'Inspect Available QR2 Data:'}
+                {isRtl ? 'فحص بيانات SPHEREx الحقيقية المتاحة:' : 'Inspect Available SPHEREx Data:'}
               </span>
               <div className="flex items-center gap-2 font-mono text-xs">
                 {onSelectBenchmark && (
@@ -765,14 +765,14 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
                       onClick={() => onSelectBenchmark('case-barnards-star')}
                       className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 font-bold transition cursor-pointer"
                     >
-                      Barnard&apos;s Star (QR2)
+                      Barnard&apos;s Star
                     </button>
                     <button
                       type="button"
                       onClick={() => onSelectBenchmark('case-nep-var-01')}
                       className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 font-bold transition cursor-pointer"
                     >
-                      NEP Benchmark (QR2)
+                      NEP Deep Field
                     </button>
                   </>
                 )}

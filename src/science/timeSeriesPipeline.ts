@@ -30,6 +30,35 @@ export interface MeasuredCentroid {
   snr?: number;
   stacked?: boolean;
   valid: boolean;
+  refStarsUsed?: number;
+  refScatterArcsec?: number;
+  astrometryMethod?: 'affine' | 'translation' | 'uncalibrated';
+  lowConfidence?: boolean;
+  lowConfidenceReason?: string;
+  maskedReason?: string;
+  distToPredictedPix?: number;
+  wingFit?: boolean;
+  centroidErrorArcsec?: number;
+  refFitErrorArcsec?: number;
+}
+
+export interface LightCurvePoint {
+  frameIndex: number;
+  obsId: string;
+  mjd: number;
+  dateObs: string;
+  detector: string;
+  release?: string;
+  version?: string;
+  wavelengthUm: number;
+  bandwidthUm?: number;
+  fluxMjySr: number;
+  uncertaintyMjySr: number;
+  snr: number;
+  valid: boolean;
+  isWingAnnulus?: boolean;
+  unmaskedPixels: number;
+  maskedReason?: string;
 }
 
 export interface TimeSeriesFrame {

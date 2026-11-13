@@ -38,7 +38,9 @@ import {
   CatalogOverlayItem,
   SpectrumPoint,
   DetectorStack,
+  LightCurvePoint,
 } from '../../science/timeSeriesPipeline';
+import { computeExpectedProperMotionOffset } from '../../science/properMotion';
 import { WCSParams } from '../../science/types';
 import { WCS } from '../../science/wcs';
 
@@ -88,6 +90,7 @@ export interface TimeSeriesResponse {
   trueCenter?: { ra: number; dec: number };
   targetCoords: { ra: number; dec: number };
   selectedDetector?: string;
+  recommendedDetector?: string;
   availableDetectors?: AvailableDetectorSummary[];
   fovArcmin: number;
   sizePix: number;
@@ -118,8 +121,60 @@ export interface TimeSeriesResponse {
   };
   frameMode: 'sky' | 'target';
   releaseId?: string;
-  releaseBreakdown?: Record<string, number>;
+  releaseBreakdown?: string[] | Record<string, number>;
+  releaseGroupCounts?: Record<string, number>;
+  exposuresPerRelease?: Record<string, number>;
+  mixedReleasesDetected?: boolean;
+  activeRelease?: string;
+  activeVersion?: string;
+  largestDiffGroupKey?: string;
+  isSnapshot?: boolean;
+  snapshotTakenAt?: string;
   centroidStacked?: boolean;
+  astrometrySummary?: {
+    method: string;
+    medianRefStarsUsed: number;
+    lowConfidence: boolean;
+    lowConfidenceReason?: string;
+    astrometricFloorArcsec: number;
+    detectorLooFloorArcsec?: number | null;
+    controlFloorInDetectorArcsec?: number | null;
+    floorByBrightnessClass?: Record<string, number>;
+    brightnessClassUsed?: string;
+    looSampleCount?: number;
+    controlsUsed: string[];
+    perControlScatterArcsec?: Record<string, number | null>;
+    measuredNetDxArcsec: number;
+    measuredNetDyArcsec: number;
+    measuredDisplacementArcsec: number;
+    measuredDisplacementErrorArcsec: number;
+    targetSigmaArcsec?: number;
+    sigma?: number;
+    expectedOffset?: {
+      dxArcsec: number;
+      dyArcsec: number;
+      totalArcsec: number;
+      baselineDays: number;
+    };
+    diffFromExpectedArcsec?: number;
+    diffFromExpectedSigma?: number;
+    significanceRatio: number;
+    motionSignificant: boolean;
+    motionVerdict: string;
+    targetDetectedInDetector: boolean;
+    unsaturatedCoreCount?: number;
+    wingFitCount?: number;
+    saturatedAllDetectors?: boolean;
+    detectorDetectionNote?: string;
+    nearbyNeighbors15Arcsec?: Array<{
+      identifier: string;
+      catalog: string;
+      distToPredictedArcsec: number;
+      distToCentroidArcsec?: number;
+      magLabel?: string;
+    }>;
+  };
+  lightCurve?: LightCurvePoint[];
   partialFailures?: {
     failedCount: number;
     attemptedCount: number;
@@ -175,7 +230,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [frameMode, setFrameMode] = useState<'sky' | 'target'>('sky');
   const [selectedDetector, setSelectedDetector] = useState<string>(initialDetector || '');
-  const [frameCount, setFrameCount] = useState<10 | 20 | 40>(20);
+  const [frameCount, setFrameCount] = useState<10 | 16 | 20 | 40>(16);
   const [wavelengthWindow, setWavelengthWindow] = useState<string>('all');
 
   // Display & stretch controls
@@ -191,6 +246,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [showEpoch1Crosshair, setShowEpoch1Crosshair] = useState<boolean>(true);
   const [showDqOverlay, setShowDqOverlay] = useState<boolean>(false);
   const [showCatalogOverlay, setShowCatalogOverlay] = useState<boolean>(true);
+  const [selectedReleaseKey, setSelectedReleaseKey] = useState<string | null>(null);
+  const [sameReleaseOnly, setSameReleaseOnly] = useState<boolean>(false);
 
   // Progressive disclosure Advanced drawer (collapsed by default, persisted in localStorage)
   const [advancedOpen, setAdvancedOpen] = useState<boolean>(() => {
@@ -213,9 +270,16 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     });
   }, []);
 
+  useEffect(() => {
+    setSameReleaseOnly(false);
+    setSelectedReleaseKey(null);
+  }, [ra, dec, caseId, selectedDetector]);
+
   // Collapsible A4 reserved slots
   const [metaSlotOpen, setMetaSlotOpen] = useState<boolean>(true);
   const [centroidSlotOpen, setCentroidSlotOpen] = useState<boolean>(true);
+  const [lightCurveSlotOpen, setLightCurveSlotOpen] = useState<boolean>(true);
+  const [lcBandFilter, setLcBandFilter] = useState<'all' | 'lower' | 'middle' | 'upper'>('all');
   const [spectrumSlotOpen, setSpectrumSlotOpen] = useState<boolean>(true);
 
   const prefersReducedMotion = useMemo(() => {
@@ -262,6 +326,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       if (caseId) params.set('caseId', caseId);
       if (selectedDetector) params.set('detector', selectedDetector);
       if (wavelengthWindow !== 'all') params.set('wlWindow', wavelengthWindow);
+      if (sameReleaseOnly) params.set('sameReleaseOnly', '1');
 
       const res = await fetch(`/api/spherex/timeseries?${params.toString()}`);
       const contentType = res.headers.get('content-type') || '';
@@ -340,6 +405,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       } else {
         setState('OK');
         setData(json);
+        setSelectedReleaseKey(null);
         setCurrentFrameIdx(0);
         onDataLoaded?.(json);
       }
@@ -349,7 +415,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [ra, dec, caseId, sizePix, frameMode, selectedDetector, frameCount, wavelengthWindow]);
+  }, [ra, dec, caseId, sizePix, frameMode, selectedDetector, frameCount, wavelengthWindow, sameReleaseOnly]);
 
   useEffect(() => {
     fetchTimeSeries();
@@ -439,13 +505,48 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [data?.frames?.length, blinkFirstLast, onSelectFrame]);
 
-  // Precompute stack median and inverse-variance co-add on common WCS grid (P0.3)
-  const { stackMedian, coaddStack } = useMemo(() => {
-    const frames = data?.frames || [];
-    if (frames.length === 0) {
-      return { stackMedian: null as number[] | null, coaddStack: null as number[] | null };
+  // P1-2: Enforce same release and processing VERSION for differences and stacks
+  const frameReleaseGroups = useMemo(() => {
+    const groups = new Map<string, TimeSeriesFrame[]>();
+    for (const fr of data?.frames || []) {
+      const key = `${(fr.release || data?.activeRelease || 'public').toLowerCase()}::${fr.version || data?.activeVersion || 'unknown'}`;
+      const list = groups.get(key) || [];
+      list.push(fr);
+      groups.set(key, list);
     }
-    const nPix = (frames[0].width || 64) * (frames[0].height || 64);
+    return groups;
+  }, [data?.frames, data?.activeRelease, data?.activeVersion]);
+
+  const primaryReleaseKey = useMemo(() => {
+    const first = Array.from(frameReleaseGroups.entries()).sort((a, b) => b[1].length - a[1].length)[0];
+    return first ? first[0] : null;
+  }, [frameReleaseGroups]);
+
+  const displayFrames = useMemo(() => {
+    const all = data?.frames || [];
+    if (!selectedReleaseKey) return all;
+    const subset = frameReleaseGroups.get(selectedReleaseKey);
+    return subset && subset.length > 0 ? subset : all;
+  }, [data?.frames, selectedReleaseKey, frameReleaseGroups]);
+
+  // Precompute stack median and inverse-variance co-add on common WCS grid (strictly largest same release & VERSION group)
+  const diffGroupKey = primaryReleaseKey || data?.largestDiffGroupKey || null;
+  const { stackMedian, coaddStack, diffRefFrame } = useMemo(() => {
+    if (displayFrames.length === 0) {
+      return {
+        stackMedian: null as number[] | null,
+        coaddStack: null as number[] | null,
+        diffRefFrame: null as TimeSeriesFrame | null,
+      };
+    }
+    const targetKey =
+      diffGroupKey ||
+      `${(displayFrames[0].release || data?.activeRelease || 'public').toLowerCase()}::${displayFrames[0].version || data?.activeVersion || 'unknown'}`;
+    const sameReleaseFrames = displayFrames.filter(
+      (f) => `${(f.release || data?.activeRelease || 'public').toLowerCase()}::${f.version || data?.activeVersion || 'unknown'}` === targetKey
+    );
+    const groupFrames = sameReleaseFrames.length > 0 ? sameReleaseFrames : displayFrames;
+    const nPix = (groupFrames[0].width || 64) * (groupFrames[0].height || 64);
     const medianArr = new Array<number>(nPix);
     const coaddArr = new Array<number>(nPix);
 
@@ -453,8 +554,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       const vals: number[] = [];
       let wSum = 0;
       let wfSum = 0;
-      for (let fIdx = 0; fIdx < frames.length; fIdx++) {
-        const fr = frames[fIdx];
+      for (let fIdx = 0; fIdx < groupFrames.length; fIdx++) {
+        const fr = groupFrames[fIdx];
         const arr = fr.reprojectedFlux?.length === nPix ? fr.reprojectedFlux : fr.flux;
         const v = arr[p];
         const flag = fr.flags?.[p] ?? 0;
@@ -468,7 +569,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         }
       }
       if (vals.length === 0) {
-        const fallback = (frames[0].reprojectedFlux ?? frames[0].flux)[p] ?? 0;
+        const fallback = (groupFrames[0].reprojectedFlux ?? groupFrames[0].flux)[p] ?? 0;
         medianArr[p] = Number.isFinite(fallback) ? fallback : 0;
         coaddArr[p] = medianArr[p];
       } else {
@@ -477,31 +578,40 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         coaddArr[p] = wSum > 0 ? wfSum / wSum : medianArr[p];
       }
     }
-    return { stackMedian: medianArr, coaddStack: coaddArr };
-  }, [data?.frames]);
+    return { stackMedian: medianArr, coaddStack: coaddArr, diffRefFrame: groupFrames[0] || null };
+  }, [displayFrames, diffGroupKey, data?.activeRelease, data?.activeVersion]);
 
   // Compute displayed pixel buffer for any given frame under current renderMode
   const getDisplayArray = useCallback(
     (frameIdx: number): number[] => {
-      const frames = data?.frames || [];
+      const frames = displayFrames;
       const fr = frames[frameIdx];
       if (!fr) return [];
       const base = fr.reprojectedFlux?.length === fr.flux.length ? fr.reprojectedFlux : fr.flux;
+      const frKey = `${(fr.release || data?.activeRelease || 'public').toLowerCase()}::${fr.version || data?.activeVersion || 'unknown'}`;
+      const refGroupKey =
+        diffGroupKey ||
+        (frames[0]
+          ? `${(frames[0].release || data?.activeRelease || 'public').toLowerCase()}::${frames[0].version || data?.activeVersion || 'unknown'}`
+          : frKey);
+
       if (renderMode === 'coadd' && coaddStack) {
         return coaddStack;
       }
-      if (renderMode === 'diff_ref' && frames[0]) {
-        const ref = frames[0].reprojectedFlux?.length === frames[0].flux.length
-          ? frames[0].reprojectedFlux
-          : frames[0].flux;
+      if (renderMode === 'diff_ref' && diffRefFrame) {
+        if (frKey !== refGroupKey) return base; // Never subtract across mismatched releases/versions
+        const ref = diffRefFrame.reprojectedFlux?.length === diffRefFrame.flux.length
+          ? diffRefFrame.reprojectedFlux
+          : diffRefFrame.flux;
         return base.map((v, i) => (Number.isFinite(v) && Number.isFinite(ref[i]) ? v - ref[i] : 0));
       }
       if (renderMode === 'diff_median' && stackMedian) {
+        if (frKey !== refGroupKey) return base; // Never subtract across mismatched releases/versions
         return base.map((v, i) => (Number.isFinite(v) && Number.isFinite(stackMedian[i]) ? v - stackMedian[i] : 0));
       }
       return base;
     },
-    [data?.frames, renderMode, coaddStack, stackMedian]
+    [displayFrames, diffGroupKey, diffRefFrame, data?.activeRelease, data?.activeVersion, renderMode, coaddStack, stackMedian]
   );
 
   // Global per-band intensity scale (P0.2: prevents frame-to-frame flicker)
@@ -746,10 +856,16 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     );
   }
 
-  const currentFrame = data.frames[currentFrameIdx] || data.frames[0];
+  const activeFrameList = displayFrames;
+  const safeFrameIdx = Math.min(currentFrameIdx, Math.max(0, activeFrameList.length - 1));
+  const currentFrame = activeFrameList[safeFrameIdx] || activeFrameList[0];
   const frameW = currentFrame.width || 64;
   const frameH = currentFrame.height || 64;
-  const pairInfo = data.temporalPairs?.[Math.min(currentFrameIdx, Math.max(0, (data.temporalPairs?.length || 1) - 1))];
+  const pairInfo = data.temporalPairs?.[Math.min(safeFrameIdx, Math.max(0, (data.temporalPairs?.length || 1) - 1))];
+  const activeReleaseLabel = (currentFrame.release || data.activeRelease || 'public').toUpperCase();
+  const activeVersionLabel = currentFrame.version || data.activeVersion || '—';
+  const hasMixedReleasesInFrames = frameReleaseGroups.size > 1;
+  const hasMixedReleasesServer = Boolean(data.mixedReleasesDetected && !selectedReleaseKey);
 
   const cadenceDescription = (() => {
     if (!pairInfo) return 'Single observation epoch';
@@ -771,34 +887,39 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const sourceBadgeVariant =
     data.sourceLabel === 'DEMO COPY (DIFFERENT FIELD)'
       ? 'TRAINING'
-      : data.sourceLabel?.startsWith('REAL SPHEREx DATA - cached') ||
+      : data.isSnapshot ||
+        data.sourceLabel?.startsWith('REAL SPHEREx DATA - archive snapshot') ||
+        data.sourceLabel?.startsWith('REAL SPHEREx DATA - cached') ||
         data.sourceLabel === 'REAL DATA, SAVED COPY (NOT LIVE)'
       ? 'SAVED'
       : 'REAL';
 
-  // Build Centroid vs Time series values for SVG chart (P0.3)
+  // Build Centroid vs Time series values for SVG chart (P0.3 & Task 2 exact PM offset)
   const mjd0 = data.frames[0]?.mjd ?? 0;
   const centroidSeries = data.frames.map((fr, idx) => {
     const dtDays = fr.mjd - mjd0;
     const cent = fr.measuredCentroid;
     const ep0Ref = data.frames[0]?.targetRefPixel;
     const curRef = fr.targetRefPixel;
-    const scale = data.referenceWcs?.pixelScaleArcsec || 6.2;
     let predDxArcsec = 0;
     let predDyArcsec = 0;
-    if (ep0Ref && curRef) {
-      if (data.referenceWcs) {
-        const sky0 = WCS.pixToSky(ep0Ref.x, ep0Ref.y, data.referenceWcs);
-        const skyCur = WCS.pixToSky(curRef.x, curRef.y, data.referenceWcs);
-        let dRaDeg = skyCur.ra - sky0.ra;
-        if (dRaDeg > 180) dRaDeg -= 360;
-        if (dRaDeg < -180) dRaDeg += 360;
-        predDxArcsec = dRaDeg * Math.cos((sky0.dec * Math.PI) / 180) * 3600;
-        predDyArcsec = (skyCur.dec - sky0.dec) * 3600;
-      } else {
-        predDxArcsec = (curRef.x - ep0Ref.x) * scale;
-        predDyArcsec = (curRef.y - ep0Ref.y) * scale;
-      }
+    if (data.properMotion) {
+      const exp = computeExpectedProperMotionOffset(
+        data.properMotion.pmRaMasYr,
+        data.properMotion.pmDecMasYr,
+        mjd0,
+        fr.mjd
+      );
+      predDxArcsec = exp.dxArcsec;
+      predDyArcsec = exp.dyArcsec;
+    } else if (ep0Ref && curRef && data.referenceWcs) {
+      const sky0 = WCS.pixToSky(ep0Ref.x, ep0Ref.y, data.referenceWcs);
+      const skyCur = WCS.pixToSky(curRef.x, curRef.y, data.referenceWcs);
+      let dRaDeg = skyCur.ra - sky0.ra;
+      if (dRaDeg > 180) dRaDeg -= 360;
+      if (dRaDeg < -180) dRaDeg += 360;
+      predDxArcsec = dRaDeg * Math.cos((sky0.dec * Math.PI) / 180) * 3600;
+      predDyArcsec = (skyCur.dec - sky0.dec) * 3600;
     }
     const totalOffsetArcsec = cent ? Math.hypot(cent.dxArcsec, cent.dyArcsec) : 0;
     return {
@@ -813,6 +934,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       predDyArcsec,
       totalOffsetArcsec,
       valid: cent?.valid ?? false,
+      releaseLabel: (fr.release || data.activeRelease || 'public').toUpperCase(),
+      versionLabel: fr.version || data.activeVersion || '—',
+      refStarsUsed: cent?.refStarsUsed,
+      maskedReason: cent?.maskedReason,
     };
   });
 
@@ -863,25 +988,82 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         </div>
       )}
 
+      {/* P1-2 & Task 3: Mixed Release / Processing Version Guard Warning */}
+      {(hasMixedReleasesInFrames || hasMixedReleasesServer || sameReleaseOnly) && (
+        <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-[11px] font-mono flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>
+              {sameReleaseOnly
+                ? `Showing same-release/VERSION subset (${activeReleaseLabel} · ${activeVersionLabel}) for consistent Diff & Stack.`
+                : hasMixedReleasesInFrames
+                ? `Mixed SPHEREx releases/versions (${Array.from(frameReleaseGroups.keys())
+                    .map((k) => k.replace('::', ' '))
+                    .join(', ')}): Astrometry & Blink span the full baseline; Diff & Stack use only matching release & VERSION.`
+                : `Multiple archive releases/versions found (${
+                    Array.isArray(data.releaseBreakdown) ? data.releaseBreakdown.join(', ') : ''
+                  }); full baseline shown for Astrometry & Blink.`}
+            </span>
+          </div>
+          {sameReleaseOnly ? (
+            <button
+              type="button"
+              onClick={() => {
+                setSameReleaseOnly(false);
+                setSelectedReleaseKey(null);
+                setCurrentFrameIdx(0);
+              }}
+              className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-[10px] cursor-pointer"
+            >
+              Restore full baseline (all releases)
+            </button>
+          ) : (
+            (hasMixedReleasesInFrames || hasMixedReleasesServer) &&
+            primaryReleaseKey && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSameReleaseOnly(true);
+                  setSelectedReleaseKey(null);
+                  setCurrentFrameIdx(0);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[10px] cursor-pointer"
+              >
+                Use same-release subset ({primaryReleaseKey.replace('::', ' ').toUpperCase()})
+              </button>
+            )
+          )}
+        </div>
+      )}
+
       {/* Top Row (A3 Default Visible): Source Badge, Detector (D1-D6 Auto), Normal/Show changes toggle, Advanced Drawer toggle */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge
             variant={sourceBadgeVariant}
-            customText={data.sourceLabel?.startsWith('REAL SPHEREx DATA - cached') ? data.sourceLabel : undefined}
+            customText={data.sourceLabel?.startsWith('REAL SPHEREx DATA - ') ? data.sourceLabel : undefined}
             size="sm"
           />
           <span className="font-mono text-xs text-[#00D3F3] font-bold">
-            EPOCH {currentFrameIdx + 1} / {data.frames.length}
+            EPOCH {safeFrameIdx + 1} / {activeFrameList.length}
           </span>
           <span
             className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold border ${
-              currentFrame.isCached
+              data.isSnapshot || currentFrame.isCached
                 ? 'bg-slate-800 border-slate-600 text-slate-300'
                 : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
             }`}
           >
-            {data.isDemoCopy ? 'DEMO COPY' : currentFrame.isCached ? 'CACHED FITS' : 'LIVE IRSA'}
+            {data.isDemoCopy
+              ? 'DEMO COPY'
+              : data.isSnapshot
+              ? 'ARCHIVE SNAPSHOT'
+              : currentFrame.isCached
+              ? 'CACHED FITS'
+              : 'LIVE IRSA'}
+          </span>
+          <span className="px-2 py-0.5 rounded font-mono text-[10px] border border-cyan-500/30 bg-cyan-500/10 text-cyan-200">
+            {activeReleaseLabel} · VER {activeVersionLabel}
           </span>
           {data.totalExposuresFound != null && (
             <span className="text-[11px] font-mono text-slate-400">
@@ -1749,16 +1931,38 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               </div>
               <div className="flex flex-wrap items-center gap-3 text-slate-400">
                 <span>
-                  Centroid: ΔRA·cosδ{' '}
-                  {currentFrame.measuredCentroid?.valid
-                    ? `${currentFrame.measuredCentroid.dxArcsec.toFixed(2)}″ ± ${currentFrame.measuredCentroid.uncertaintyArcsec.toFixed(2)}″`
-                    : 'not detected'}
-                  , ΔDec{' '}
-                  {currentFrame.measuredCentroid?.valid ? `${currentFrame.measuredCentroid.dyArcsec.toFixed(2)}″` : '—'}
+                  Centroid:{' '}
+                  {data.astrometrySummary && !data.astrometrySummary.targetDetectedInDetector ? (
+                    <span className="text-amber-300 font-semibold">
+                      not detected in {data.selectedDetector || 'this detector'}
+                    </span>
+                  ) : currentFrame.measuredCentroid?.valid ? (
+                    <>
+                      ΔRA·cosδ {currentFrame.measuredCentroid.dxArcsec.toFixed(2)}″ ±{' '}
+                      {currentFrame.measuredCentroid.uncertaintyArcsec.toFixed(2)}″, ΔDec{' '}
+                      {currentFrame.measuredCentroid.dyArcsec.toFixed(2)}″
+                    </>
+                  ) : (
+                    <span>
+                      not detected in {data.selectedDetector || 'frame'}
+                      {currentFrame.measuredCentroid?.maskedReason
+                        ? ` (${currentFrame.measuredCentroid.maskedReason.replace(/_/g, ' ')})`
+                        : ''}
+                    </span>
+                  )}
                   {currentFrame.measuredCentroid?.snr != null
                     ? ` (S/N ${currentFrame.measuredCentroid.snr.toFixed(1)})`
                     : ''}
                   {currentFrame.measuredCentroid?.stacked ? ' [stacked]' : ''}
+                </span>
+                {currentFrame.measuredCentroid?.refStarsUsed != null && (
+                  <span>
+                    Ref stars: {currentFrame.measuredCentroid.refStarsUsed}
+                    {currentFrame.measuredCentroid.lowConfidence ? ' (low confidence)' : ''}
+                  </span>
+                )}
+                <span>
+                  Release: {activeReleaseLabel} · VERSION: {activeVersionLabel}
                 </span>
                 <span>
                   λ: {currentFrame.wavelengthUm.toFixed(2)} µm
@@ -1780,11 +1984,65 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             aria-expanded={centroidSlotOpen}
             className="w-full px-3 py-2 flex items-center justify-between gap-2 text-[11px] font-mono font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-[#FFB900]"
           >
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2 flex-wrap">
               <Activity className="w-3.5 h-3.5 text-cyan-400" aria-hidden="true" />
               <span>{t.slotCentroid}</span>
               {data.dateRange && (
                 <span className="font-normal text-slate-400">· Span {data.dateRange.spanDays}d</span>
+              )}
+              {data.astrometrySummary && (
+                <span
+                  className="font-normal text-slate-300"
+                  title={
+                    data.astrometrySummary.detectorLooFloorArcsec != null
+                      ? `Per-detector LOO floor (${data.selectedDetector || 'det'}, ${data.astrometrySummary.brightnessClassUsed || 'medium'}): ${data.astrometrySummary.detectorLooFloorArcsec.toFixed(2)}″ | Own 1σ error: ${(data.astrometrySummary.targetSigmaArcsec ?? data.astrometrySummary.measuredDisplacementErrorArcsec).toFixed(2)}″`
+                      : undefined
+                  }
+                >
+                  · Floor ({data.selectedDetector || 'det'}/{data.astrometrySummary.brightnessClassUsed || 'med'}):{' '}
+                  {data.astrometrySummary.astrometricFloorArcsec.toFixed(2)}″
+                </span>
+              )}
+              {data.astrometrySummary && (() => {
+                const aSum = data.astrometrySummary;
+                const sigmaVal =
+                  aSum.sigma ??
+                  (aSum.measuredDisplacementErrorArcsec > 0
+                    ? aSum.measuredDisplacementArcsec / aSum.measuredDisplacementErrorArcsec
+                    : 0);
+                const floorTooltip = `Floor ratio: ${aSum.significanceRatio.toFixed(1)}× floor (1σ err = ${(aSum.targetSigmaArcsec ?? aSum.measuredDisplacementErrorArcsec).toFixed(2)}″${aSum.diffFromExpectedSigma != null ? `, |meas − exp| = ${aSum.diffFromExpectedSigma.toFixed(1)}σ` : ''})`;
+                return (
+                  <span
+                    title={floorTooltip}
+                    className={`px-1.5 py-0.5 rounded border text-[10px] ${
+                      aSum.saturatedAllDetectors
+                        ? 'bg-rose-500/15 border-rose-500/40 text-rose-300'
+                        : !aSum.targetDetectedInDetector
+                        ? 'bg-slate-800 border-slate-600 text-slate-300'
+                        : aSum.motionSignificant
+                        ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                        : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                    }`}
+                  >
+                    {aSum.saturatedAllDetectors
+                      ? 'saturated in all frames of all detectors: predicted track only'
+                      : !aSum.targetDetectedInDetector
+                      ? aSum.detectorDetectionNote || `not detected in ${data.selectedDetector || 'detector'}`
+                      : aSum.motionSignificant
+                      ? `significant (${sigmaVal.toFixed(1)}σ)`
+                      : `motion not significant (${sigmaVal.toFixed(1)}σ)`}
+                  </span>
+                );
+              })()}
+              {(data.astrometrySummary?.wingFitCount ?? 0) > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px]">
+                  wing fit, low confidence
+                </span>
+              )}
+              {data.astrometrySummary?.lowConfidence && (data.astrometrySummary?.wingFitCount ?? 0) === 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px]">
+                  low confidence ({data.astrometrySummary.medianRefStarsUsed} ref stars)
+                </span>
               )}
               {data.centroidStacked && (
                 <span className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/40 text-cyan-300 text-[10px]">
@@ -1803,7 +2061,17 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 <div className="flex flex-col gap-1.5">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
                     <span>
-                      {validCentroids.length}/{centroidSeries.length} frames detected (S/N ≥ 3)
+                      {validCentroids.length}/{centroidSeries.length} frames detected
+                      {data.astrometrySummary
+                        ? ` · ${data.astrometrySummary.medianRefStarsUsed} Gaia ref stars · Meas Δ (${data.astrometrySummary.measuredNetDxArcsec.toFixed(2)}″, ${data.astrometrySummary.measuredNetDyArcsec.toFixed(2)}″) ± ${data.astrometrySummary.measuredDisplacementErrorArcsec.toFixed(2)}″ (${(data.astrometrySummary.sigma ?? 0).toFixed(1)}σ)`
+                        : ''}
+                      {data.astrometrySummary?.expectedOffset && (data.astrometrySummary.expectedOffset.totalArcsec > 0 || data.properMotion)
+                        ? ` · Exp (${data.astrometrySummary.expectedOffset.dxArcsec.toFixed(2)}″, ${data.astrometrySummary.expectedOffset.dyArcsec.toFixed(2)}″)`
+                        : ''}
+                      {data.astrometrySummary?.nearbyNeighbors15Arcsec &&
+                      data.astrometrySummary.nearbyNeighbors15Arcsec.length > 0
+                        ? ` · Nearest catalog neighbor: ${data.astrometrySummary.nearbyNeighbors15Arcsec[0].distToPredictedArcsec.toFixed(1)}″ (${data.astrometrySummary.nearbyNeighbors15Arcsec[0].identifier})`
+                        : ''}
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-cyan-400">● ΔRA·cosδ</span>
@@ -1868,7 +2136,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         return (
                           <g key={c.idx}>
                             <title>
-                              {`Epoch ${c.idx + 1} (t+${c.dtDays.toFixed(1)}d): not detected${c.snr != null ? ` (S/N ${c.snr.toFixed(1)})` : ''}`}
+                              {`Epoch ${c.idx + 1} (${c.releaseLabel} ${c.versionLabel}, t+${c.dtDays.toFixed(1)}d): not detected${c.maskedReason ? ` [${c.maskedReason}]` : ''}${c.snr != null ? ` (S/N ${c.snr.toFixed(1)})` : ''}`}
                             </title>
                             <circle cx={px} cy={48} r={isCurrent ? 3.5 : 2} fill="none" stroke="#64748b" strokeWidth="1" strokeDasharray="1.5 1.5" />
                           </g>
@@ -1880,7 +2148,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       return (
                         <g key={c.idx}>
                           <title>
-                            {`Epoch ${c.idx + 1} (t+${c.dtDays.toFixed(1)}d): ΔRA·cosδ ${c.dxArcsec.toFixed(2)}″, ΔDec ${c.dyArcsec.toFixed(2)}″ ± ${c.errArcsec.toFixed(2)}″${c.snr != null ? ` | S/N ${c.snr.toFixed(1)}` : ''}${c.stacked ? ' [stacked]' : ''}`}
+                            {`Epoch ${c.idx + 1} (${c.releaseLabel} ${c.versionLabel}, t+${c.dtDays.toFixed(1)}d): ΔRA·cosδ ${c.dxArcsec.toFixed(2)}″, ΔDec ${c.dyArcsec.toFixed(2)}″ ± ${c.errArcsec.toFixed(2)}″${c.refStarsUsed != null ? ` | ${c.refStarsUsed} ref stars` : ''}${c.snr != null ? ` | S/N ${c.snr.toFixed(1)}` : ''}${c.stacked ? ' [stacked]' : ''}`}
                           </title>
                           <line x1={px} y1={pyRa - errPx} x2={px} y2={pyRa + errPx} stroke="#00D3F3" strokeWidth="1" opacity={0.6} />
                           <circle cx={px} cy={pyRa} r={isCurrent ? 4 : 2.5} fill="#00D3F3" />
@@ -1960,6 +2228,128 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               })() : (
                 <p className="text-xs font-mono text-slate-400 py-1.5">{t.emptySpectrum}</p>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Reserved Slot 4: Brightness vs Time Light Curve (Task 4) */}
+        <div className="rounded-xl bg-black/50 border border-white/10 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setLightCurveSlotOpen((v) => !v)}
+            aria-expanded={lightCurveSlotOpen}
+            className="w-full px-3 py-2 flex items-center justify-between gap-2 text-[11px] font-mono font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-[#FFB900]"
+          >
+            <span className="flex items-center gap-2 flex-wrap">
+              <Zap className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+              <span>{t.slotLightCurve}</span>
+              {data.lightCurve && data.lightCurve.length > 0 && (
+                <span className="font-normal text-slate-400">
+                  · {data.lightCurve.filter((p) => p.valid).length}/{data.lightCurve.length} valid ({data.selectedDetector || 'det'})
+                </span>
+              )}
+              {data.lightCurve?.some((p) => p.valid && p.isWingAnnulus) && (
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px]">
+                  wing annulus (2–5 px)
+                </span>
+              )}
+            </span>
+            <ChevronDown
+              className={`w-4 h-4 text-slate-400 transition-transform ${lightCurveSlotOpen ? 'rotate-180' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {lightCurveSlotOpen && (
+            <div className="px-2.5 pb-2.5 pt-1 border-t border-white/10">
+              {(() => {
+                const rawLc = data.lightCurve || [];
+                const validAll = rawLc.filter((p) => p.valid);
+                if (rawLc.length === 0 || validAll.length === 0) {
+                  return (
+                    <p className="text-xs font-mono text-amber-300/90 py-1.5">
+                      Photometry unavailable: target core saturated with insufficient unmasked wing-annulus pixels in {data.selectedDetector || 'this detector'}.
+                    </p>
+                  );
+                }
+                const wls = validAll.map((p) => p.wavelengthUm).sort((a, b) => a - b);
+                const wlMin = wls[0];
+                const wlMax = wls[wls.length - 1];
+                const wlSpan = Math.max(0.01, wlMax - wlMin);
+                const wlLowCut = wlMin + wlSpan / 3;
+                const wlHighCut = wlMin + (2 * wlSpan) / 3;
+                const filteredLc = rawLc.filter((p) => {
+                  if (lcBandFilter === 'lower') return p.wavelengthUm <= wlLowCut;
+                  if (lcBandFilter === 'middle') return p.wavelengthUm > wlLowCut && p.wavelengthUm <= wlHighCut;
+                  if (lcBandFilter === 'upper') return p.wavelengthUm > wlHighCut;
+                  return true;
+                });
+                const validFiltered = filteredLc.filter((p) => p.valid);
+                const minMjdLc = rawLc[0]?.mjd ?? 0;
+                const spanMjdLc = Math.max(0.01, (rawLc[rawLc.length - 1]?.mjd ?? minMjdLc) - minMjdLc);
+                const fluxVals = validFiltered.map((p) => p.fluxMjySr);
+                const minF = fluxVals.length > 0 ? Math.min(...fluxVals.map((f, i) => f - validFiltered[i].uncertaintyMjySr)) : 0;
+                const maxF = fluxVals.length > 0 ? Math.max(...fluxVals.map((f, i) => f + validFiltered[i].uncertaintyMjySr)) : 1;
+                const rangeF = Math.max(1e-3, maxF - minF);
+
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+                      <span>
+                        Native aperture flux (MJy/sr) vs MJD · λ {wlMin.toFixed(2)}–{wlMax.toFixed(2)} µm
+                      </span>
+                      <label className="flex items-center gap-1.5 text-slate-300">
+                        <span>λ window:</span>
+                        <select
+                          value={lcBandFilter}
+                          onChange={(e) => setLcBandFilter(e.target.value as 'all' | 'lower' | 'middle' | 'upper')}
+                          aria-label="Light curve wavelength window filter"
+                          className="bg-black/60 border border-white/15 rounded px-1.5 py-0.5 text-[10px] text-slate-200 cursor-pointer"
+                        >
+                          <option value="all">All ({wlMin.toFixed(2)}–{wlMax.toFixed(2)} µm)</option>
+                          <option value="lower">{wlMin.toFixed(2)}–{wlLowCut.toFixed(2)} µm</option>
+                          <option value="middle">{wlLowCut.toFixed(2)}–{wlHighCut.toFixed(2)} µm</option>
+                          <option value="upper">{wlHighCut.toFixed(2)}–{wlMax.toFixed(2)} µm</option>
+                        </select>
+                      </label>
+                    </div>
+                    <svg viewBox="0 0 560 88" className="w-full h-22 bg-[#070b16] rounded-lg" role="img" aria-label="Brightness versus time light curve">
+                      <text x={6} y={14} fill="#94a3b8" fontSize="9" fontFamily="monospace">
+                        {maxF >= 100 ? maxF.toFixed(0) : maxF.toFixed(2)}
+                      </text>
+                      <text x={6} y={80} fill="#94a3b8" fontSize="9" fontFamily="monospace">
+                        {minF >= 100 ? minF.toFixed(0) : minF.toFixed(2)}
+                      </text>
+                      <line x1={48} y1={10} x2={545} y2={10} stroke="rgba(255,255,255,0.06)" />
+                      <line x1={48} y1={78} x2={545} y2={78} stroke="rgba(255,255,255,0.12)" />
+                      {filteredLc.map((p, idx) => {
+                        const px = 50 + ((p.mjd - minMjdLc) / spanMjdLc) * 490;
+                        if (!p.valid) {
+                          return (
+                            <g key={p.obsId + idx}>
+                              <title>{`MJD ${p.mjd.toFixed(3)} | λ=${p.wavelengthUm.toFixed(2)} µm | masked (${p.maskedReason || 'flagged'})`}</title>
+                              <circle cx={px} cy={78} r={2} fill="none" stroke="#64748b" strokeWidth="1" />
+                            </g>
+                          );
+                        }
+                        const py = 74 - ((p.fluxMjySr - minF) / rangeF) * 60;
+                        const errPx = Math.min(20, (p.uncertaintyMjySr / rangeF) * 60);
+                        return (
+                          <g key={p.obsId + idx}>
+                            <title>
+                              {`MJD ${p.mjd.toFixed(4)} (${p.dateObs.slice(0, 10)}) | λ=${p.wavelengthUm.toFixed(2)} µm | Flux ${p.fluxMjySr.toFixed(2)} ± ${p.uncertaintyMjySr.toFixed(2)} MJy/sr | S/N ${p.snr.toFixed(1)}${p.isWingAnnulus ? ' [wing annulus]' : ''}`}
+                            </title>
+                            <line x1={px} y1={py - errPx} x2={px} y2={py + errPx} stroke={p.isWingAnnulus ? '#F59E0B' : '#10B981'} strokeWidth="1" opacity={0.65} />
+                            <circle cx={px} cy={py} r={p.frameIndex - 1 === currentFrameIdx ? 4 : 2.5} fill={p.isWingAnnulus ? '#F59E0B' : '#10B981'} />
+                          </g>
+                        );
+                      })}
+                    </svg>
+                    <div className="text-[10px] font-mono text-slate-400">
+                      Note: Effective LVF target wavelength varies across exposures ({wlMin.toFixed(2)}–{wlMax.toFixed(2)} µm); part of photometric scatter can be spectral.
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

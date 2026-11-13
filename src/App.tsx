@@ -358,7 +358,7 @@ export function App() {
       constellation: obj.constellation,
       scienceType: obj.classification,
       description: obj.shortDescriptionEn,
-      qr2Coverage: obj.spherexStatus === 'Covered (QR2)' ? 'covered' : 'outside_footprint',
+      qr2Coverage: obj.spherexStatus === 'Covered (Archive)' ? 'covered' : 'outside_footprint',
       angularDistanceDegToNEP: 0,
       recommendedBenchmarkId: obj.id,
       expectedBehavior: obj.scientificExplanationEn,

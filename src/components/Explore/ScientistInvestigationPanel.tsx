@@ -93,7 +93,7 @@ export const ScientistInvestigationPanel: React.FC<ScientistInvestigationPanelPr
             </h3>
           </div>
           <span className="font-mono text-[10px] text-[#00D3F3] bg-[#00D3F3]/10 border border-[#00D3F3]/30 px-2 py-0.5 rounded">
-            QR2 LEVEL-2B
+            DR1 / QR3 / QR2 LEVEL-2B
           </span>
         </div>
 

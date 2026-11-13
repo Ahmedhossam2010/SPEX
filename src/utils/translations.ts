@@ -313,6 +313,7 @@ export interface TranslationDictionary {
   slotMetadata: string;
   slotCentroid: string;
   slotSpectrum: string;
+  slotLightCurve: string;
   slotAladin: string;
   emptyCentroid: string;
   emptySpectrum: string;
@@ -523,14 +524,14 @@ export const translations: Record<Language, TranslationDictionary> = {
     searchModalClose: 'Close',
     searchCoverageNoticeTitle: 'Live IRSA SPHEREx Coverage:',
     searchCoverageNoticeText:
-      'Queries check live NASA/IPAC IRSA SPHEREx footprints (spherex.artifact + spherex.plane across DR1 / QR3 / QR2). All 5 challenge targets and covered sky fields return calibrated Level-2B exposures.',
+      'Queries read the current NASA/IPAC IRSA SPHEREx public archive (DR1 / QR3 / QR2, weekly updates) via spherex.artifact + spherex.plane for all 5 challenge targets and covered sky fields.',
     searchLabelRa: 'Right Ascension (RA in degrees, 0°–360°):',
     searchLabelDec: 'Declination (Dec in degrees, -90°–+90°):',
     searchVerifiedTargetsTitle: 'Verified Targets in SPHEREx Public Archive:',
-    searchTargetNepVar: 'NEP Deep Variable',
-    searchTargetNepCal: 'NEP Calibration Standard',
-    searchTargetNepMotion: 'NEP Proper Motion Star',
-    searchTargetNepField: 'NEP Field Counterpart',
+    searchTargetNepVar: 'Public Archive Variable Field',
+    searchTargetNepCal: 'Archive Calibration Standard',
+    searchTargetNepMotion: 'Proper Motion Star',
+    searchTargetNepField: 'Archive Reference Field',
     searchBtnCancel: 'Cancel',
     searchBtnSubmit: 'Query & Compare',
 
@@ -562,8 +563,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeBtnPlayGame: 'Play Cosmic Detective',
     homeBtnBrowseCases: 'Browse Benchmarks',
     homeBtnScientificAudit: 'Scientific Audit',
-    homeBenchmarksHeader: 'Verified Astronomical Benchmarks in SPHEREx Archive:',
-    homeBenchmark1: 'NEP Deep Variable (7.8σ Change)',
+    homeBenchmarksHeader: 'Verified Benchmarks in SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates):',
+    homeBenchmark1: 'Public Archive Variable Field (7.8σ Change)',
     homeBenchmark2: 'Stability Standard (Zero Change)',
     homeBenchmark3: 'DQ Mask (Rejects Saturation & Artifacts)',
     homeSpexSpeechGreeting: 'SPEX says hello!',
@@ -665,6 +666,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     slotMetadata: 'Frame Metadata Strip',
     slotCentroid: 'Centroid vs Time Plot',
     slotSpectrum: 'Measured Spectrum',
+    slotLightCurve: 'Brightness vs time',
     slotAladin: 'Aladin Sky Context',
     emptyCentroid: 'Need at least 2 frames with measured centroids to plot motion vs time.',
     emptySpectrum: 'No measured spectrum points available yet for this target.',
@@ -873,11 +875,11 @@ export const translations: Record<Language, TranslationDictionary> = {
     searchModalClose: 'إغلاق',
     searchCoverageNoticeTitle: 'تغطية أرشيف IRSA SPHEREx الحية:',
     searchCoverageNoticeText:
-      'تفحص الاستعلامات تغطية مسح NASA/IPAC IRSA SPHEREx الحية عبر (spherex.artifact + spherex.plane لإصدارات DR1 / QR3 / QR2). تتوفر رصدات حقيقية لجميع أهداف التحدي الخمسة.',
+      'تقرأ الاستعلامات أرشيف NASA/IPAC IRSA SPHEREx العام الحالي (DR1 / QR3 / QR2، تحديثات أسبوعية) عبر (spherex.artifact + spherex.plane) لجميع أهداف التحدي الخمسة ومناطق السماء المغطاة.',
     searchLabelRa: 'المطلع المستقيم (RA بالدرجات، 0°–360°):',
     searchLabelDec: 'الميل السماوي (Dec بالدرجات، -90°–+90°):',
     searchVerifiedTargetsTitle: 'أهداف موثقة في أرشيف SPHEREx العام:',
-    searchTargetNepVar: 'متغير NEP العميق',
+    searchTargetNepVar: 'متغير الأرشيف العام',
     searchTargetNepCal: 'معيار المعايرة الضوئية',
     searchTargetNepMotion: 'نجم ذو حركة ذاتية',
     searchTargetNepField: 'نظير الحقل المرجعي',
@@ -912,8 +914,8 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeBtnPlayGame: 'العب المحقق الكوني',
     homeBtnBrowseCases: 'تصفح الحالات الموثقة',
     homeBtnScientificAudit: 'سجل التدقيق العلمي',
-    homeBenchmarksHeader: 'حالات فلكية نموذجية موثقة في أرشيف SPHEREx:',
-    homeBenchmark1: 'متغير NEP العميق (تغير بقوة 7.8σ)',
+    homeBenchmarksHeader: 'حالات موثقة في أرشيف SPHEREx العام (DR1 / QR3 / QR2، تحديثات أسبوعية):',
+    homeBenchmark1: 'متغير الأرشيف العام (تغير بقوة 7.8σ)',
     homeBenchmark2: 'معيار الثبات الضوئي (تغير منعدم 0.0σ)',
     homeBenchmark3: 'قناع الجودة (استبعاد التشبع وعيوب الحساس)',
     homeSpexSpeechGreeting: 'سبيكس يرحب بك!',
@@ -1015,6 +1017,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     slotMetadata: 'شريط بيانات الإطار الزمني',
     slotCentroid: 'منحنى إزاحة المركز مع الزمن',
     slotSpectrum: 'الطيف المقاس عبر الأطوال الموجية',
+    slotLightCurve: 'السطوع مقابل الزمن',
     slotAladin: 'خريطة علاء الدين السماوية المرجعية',
     emptyCentroid: 'يلزم إطاران على الأقل بقياسات مركز صالحة لرسم الحركة مع الزمن.',
     emptySpectrum: 'لا توجد نقاط طيفية مقاسة متاحة بعد لهذا الهدف.',

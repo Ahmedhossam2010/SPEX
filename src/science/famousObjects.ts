@@ -33,7 +33,7 @@ export interface FamousObject {
   shortDescriptionAr: string;
   scientificExplanationEn: string;
   scientificExplanationAr: string;
-  spherexStatus: 'Covered (QR2)' | 'Covered (Archive)' | 'Scheduled (PR1 All-Sky)' | 'High-Cadence NEP';
+  spherexStatus: 'Covered (Archive)' | 'Scheduled (PR1 All-Sky)' | 'High-Cadence Survey';
   spherexStatusAr: string;
   availableBands: string[];
   challengeTargetId?: string;

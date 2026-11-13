@@ -100,7 +100,7 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
   mathMode = 'subtraction',
   onChangeMathMode,
   targetName = 'Astronomical Target',
-  dataRelease = 'SPHEREx QR2 (Level 2B)',
+  dataRelease = 'SPHEREx Public Archive (DR1 / QR3 / QR2)',
   activeBandIdx,
   onSelectBandIdx,
   availableBands,
@@ -266,10 +266,10 @@ export const FourLensesDock: React.FC<FourLensesDockProps> = ({
                 </div>
                 <div className="flex items-center gap-2 font-mono text-[10px]">
                   <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    D1–D4: QR2 Available
+                    D1–D6: DR1 / QR3 / QR2 Live
                   </span>
                   <span className="px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-                    D5–D6: PR1 Scheduled
+                    0.75 – 5.0 µm Weekly Updates
                   </span>
                 </div>
               </div>

@@ -82,3 +82,31 @@ export function propagateFromJ2000ToMjd(
 ): PropagatedPosition {
   return propagatePosition(raDeg, decDeg, pmRaMasYr, pmDecMasYr, 2000.0, julianYearFromMjd(mjd));
 }
+
+/**
+ * Exact expected offset (dRA*cos(dec), dDec) in arcsec over [mjd0, mjd1] from canonical PM (mas/yr).
+ * Preserves pmRaMasYr sign directly (mu_alpha* = mu_alpha * cos(dec)).
+ */
+export function computeExpectedProperMotionOffset(
+  pmRaMasYr: number,
+  pmDecMasYr: number,
+  mjd0: number,
+  mjd1: number
+): {
+  dxArcsec: number;
+  dyArcsec: number;
+  totalArcsec: number;
+  baselineDays: number;
+} {
+  const baselineDays = mjd1 - mjd0;
+  const dtYears = baselineDays / 365.25;
+  const dxArcsec = Number(((pmRaMasYr / 1000) * dtYears).toFixed(3));
+  const dyArcsec = Number(((pmDecMasYr / 1000) * dtYears).toFixed(3));
+  const totalArcsec = Number(Math.hypot(dxArcsec, dyArcsec).toFixed(3));
+  return {
+    dxArcsec,
+    dyArcsec,
+    totalArcsec,
+    baselineDays: Number(baselineDays.toFixed(4)),
+  };
+}

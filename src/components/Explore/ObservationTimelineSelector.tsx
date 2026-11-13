@@ -73,7 +73,7 @@ export const ObservationTimelineSelector: React.FC<ObservationTimelineSelectorPr
   onChangeMathMode,
   language,
   targetName,
-  dataRelease = 'SPHEREx QR2 (Level 2B)',
+  dataRelease = 'SPHEREx Public Archive (DR1 / QR3 / QR2)',
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];

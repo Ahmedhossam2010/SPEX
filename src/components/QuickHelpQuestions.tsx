@@ -43,8 +43,8 @@ export const QuickHelpQuestions: React.FC<QuickHelpQuestionsProps> = ({
             : 'You are viewing NASA’s SPHEREx space observatory, surveying the entire sky across 102 infrared bands to discover how the universe changes over time.';
         }
         return ar
-          ? `أنت تشاهد رقعة حقيقية من السماء بالقرب من القطب الشمالي لمسار الشمس (RA ${res.targetCoords.ra.toFixed(2)}°، Dec ${res.targetCoords.dec.toFixed(2)}°). الصورة تعرض ${vm === 'difference' ? 'صورة الفرق (ما تغير فقط)' : vm === 'epoch1' ? 'الرصدة الأولى' : vm === 'epoch2' ? 'الرصدة الثانية' : 'قوة الإشارة الإحصائية'}.`
-          : `You are looking at a real patch of sky near the North Ecliptic Pole (RA ${res.targetCoords.ra.toFixed(2)}°, Dec ${res.targetCoords.dec.toFixed(2)}°). The canvas is currently showing the ${vm === 'difference' ? 'difference image (what changed only)' : vm === 'epoch1' ? 'first snapshot' : vm === 'epoch2' ? 'second snapshot' : 'statistical significance map'}.`;
+          ? `أنت تشاهد رقعة حقيقية من السماء في أرشيف SPHEREx العام (DR1 / QR3 / QR2، تحديثات أسبوعية) عند (RA ${res.targetCoords.ra.toFixed(2)}°، Dec ${res.targetCoords.dec.toFixed(2)}°). الصورة تعرض ${vm === 'difference' ? 'صورة الفرق (ما تغير فقط)' : vm === 'epoch1' ? 'الرصدة الأولى' : vm === 'epoch2' ? 'الرصدة الثانية' : 'قوة الإشارة الإحصائية'}.`
+          : `You are looking at a real patch of sky from the SPHEREx public archive (DR1 / QR3 / QR2, weekly updates) at (RA ${res.targetCoords.ra.toFixed(2)}°, Dec ${res.targetCoords.dec.toFixed(2)}°). The canvas is currently showing the ${vm === 'difference' ? 'difference image (what changed only)' : vm === 'epoch1' ? 'first snapshot' : vm === 'epoch2' ? 'second snapshot' : 'statistical significance map'}.`;
       },
     },
     {

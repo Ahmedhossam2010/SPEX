@@ -52,7 +52,7 @@
 ---
 
 ## Final Stabilization Pass
-- [x] **Phase A (A1–A4)**: Home default + 5 one-click presets & deep links; SPEX mascot restored & updated (EN/AR); A3 progressive disclosure + collapsed `Advanced` drawer; A4 WiseView control bar, keyboard shortcuts, ARIA, and 4 reserved slots (`npm run lint && npm test`: 35/35 passed).
-- [ ] **Phase B (B1–B13)**: `spherex.artifact` JOIN `spherex.plane` TAP queries, release ordering (`dr1`/`qr3`/`qr2`), MEF `EXTNAME` + `WCS-WAVE` `-TAB` spectral WCS, verified SIMBAD astrometry, `VARIANCE`-gated centroids + co-add stacks, progressive loading, startup warm-up, real `/api/health`.
-- [ ] **Phase C (C1–C4)**: Updated tests + Barnard's Star/WISE 0855 PM tests + Playwright smoke test, `README.md` + Mermaid + Cloud Run `Dockerfile` + `.env.example`, live 5-target verification & demo pitch.
-
+- [x] **Phase A (A1–A4)**: Home default + 5 one-click presets & deep links; SPEX mascot restored & updated (EN/AR); A3 progressive disclosure + collapsed `Advanced` drawer; A4 WiseView control bar, keyboard shortcuts, ARIA, and 4 reserved slots.
+- [x] **Phase B (B1–B13)**: `spherex.artifact` JOIN `spherex.plane` TAP queries, release ordering (`dr1`/`qr3`/`qr2`), MEF `EXTNAME` + `WCS-WAVE` `-TAB` spectral WCS, verified SIMBAD astrometry, `VARIANCE`-gated centroids + co-add stacks, progressive loading, startup warm-up, real `/api/health`.
+- [x] **Phase C (C1–C4)**: Live 5-preset proof (`P0-1`), `<3 MB` demo snapshot fallback (`P0-2`), DR1/QR3/QR2 copy & release/VERSION honesty in `FramePlayer` (`P1-1`/`P1-2`), live per-target `data-drop-check` (`P1-3`), Playwright smoke test (`P1-4`), `.gitattributes`/`.gitignore`/benchmark FITS hygiene (`P1-5`, 92/92 unit tests), `CHANGES.md`/`PROGRESS.md`/`README.md` (`P1-6`).
+- [x] **Astrometry Validity Pass (Tasks 1–5)**: Differential Gaia DR3 frame astrometry (`|pm| < 20 mas/yr`, 3-px isolation, <3 star low-confidence flag), stationary-control empirical error floor (`0.437"` from `RW Aur`, `3×` significance gate, `0x02`/`0x10` DQ masking & neighbor rejection), full cross-release (`dr1`+`qr3`) astrometric baselines (`517d` Epsilon Indi, `373d` WISE 0855 `D5`, `370d` Barnard's Star) with strict same-release/VERSION Diff & Stack grouping, recommended per-target detectors, and verified live/snapshot outputs.

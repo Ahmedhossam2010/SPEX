@@ -1,0 +1,26 @@
+{
+  "updatedAt": "2026-11-13T09:29:51.133Z",
+  "reports": [
+    {
+      "targetId": "target-rw-aurigae",
+      "validFrames": 12,
+      "totalFrames": 16,
+      "residualScatterArcsec": 0.437,
+      "meanOffsetArcsec": 0.318,
+      "perFrameResidualsArcsec": [
+        0,
+        0,
+        0.0001,
+        0.0001,
+        0.7662,
+        0.7662,
+        0.0922,
+        0.0922,
+        0.5249,
+        0.5249,
+        0.5249,
+        0.5249
+      ]
+    }
+  ]
+}

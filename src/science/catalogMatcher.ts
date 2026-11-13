@@ -145,6 +145,14 @@ const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
     objectType: 'Mid-Infrared Counterpart (GJ 699)',
   },
   {
+    ra: 133.7581825,
+    dec: -7.2411559,
+    identifier: 'AllWISE J085501.95-071428.1',
+    w1Mag: 15.9,
+    w2Mag: 15.8,
+    objectType: 'Background Field Star near WISE 0855 (8.2" away)',
+  },
+  {
     ra: 133.81890825,
     dec: -7.24704800,
     identifier: 'WISEA J085510.74-071442.5 (Spitzer/HST, absent from Gaia)',
@@ -157,6 +165,27 @@ const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
 export class CatalogMatcher {
   // In-memory cache for celestial cone queries
   private static cache = new Map<string, CatalogMatch[]>();
+  private static overlayCache = new Map<string, CatalogOverlayItem[]>();
+
+  public static getOverlayCacheKey(ra: number, dec: number, radiusArcsec: number): string {
+    return `${ra.toFixed(4)}_${dec.toFixed(4)}_${Math.round(radiusArcsec)}`;
+  }
+
+  public static seedOverlayCache(entries: Record<string, CatalogOverlayItem[]>): void {
+    for (const [k, v] of Object.entries(entries)) {
+      if (Array.isArray(v) && v.length > 0) {
+        this.overlayCache.set(k, v);
+      }
+    }
+  }
+
+  public static exportOverlayCache(): Record<string, CatalogOverlayItem[]> {
+    const out: Record<string, CatalogOverlayItem[]> = {};
+    for (const [k, v] of this.overlayCache.entries()) {
+      out[k] = v;
+    }
+    return out;
+  }
 
   /**
    * Cross-match candidate RA/Dec against multi-wavelength astronomical catalogs:
@@ -423,6 +452,43 @@ export class CatalogMatcher {
     observationEpochYear = 2025.35,
     wcs?: WCSParams
   ): Promise<CatalogOverlayItem[]> {
+    const cacheKey = this.getOverlayCacheKey(ra, dec, radiusArcsec);
+    const cachedRaw = this.overlayCache.get(cacheKey);
+    if (cachedRaw && cachedRaw.length > 0) {
+      return cachedRaw.map((item) => {
+        if (item.catalog === 'Gaia DR3') {
+          const prop = this.propagateProperMotion(
+            item.raRaw,
+            item.decRaw,
+            item.pmRaMasYr || 0,
+            item.pmDecMasYr || 0,
+            2016.0,
+            observationEpochYear
+          );
+          let x = item.x;
+          let y = item.y;
+          if (wcs) {
+            try {
+              const pix = WCS.skyToPix(prop.ra, prop.dec, wcs);
+              x = Number(pix.x.toFixed(2));
+              y = Number(pix.y.toFixed(2));
+            } catch {}
+          }
+          return { ...item, raPropagated: prop.ra, decPropagated: prop.dec, x, y };
+        }
+        let x = item.x;
+        let y = item.y;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(item.raPropagated, item.decPropagated, wcs);
+            x = Number(pix.x.toFixed(2));
+            y = Number(pix.y.toFixed(2));
+          } catch {}
+        }
+        return { ...item, x, y };
+      });
+    }
+
     const overlays: CatalogOverlayItem[] = [];
     const radiusDeg = Math.max(0.01, Math.min(0.5, radiusArcsec / 3600));
     const useLiveCatalogs =
@@ -430,7 +496,7 @@ export class CatalogMatcher {
 
     if (useLiveCatalogs) {
       const fetchEsaGaia = async (): Promise<string[][]> => {
-        const gaiaAdql = `SELECT TOP 25 source_id, ra, dec, pmra, pmdec, phot_g_mean_mag FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',${ra.toFixed(6)},${dec.toFixed(6)},${radiusDeg.toFixed(5)})) AND phot_g_mean_mag < 19 ORDER BY phot_g_mean_mag ASC`;
+        const gaiaAdql = `SELECT TOP 60 source_id, ra, dec, pmra, pmdec, phot_g_mean_mag FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',${ra.toFixed(6)},${dec.toFixed(6)},${radiusDeg.toFixed(5)})) AND phot_g_mean_mag < 19.5 ORDER BY phot_g_mean_mag ASC`;
         const url = `https://gea.esac.esa.int/tap-server/tap/sync?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=${encodeURIComponent(gaiaAdql)}`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
@@ -457,7 +523,7 @@ export class CatalogMatcher {
 
       const fetchCfaWise = async (): Promise<string[][]> => {
         const rsArcsec = Math.max(30, Math.min(1800, Math.round(radiusArcsec)));
-        const url = `https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=II/328/allwise&-c=${ra.toFixed(6)}+${dec >= 0 ? '+' : ''}${dec.toFixed(6)}&-c.rs=${rsArcsec}&-out.max=25&-out=AllWISE,RAJ2000,DEJ2000,W1mag,W2mag`;
+        const url = `https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=II/328/allwise&-c=${ra.toFixed(6)}+${dec >= 0 ? '+' : ''}${dec.toFixed(6)}&-c.rs=${rsArcsec}&-out.max=60&-out=AllWISE,RAJ2000,DEJ2000,W1mag,W2mag`;
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 8000);
         try {
@@ -573,6 +639,7 @@ export class CatalogMatcher {
       }
 
       if (overlays.length > 0) {
+        this.overlayCache.set(cacheKey, overlays);
         return overlays;
       }
     }

@@ -563,10 +563,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   type="button"
                   onClick={() => setShowDataRelease(true)}
                   className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-400 hover:bg-emerald-500/25 transition cursor-pointer font-mono"
-                  title="Dataset: NASA/IPAC IRSA QR2 Level-2B Benchmark Cutouts · QR3 Ingestion Engine Ready"
+                  title="Dataset: NASA/IPAC IRSA SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates)"
                 >
                   <Database className="w-3 h-3 text-emerald-400" />
-                  <span>Release: {currentResult?.releaseId || 'SPHEREx-QR2-Level2B'} (Benchmark Cutouts)</span>
+                  <span>Release: {currentResult?.releaseId || 'SPHEREx Public Archive (DR1 / QR3 / QR2)'}</span>
                 </button>
               </div>
             </div>
@@ -2082,7 +2082,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
                 <div className="flex items-center justify-between pt-1">
                   <span className="text-[10px] text-slate-500">
-                    FITS provenance: NASA/IPAC IRSA QR2 Level-2B Calibrated
+                    FITS provenance: NASA/IPAC IRSA SPHEREx Public Archive (DR1 / QR3 / QR2)
                   </span>
                   <button
                     type="button"

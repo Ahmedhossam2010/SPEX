@@ -78,8 +78,8 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
             </span>
             <p className="leading-relaxed">
               {isRtl
-                ? 'تتوفر الرصدات المعايرة لجميع الأهداف الخمسة الرسمية (نجم برنارد، إبسيلون إندي، WISE 0855، RW Aurigae، R Draconis) عبر استعلامات IRSA TAP الحية (spherex.artifact + spherex.plane) مع تفضيل أحدث إصدار متاح (DR1 / QR3 / QR2).'
-                : 'Live calibrated SPHEREx exposures for all 5 challenge targets (Barnard\'s Star, Epsilon Indi, WISE 0855, RW Aurigae, R Draconis) and arbitrary sky coordinates are queried directly via IRSA TAP (spherex.artifact + spherex.plane) with newest-release selection (DR1 / QR3 / QR2).'}
+                ? 'تقرأ المنصة أرشيف SPHEREx العام الحالي عبر NASA/IPAC IRSA (إصدارات DR1 / QR3 / QR2 مع تحديثات أسبوعية) وتشمل جميع الأجرام الخمسة الرسمية ومختلف إحداثيات السماء.'
+                : 'This app reads the current SPHEREx public archive (DR1 / QR3 / QR2, weekly updates) via NASA/IPAC IRSA TAP (spherex.artifact + spherex.plane) for all 5 challenge targets and arbitrary sky coordinates.'}
             </p>
           </div>
         </div>

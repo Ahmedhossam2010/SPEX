@@ -43,10 +43,134 @@ import {
   SpectrumPoint,
   CatalogOverlayItem,
   AvailableDetectorSummary,
+  LightCurvePoint,
 } from './src/science/timeSeriesPipeline';
 import { parseCoordinateInput } from './src/science/coordinates';
-import { propagatePosition, julianYearFromMjd } from './src/science/properMotion';
+import {
+  propagatePosition,
+  julianYearFromMjd,
+  computeExpectedProperMotionOffset,
+} from './src/science/properMotion';
 import { FAMOUS_OBJECTS_CATALOG, getFamousObjectById } from './src/science/famousObjects';
+import {
+  selectIsolatedReferenceStars,
+  fitFrameAstrometryCorrection,
+  measureFrameTargetDifferential,
+  fitSaturatedPsfWing,
+  measureFrameApertureFlux,
+  isCorePixelUnsaturated,
+  measureControlResidualScatter,
+  computeDetectorAndBrightnessFloor,
+  evaluateAstrometryErrorBudget,
+  findNearbyCatalogNeighbors,
+  wrapDeltaRaDeg,
+  ControlScatterReport,
+  FrameAstrometrySolution,
+  FrameTargetAstrometry,
+  LeaveOneOutResidual,
+} from './src/science/astrometry';
+
+const CONTROL_FLOOR_FILE = path.join(process.cwd(), 'data', 'snapshots', 'control-floor.json');
+const controlScatterStore = new Map<string, ControlScatterReport>();
+try {
+  if (fs.existsSync(CONTROL_FLOOR_FILE)) {
+    const savedFloor = JSON.parse(fs.readFileSync(CONTROL_FLOOR_FILE, 'utf-8'));
+    if (Array.isArray(savedFloor?.reports)) {
+      for (const rep of savedFloor.reports) {
+        // Scope control scatter strictly per detector (skip legacy untyped entries)
+        if (rep?.targetId && rep?.detector) {
+          controlScatterStore.set(`${rep.detector}::${rep.targetId}`, rep);
+        }
+      }
+    }
+  }
+} catch {}
+
+function saveControlFloorCache() {
+  try {
+    const dir = path.dirname(CONTROL_FLOOR_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      CONTROL_FLOOR_FILE,
+      JSON.stringify({ updatedAt: new Date().toISOString(), reports: Array.from(controlScatterStore.values()) }, null, 2)
+    );
+  } catch {}
+}
+
+const CATALOG_CACHE_FILE = path.join(process.cwd(), 'data', 'catalog_cache.json');
+const persistedNeighborsStore = new Map<string, any[]>();
+try {
+  if (fs.existsSync(CATALOG_CACHE_FILE)) {
+    const savedCat = JSON.parse(fs.readFileSync(CATALOG_CACHE_FILE, 'utf-8'));
+    if (savedCat?.overlays && typeof savedCat.overlays === 'object') {
+      CatalogMatcher.seedOverlayCache(savedCat.overlays);
+    }
+    if (savedCat?.neighbors && typeof savedCat.neighbors === 'object') {
+      for (const [k, v] of Object.entries(savedCat.neighbors)) {
+        if (Array.isArray(v)) persistedNeighborsStore.set(k, v);
+      }
+    }
+  }
+} catch {}
+
+function saveCatalogDiskCache() {
+  try {
+    const dir = path.dirname(CATALOG_CACHE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const neighborsObj: Record<string, any[]> = {};
+    for (const [k, v] of persistedNeighborsStore.entries()) {
+      neighborsObj[k] = v;
+    }
+    fs.writeFileSync(
+      CATALOG_CACHE_FILE,
+      JSON.stringify(
+        {
+          updatedAt: new Date().toISOString(),
+          overlays: CatalogMatcher.exportOverlayCache(),
+          neighbors: neighborsObj,
+        },
+        null,
+        2
+      )
+    );
+  } catch {}
+}
+
+function getRecommendedDetectorsForTarget(
+  target?: ChallengeTarget,
+  wlMinFilter?: number | null,
+  wlMaxFilter?: number | null
+): string[] {
+  if (wlMinFilter != null && wlMaxFilter != null) {
+    const matching = SPHEREX_DETECTOR_ARRAYS
+      .filter((d) => d.wavelengthRangeUm[1] >= wlMinFilter && d.wavelengthRangeUm[0] <= wlMaxFilter)
+      .map((d) => `D${d.detectorNumber}`);
+    if (matching.length > 0) return matching;
+  }
+  const tid = (target?.id || '').toLowerCase();
+  // Task 4: Pick detector order from target catalog brightness & spectral peak
+  // WISE 0855 (~250 K Y dwarf, extremely faint < 2.4 um, bright near 4.5 um): try D5 & D6 first.
+  if (tid.includes('wise-0855') || tid.includes('0855')) {
+    return ['D5', 'D6', 'D4', 'D3', 'D2', 'D1'];
+  }
+  // Barnard's Star (M4V, H=4.83 mag): D2 core saturates; D3/D1/D5 give unsaturated frames across ~400d.
+  if (tid.includes('barnard')) {
+    return ['D3', 'D1', 'D5', 'D6', 'D4', 'D2'];
+  }
+  // Epsilon Indi Ba/Bb (T1+T6, J=11.9, K=11.2): bright & clean in D3/D2 without saturation.
+  if (tid.includes('epsilon-indi')) {
+    return ['D3', 'D2', 'D4', 'D5', 'D1', 'D6'];
+  }
+  // RW Aurigae (G=10.42 CTTS): D1/D3 avoid D2 core saturation.
+  if (tid.includes('rw-aur')) {
+    return ['D1', 'D3', 'D4', 'D2', 'D5', 'D6'];
+  }
+  // R Draconis (bright Mira giant): shorter bands saturate heavily; try D6/D5 first, then D1.
+  if (tid.includes('r-dra')) {
+    return ['D6', 'D5', 'D1', 'D3', 'D4', 'D2'];
+  }
+  return ['D3', 'D2', 'D4', 'D1', 'D5', 'D6'];
+}
 
 function findTargetDefinition(identifier?: string, ra?: number, dec?: number): ChallengeTarget | undefined {
   const cleanId = (identifier || '').replace(/^(case|target)-/, '').toLowerCase().replace(/[-_]/g, '');
@@ -58,7 +182,7 @@ function findTargetDefinition(identifier?: string, ra?: number, dec?: number): C
     if (byId) return byId;
   }
   if (Number.isFinite(ra) && Number.isFinite(dec)) {
-    return OFFICIAL_CHALLENGE_TARGETS.find((t) => WCS.angularSeparationArcsec(t.ra, t.dec, ra!, dec!) < 3600);
+    return OFFICIAL_CHALLENGE_TARGETS.find((t) => WCS.angularSeparationArcsec(t.ra, t.dec, ra!, dec!) < 300);
   }
   return undefined;
 }
@@ -258,7 +382,7 @@ function parseCsvRows(csv: string): Record<string, string>[] {
  * Fast detector-first summary query (B8) using GROUP BY p.energy_bandpassname.
  * Returns per-detector counts and MJD bounds in ~1-2s even on 2,500-exposure fields like R Dra.
  */
-async function queryDetectorSummary(ra: number, dec: number): Promise<TapDetectorSummaryRow[]> {
+async function queryDetectorSummary(ra: number, dec: number, deadlineMs = 120000): Promise<TapDetectorSummaryRow[]> {
   if (process.env.SPHEREX_OFFLINE === '1') return [];
   const cacheKey = `${ra.toFixed(5)}_${dec.toFixed(5)}`;
   const cached = tapSummaryCache.get(cacheKey);
@@ -269,18 +393,26 @@ async function queryDetectorSummary(ra: number, dec: number): Promise<TapDetecto
   const adql = `SELECT p.energy_bandpassname, COUNT(DISTINCT p.obsid) AS exposure_count, MIN(p.time_bounds_lower) AS min_mjd, MAX(p.time_bounds_upper) AS max_mjd FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1 GROUP BY p.energy_bandpassname`;
   const tapUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(adql)}&FORMAT=csv`;
 
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 4;
+  const startedAt = Date.now();
   let lastErr: any = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const remainingMs = deadlineMs - (Date.now() - startedAt);
+    if (remainingMs <= 2000) break;
+    const perAttemptMs = Math.min(45000, remainingMs);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 75000);
+    const timeout = setTimeout(() => controller.abort(), perAttemptMs);
     try {
       const res = await fetch(tapUrl, {
         headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
         signal: controller.signal,
       });
       clearTimeout(timeout);
-      if (!res.ok) throw new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
+      if (!res.ok) {
+        const err: any = new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
+        err.statusCode = res.status;
+        throw err;
+      }
       const csv = await res.text();
       if (csv.trim().startsWith('<')) throw new Error('IRSA TAP returned VOTable error instead of CSV');
       const rawRows = parseCsvRows(csv);
@@ -304,22 +436,30 @@ async function queryDetectorSummary(ra: number, dec: number): Promise<TapDetecto
     } catch (err: any) {
       clearTimeout(timeout);
       lastErr = err;
+      const status = err?.statusCode;
+      if (status && status >= 400 && status < 500) break;
       if (attempt < MAX_RETRIES) {
-        await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt - 1)));
+        const backoff = Math.min(8000, 1500 * Math.pow(2, attempt - 1));
+        if (Date.now() - startedAt + backoff < deadlineMs - 2000) {
+          await new Promise((r) => setTimeout(r, backoff));
+        } else {
+          break;
+        }
       }
     }
   }
-  throw new Error(`IRSA TAP detector summary failed after ${MAX_RETRIES} attempts: ${lastErr?.message || 'network error'}`);
+  throw new Error(`IRSA TAP detector summary failed: ${lastErr?.message || 'network error'}`);
 }
 
 /**
  * Authoritative IRSA TAP query joining spherex.artifact and spherex.plane on planeid.
- * Uses 75s timeout, 3 retries with exponential backoff, detector filtering, and release deduplication.
+ * Retries on 5xx / network timeouts with exponential backoff up to 120s budget,
+ * supports single-detector filtering, and deduplicates across releases.
  */
 async function queryIrsaTapObs(
   ra: number,
   dec: number,
-  options: number | { limit?: number; detector?: string | null } = 3000
+  options: number | { limit?: number; detector?: string | null; deadlineMs?: number } = 3000
 ): Promise<TapObsRow[]> {
   if (process.env.SPHEREX_OFFLINE === '1') {
     return [];
@@ -327,6 +467,7 @@ async function queryIrsaTapObs(
 
   const limit = typeof options === 'number' ? options : options.limit ?? 3000;
   const detectorFilter = typeof options === 'object' && options.detector ? options.detector.toUpperCase() : null;
+  const deadlineMs = typeof options === 'object' && options.deadlineMs ? options.deadlineMs : 120000;
   const cacheKey = `${ra.toFixed(5)}_${dec.toFixed(5)}_${detectorFilter || 'ALL'}_${limit}`;
   const cached = tapQueryCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < TAP_CACHE_TTL_MS) {
@@ -343,12 +484,16 @@ async function queryIrsaTapObs(
     const adql = `SELECT TOP ${limit} p.obsid, p.energy_bandpassname, p.time_bounds_lower, p.time_bounds_upper, p.energy_bounds_lower, p.energy_bounds_upper, p.provenance_version, p.datarelease, a.uri FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1${detClause} ORDER BY p.time_bounds_lower ASC`;
     const tapUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(adql)}&FORMAT=csv`;
 
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 4;
+    const startedAt = Date.now();
     let lastErr: any = null;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const remainingMs = deadlineMs - (Date.now() - startedAt);
+      if (remainingMs <= 2000) break;
+      const perAttemptMs = Math.min(45000, remainingMs);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 75000);
+      const timeout = setTimeout(() => controller.abort(), perAttemptMs);
       try {
         const res = await fetch(tapUrl, {
           headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
@@ -356,7 +501,9 @@ async function queryIrsaTapObs(
         });
         clearTimeout(timeout);
         if (!res.ok) {
-          throw new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
+          const err: any = new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
+          err.statusCode = res.status;
+          throw err;
         }
         const csv = await res.text();
         if (csv.trim().startsWith('<')) {
@@ -394,14 +541,21 @@ async function queryIrsaTapObs(
       } catch (err: any) {
         clearTimeout(timeout);
         lastErr = err;
-        console.warn(`[TAP] Attempt ${attempt}/${MAX_RETRIES} failed for RA ${ra}, Dec ${dec}: ${err.message}`);
+        const status = err?.statusCode;
+        console.warn(`[TAP] Attempt ${attempt}/${MAX_RETRIES} failed for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
+        if (status && status >= 400 && status < 500) break;
         if (attempt < MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt - 1)));
+          const backoff = Math.min(8000, 1500 * Math.pow(2, attempt - 1));
+          if (Date.now() - startedAt + backoff < deadlineMs - 2000) {
+            await new Promise((r) => setTimeout(r, backoff));
+          } else {
+            break;
+          }
         }
       }
     }
 
-    throw new Error(`IRSA TAP query failed after ${MAX_RETRIES} attempts: ${lastErr?.message || 'network error'}`);
+    throw new Error(`IRSA TAP query failed: ${lastErr?.message || 'network error'}`);
   })();
 
   tapInflightCache.set(cacheKey, runPromise);
@@ -2003,7 +2157,9 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     const fovArcmin = Number(((sizePix * 6.2) / 60).toFixed(1));
 
     const requestedMaxFrames = parseInt((req.query.maxFrames ?? req.body?.maxFrames) as string, 10);
-    const maxFrames = Number.isFinite(requestedMaxFrames) ? Math.max(5, Math.min(40, requestedMaxFrames)) : 20;
+    // Task 3: Sample 10 to 20 frames evenly by default (16 frames inside 10..20)
+    const maxFrames = Number.isFinite(requestedMaxFrames) ? Math.max(5, Math.min(40, requestedMaxFrames)) : 16;
+    const sameReleaseOnly = req.query.sameReleaseOnly === '1' || req.body?.sameReleaseOnly === true;
 
     // Optional wavelength window filter (e.g. ?wlWindow=1.65-3.84)
     const wlWindowRaw = String(req.query.wlWindow ?? req.body?.wlWindow ?? '').trim().toLowerCase();
@@ -2039,21 +2195,6 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     const matchedTargetTs = targetDef;
     const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
 
-    let exposures: Array<{
-      obsId: string;
-      detector: string;
-      accessUrl: string;
-      fitsUrl: string;
-      resolvedFits: ResolvedFitsUrl | string;
-      tMin: number;
-      tMax: number;
-      mjd: number;
-      date: string;
-      wavelengthUm: number;
-      visitKey: string;
-      release?: string;
-    }> = [];
-
     // Support optional detector/band filter from query or body (e.g. ?band=3 or ?detector=D3)
     const requestedDetector = String(req.query.detector || req.query.band || req.body?.detector || req.body?.band || '').toUpperCase();
     const cleanDet = requestedDetector.match(/D([1-6])/)
@@ -2062,68 +2203,142 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       ? `D${requestedDetector}`
       : null;
 
-    let tapRows: TapObsRow[] = [];
-    let detectorSummary: TapDetectorSummaryRow[] = [];
-    let chosenDet = cleanDet || 'D1';
-    const availableDetectors: AvailableDetectorSummary[] = [];
-
-    if (process.env.SPHEREX_OFFLINE !== '1') {
+    // P0-2 Snapshot Loader: only used when live archive fails or exceeds 25s (unless ?liveOnly=1)
+    const SNAPSHOT_DIR = path.join(process.cwd(), 'data', 'snapshots');
+    const resolveSnapshotSlug = (): string | null => {
+      const idSource = (targetDef?.id || caseId || '').toLowerCase();
+      if (idSource.includes('barnard')) return 'barnards-star';
+      if (idSource.includes('epsilon-indi') || idSource.includes('indi')) return 'epsilon-indi';
+      if (idSource.includes('wise-0855') || idSource.includes('0855')) return 'wise-0855';
+      if (idSource.includes('rw-aur')) return 'rw-aur';
+      if (idSource.includes('r-dra')) return 'r-dra';
+      return null;
+    };
+    const loadSnapshotResponse = (): Record<string, any> | null => {
+      const slug = resolveSnapshotSlug();
+      if (!slug) return null;
+      const snapPath = path.join(SNAPSHOT_DIR, `${slug}.json`);
+      if (!fs.existsSync(snapPath)) return null;
       try {
-        // Fast detector-first summary so huge fields like R Dra (2,500+ rows) do not pull all 6 bands over TAP
-        detectorSummary = await queryDetectorSummary(queryRa, queryDec);
-        for (const sumRow of detectorSummary) {
-          const detNum = parseInt(sumRow.detector.replace(/\D/g, ''), 10) || 1;
-          const detMeta = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
-          availableDetectors.push({
-            detector: sumRow.detector,
-            bandName: detMeta ? detMeta.name : `Band ${detNum}`,
-            wavelengthRangeUm: detMeta ? detMeta.wavelengthRangeUm : [0.75, 5.0],
-            exposureCount: sumRow.exposureCount,
-            minMjd: Number(sumRow.minMjd.toFixed(6)),
-            maxMjd: Number(sumRow.maxMjd.toFixed(6)),
-            dateStart: new Date((sumRow.minMjd - 40587) * 86400 * 1000).toISOString(),
-            dateEnd: new Date((sumRow.maxMjd - 40587) * 86400 * 1000).toISOString(),
-          });
-        }
-
-        if (detectorSummary.length > 0) {
-          const preferredOrder = ['D3', 'D2', 'D4', 'D1', 'D5', 'D6'];
-          if (cleanDet && detectorSummary.some((d) => d.detector === cleanDet)) {
-            chosenDet = cleanDet;
-          } else if (wlMinFilter !== null && wlMaxFilter !== null) {
-            const matchingDet = availableDetectors.find(
-              (d) => d.wavelengthRangeUm[1] >= wlMinFilter! && d.wavelengthRangeUm[0] <= wlMaxFilter!
-            );
-            chosenDet = matchingDet ? matchingDet.detector : detectorSummary[0].detector;
-          } else {
-            chosenDet = detectorSummary
-              .slice()
-              .sort((a, b) => {
-                const spanA = a.maxMjd - a.minMjd;
-                const spanB = b.maxMjd - b.minMjd;
-                if (Math.abs(spanB - spanA) > 1.0) return spanB - spanA;
-                if (b.exposureCount !== a.exposureCount) return b.exposureCount - a.exposureCount;
-                return preferredOrder.indexOf(a.detector) - preferredOrder.indexOf(b.detector);
-              })[0].detector;
-          }
-
-          tapRows = await queryIrsaTapObs(queryRa, queryDec, { detector: chosenDet, limit: 3000 });
-        }
-      } catch (tapErr: any) {
-        return sendJsonOrStream(503, {
-          status: 'NETWORK_ERROR',
-          state: 'NETWORK_ERROR',
-          error: tapErr?.message || 'Failed to reach NASA/IPAC IRSA TAP archive.',
-          targetCoords: { ra, dec },
-          canRetry: true,
-        });
+        const snap = JSON.parse(fs.readFileSync(snapPath, 'utf-8'));
+        const takenAtIso = snap.snapshotTakenAt || new Date(fs.statSync(snapPath).mtimeMs).toISOString();
+        const takenDateStr = `${takenAtIso.replace('T', ' ').slice(0, 16)} UTC`;
+        return {
+          ...snap,
+          status: 'OK',
+          state: 'OK',
+          sourceMode: 'saved_benchmark',
+          isSnapshot: true,
+          snapshotTakenAt: takenAtIso,
+          cachedAt: takenAtIso,
+          sourceLabel: `REAL SPHEREx DATA - archive snapshot taken ${takenDateStr} (live archive slow or unreachable)`,
+        };
+      } catch (snapErr: any) {
+        console.warn(`[Snapshot] Failed to parse ${snapPath}:`, snapErr?.message);
+        return null;
       }
+    };
+
+    const liveOnly = req.query.liveOnly === '1' || req.body?.liveOnly === true;
+    const snapshotAvailable = !liveOnly && !cleanDet ? loadSnapshotResponse() : null;
+    if (process.env.SPHEREX_OFFLINE === '1' && snapshotAvailable) {
+      return sendJsonOrStream(200, snapshotAvailable);
     }
 
-    const totalExposuresAllDetectors =
-      detectorSummary.reduce((sum, d) => sum + d.exposureCount, 0) || tapRows.length;
+    const runLivePipeline = async (): Promise<{ statusCode: number; body: Record<string, any> }> => {
+    const recommendedDetOrder = getRecommendedDetectorsForTarget(targetDef, wlMinFilter, wlMaxFilter);
+    const candidateDetectors = cleanDet ? [cleanDet] : recommendedDetOrder;
 
-    if (tapRows.length > 0) {
+    // Fetch Gaia DR3 + AllWISE field sources once (served instantly from disk/memory cache when present)
+    const overlayRadiusArcsec = Math.max(210, fovArcmin * 34);
+    const overlayCacheKey = CatalogMatcher.getOverlayCacheKey(queryRa, queryDec, overlayRadiusArcsec);
+    const hadCachedOverlay = Boolean(CatalogMatcher.exportOverlayCache()[overlayCacheKey]?.length);
+    const catalogOverlaysField = await CatalogMatcher.getOverlaySources(
+      queryRa,
+      queryDec,
+      overlayRadiusArcsec,
+      2025.6
+    );
+    if (!hadCachedOverlay && catalogOverlaysField.some((c) => !c.isStaticFixture)) {
+      saveCatalogDiskCache();
+    }
+
+    const frameModeRaw = String((req.query.frameMode ?? req.query.frame ?? req.body?.frameMode ?? req.body?.frame) ?? '').toLowerCase();
+    const frameMode: 'sky' | 'target' = frameModeRaw === 'target' ? 'target' : 'sky';
+
+    let detectorSummary: TapDetectorSummaryRow[] = [];
+    const availableDetectors: AvailableDetectorSummary[] = [];
+
+    const buildResponseForDetector = async (
+      chosenDet: string,
+      prefetchedRows?: TapObsRow[],
+      sampleOverrideMaxFrames?: number
+    ): Promise<{
+      statusCode: number;
+      body: Record<string, any>;
+      validDetections: number;
+      unsaturatedCoreCount: number;
+      unsatSpanDays: number;
+      wingFitCount: number;
+      allSaturated: boolean;
+      meanSnr: number;
+      totalTapRows: number;
+    }> => {
+      let tapRows: TapObsRow[] = prefetchedRows || [];
+
+      if (process.env.SPHEREX_OFFLINE !== '1' && !prefetchedRows) {
+        tapRows = await queryIrsaTapObs(queryRa, queryDec, { detector: chosenDet, limit: 3000 });
+        if (tapRows.length === 0 && !cleanDet) {
+          detectorSummary = await queryDetectorSummary(queryRa, queryDec);
+        }
+      }
+
+      const cachedSummary = tapSummaryCache.get(`${queryRa.toFixed(5)}_${queryDec.toFixed(5)}`)?.rows;
+      if (detectorSummary.length === 0 && cachedSummary) {
+        detectorSummary = cachedSummary;
+      }
+      if (availableDetectors.length === 0) {
+        if (detectorSummary.length > 0) {
+          for (const sumRow of detectorSummary) {
+            const detNum = parseInt(sumRow.detector.replace(/\D/g, ''), 10) || 1;
+            const detMeta = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+            availableDetectors.push({
+              detector: sumRow.detector,
+              bandName: detMeta ? detMeta.name : `Band ${detNum}`,
+              wavelengthRangeUm: detMeta ? detMeta.wavelengthRangeUm : [0.75, 5.0],
+              exposureCount: sumRow.exposureCount,
+              minMjd: Number(sumRow.minMjd.toFixed(6)),
+              maxMjd: Number(sumRow.maxMjd.toFixed(6)),
+              dateStart: new Date((sumRow.minMjd - 40587) * 86400 * 1000).toISOString(),
+              dateEnd: new Date((sumRow.maxMjd - 40587) * 86400 * 1000).toISOString(),
+            });
+          }
+        } else if (tapRows.length > 0) {
+          const detNum = parseInt(chosenDet.replace(/\D/g, ''), 10) || 1;
+          const detMeta = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+          const minMjd = Math.min(...tapRows.map((r) => r.t_min));
+          const maxMjd = Math.max(...tapRows.map((r) => r.t_max));
+          availableDetectors.push({
+            detector: chosenDet,
+            bandName: detMeta ? detMeta.name : `Band ${detNum}`,
+            wavelengthRangeUm: detMeta ? detMeta.wavelengthRangeUm : [0.75, 5.0],
+            exposureCount: tapRows.length,
+            minMjd: Number(minMjd.toFixed(6)),
+            maxMjd: Number(maxMjd.toFixed(6)),
+            dateStart: new Date((minMjd - 40587) * 86400 * 1000).toISOString(),
+            dateEnd: new Date((maxMjd - 40587) * 86400 * 1000).toISOString(),
+          });
+        }
+      }
+
+      const exposuresPerRelease: Record<string, number> = {};
+      for (const r of tapRows) {
+        const relKey = (r.release || r.datarelease || 'public').toLowerCase();
+        exposuresPerRelease[relKey] = (exposuresPerRelease[relKey] || 0) + 1;
+      }
+      const totalExposuresAllDetectors =
+        detectorSummary.reduce((sum, d) => sum + d.exposureCount, 0) || tapRows.length;
+
       let candidateRows = tapRows;
       if (wlMinFilter !== null && wlMaxFilter !== null) {
         const filtered = tapRows.filter((row) => {
@@ -2132,593 +2347,1140 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         });
         if (filtered.length > 0) candidateRows = filtered;
       }
-      const targetRows = sampleAcrossEpochs(candidateRows, maxFrames);
 
-      exposures = targetRows.map((row) => {
-        const obsId = row.obs_id;
-        const detector = row.detector || chosenDet;
-        const mjd = Number(((row.t_min + row.t_max) / 2).toFixed(6));
-        const date = new Date((mjd - 40587) * 86400 * 1000).toISOString();
-        const wavelengthUm = Number((((row.em_min + row.em_max) / 2) * 1e6).toFixed(2));
-        const visitKey = extractVisitKey(obsId);
-        return {
-          obsId,
-          detector,
-          accessUrl: row.access_url,
-          fitsUrl: row.access_url,
-          resolvedFits: row.access_url,
-          tMin: row.t_min,
-          tMax: row.t_max,
-          mjd,
-          date,
-          wavelengthUm,
-          visitKey,
-          release: row.release,
-        };
+      // Task 3: Group first to find the largest valid (release, provenance_version) group for Diff/Stack;
+      // for Astrometry & Blink allow ALL releases/VERSIONs across the full MJD span (10..20 frames).
+      const tapGroups = new Map<string, TapObsRow[]>();
+      for (const r of candidateRows) {
+        const gKey = `${(r.release || 'public').toLowerCase()}::${r.provenance_version || 'default'}`;
+        const list = tapGroups.get(gKey) || [];
+        list.push(r);
+        tapGroups.set(gKey, list);
+      }
+      const rankedTapGroups = Array.from(tapGroups.entries()).sort((a, b) => {
+        if (b[1].length !== a[1].length) return b[1].length - a[1].length;
+        const spanA = a[1][a[1].length - 1].t_min - a[1][0].t_min;
+        const spanB = b[1][b[1].length - 1].t_min - b[1][0].t_min;
+        if (Math.abs(spanB - spanA) > 1) return spanB - spanA;
+        return releasePreferenceRank(a[0].split('::')[0]) - releasePreferenceRank(b[0].split('::')[0]);
       });
-    } else if (process.env.SPHEREX_OFFLINE === '1' && selectedCase && selectedCase.id.includes('nep')) {
-      const caseEpochs = selectedCase.epochs || [selectedCase.epoch1, selectedCase.epoch2];
-      exposures = caseEpochs.map((ep: CuratedEpoch) => {
-        const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
-        const det = detMatch ? `D${detMatch[1] || detMatch[2]}` : 'D1';
-        return {
-          obsId: ep.obs_id,
-          detector: det,
-          accessUrl: ep.fits_url,
-          fitsUrl: ep.fits_url,
-          resolvedFits: ep.fits_url,
-          tMin: ep.mjd,
-          tMax: ep.mjd + 0.00133,
-          mjd: ep.mjd,
-          date: ep.date,
-          wavelengthUm: ep.wavelength_um,
-          visitKey: extractVisitKey(ep.obs_id),
-        };
-      });
-    }
+      const largestTapGroup = rankedTapGroups[0];
+      const samplingPool =
+        sameReleaseOnly && largestTapGroup && largestTapGroup[1].length > 0
+          ? largestTapGroup[1]
+          : candidateRows;
 
-    if (exposures.length === 0) {
-      return sendJsonOrStream(200, {
-        status: 'ARCHIVE_ZERO_ROWS',
-        state: 'ARCHIVE_ZERO_ROWS',
-        framesCount: 0,
-        framesReturned: 0,
-        totalExposuresFound: 0,
-        frames: [],
-        availableDetectors: [],
-        targetCoords: { ra, dec },
-        message: `IRSA TAP: 0 SPHEREx observations found for RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}° in ${SPHEREX_DATA_RELEASE}.`,
-      });
-    }
+      let exposures: Array<{
+        obsId: string;
+        detector: string;
+        accessUrl: string;
+        fitsUrl: string;
+        resolvedFits: ResolvedFitsUrl | string;
+        tMin: number;
+        tMax: number;
+        mjd: number;
+        date: string;
+        wavelengthUm: number;
+        visitKey: string;
+        release?: string;
+        provenanceVersion?: string;
+      }> = [];
 
-    const selectedExposures = exposures;
-
-    // Frame mode: 'sky' (default) fixes a common sky WCS grid so proper motion is visible; 'target' tracks mover.
-    const frameModeRaw = String((req.query.frameMode ?? req.query.frame ?? req.body?.frameMode ?? req.body?.frame) ?? '').toLowerCase();
-    const frameMode: 'sky' | 'target' = frameModeRaw === 'target' ? 'target' : 'sky';
-    const refMjdTs = selectedExposures.length > 0
-      ? selectedExposures[Math.floor((selectedExposures.length - 1) / 2)].mjd
-      : exposures[0]?.mjd ?? 0;
-    const refEpochYearTs = julianYearFromMjd(refMjdTs);
-    const refPropTs =
-      matchedTargetTs &&
-      matchedTargetTs.pmRaMasYr != null &&
-      matchedTargetTs.pmDecMasYr != null &&
-      matchedTargetTs.coordinateEpochYear != null
-        ? propagatePosition(ra, dec, matchedTargetTs.pmRaMasYr, matchedTargetTs.pmDecMasYr, matchedTargetTs.coordinateEpochYear, refEpochYearTs)
-        : null;
-
-    let completedCount = 0;
-    emitProgress({ type: 'progress', phase: 'cutout', loaded: 0, total: selectedExposures.length });
-
-    // Fetch cutouts concurrently (concurrency capped by cutoutSemaphore(6))
-    const framePromises = selectedExposures.map(async (exp, idx) => {
-      try {
-        const expEpochYear = julianYearFromMjd(exp.mjd);
-        const propExp =
-          matchedTargetTs &&
-          matchedTargetTs.pmRaMasYr != null &&
-          matchedTargetTs.pmDecMasYr != null &&
-          matchedTargetTs.coordinateEpochYear != null
-            ? propagatePosition(
-                ra,
-                dec,
-                matchedTargetTs.pmRaMasYr,
-                matchedTargetTs.pmDecMasYr,
-                matchedTargetTs.coordinateEpochYear,
-                expEpochYear
-              )
-            : null;
-        const targetRa = propExp ? propExp.ra : ra;
-        const targetDec = propExp ? propExp.dec : dec;
-        const cutoutCenterRa = frameMode === 'sky' && refPropTs ? refPropTs.ra : targetRa;
-        const cutoutCenterDec = frameMode === 'sky' && refPropTs ? refPropTs.dec : targetDec;
-        const cutout = await getFITSCutout(exp.resolvedFits, cutoutCenterRa, cutoutCenterDec, sizePix, exp.obsId, { allowDemoFallback });
-        const parsed = FITSReader.parse(cutout.buffer);
-        const pix = WCS.skyToPix(targetRa, targetDec, parsed.wcs);
-        const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
-        const dq = decodeBitmaskFlags(parsed.flags, parsed.width * parsed.height);
-        const dateObs =
-          (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || exp.date;
-        const dateEnd =
-          (typeof parsed.header['DATE-END'] === 'string' && parsed.header['DATE-END']) || undefined;
-        let intSec: number | undefined = undefined;
-        if (dateObs && dateEnd) {
-          const s = Date.parse(dateObs.endsWith('Z') ? dateObs : `${dateObs}Z`);
-          const e = Date.parse(dateEnd.endsWith('Z') ? dateEnd : `${dateEnd}Z`);
-          if (Number.isFinite(s) && Number.isFinite(e) && e >= s) {
-            intSec = Number(((e - s) / 1000).toFixed(3));
-          }
-        }
-
-        // B4: Evaluate exact WCS-WAVE -TAB wavelength & bandwidth at the target pixel
-        const waveEval = parsed.wcsWaveMetadata?.table
-          ? FITSReader.evaluateWaveWcs(parsed.wcsWaveMetadata.table, pix.x, pix.y)
-          : null;
-        const exactWavelengthUm = waveEval ? Number(waveEval.wavelengthUm.toFixed(4)) : exp.wavelengthUm;
-        const exactBandwidthUm = waveEval ? Number(waveEval.bandwidthUm.toFixed(4)) : undefined;
-
-        completedCount++;
-        emitProgress({
-          type: 'progress',
-          phase: 'cutout',
-          loaded: completedCount,
-          total: selectedExposures.length,
-          obsId: exp.obsId,
+      if (samplingPool.length > 0) {
+        const effectiveSampleCap = sampleOverrideMaxFrames ?? maxFrames;
+        const targetRows = sampleAcrossEpochs(samplingPool, effectiveSampleCap);
+        exposures = targetRows.map((row) => {
+          const obsId = row.obs_id;
+          const detector = row.detector || chosenDet;
+          const mjd = Number(((row.t_min + row.t_max) / 2).toFixed(6));
+          const date = new Date((mjd - 40587) * 86400 * 1000).toISOString();
+          const wavelengthUm = Number((((row.em_min + row.em_max) / 2) * 1e6).toFixed(2));
+          const visitKey = extractVisitKey(obsId);
+          return {
+            obsId,
+            detector,
+            accessUrl: row.access_url,
+            fitsUrl: row.access_url,
+            resolvedFits: row.access_url,
+            tMin: row.t_min,
+            tMax: row.t_max,
+            mjd,
+            date,
+            wavelengthUm,
+            visitKey,
+            release: row.release,
+            provenanceVersion: row.provenance_version,
+          };
         });
+      } else if (process.env.SPHEREX_OFFLINE === '1' && selectedCase && selectedCase.id.includes('nep')) {
+        const caseEpochs = selectedCase.epochs || [selectedCase.epoch1, selectedCase.epoch2];
+        exposures = caseEpochs.map((ep: CuratedEpoch) => {
+          const detMatch = ep.fits_url.match(/_([1-6])\/level2|D([1-6])_/);
+          const det = detMatch ? `D${detMatch[1] || detMatch[2]}` : 'D1';
+          return {
+            obsId: ep.obs_id,
+            detector: det,
+            accessUrl: ep.fits_url,
+            fitsUrl: ep.fits_url,
+            resolvedFits: ep.fits_url,
+            tMin: ep.mjd,
+            tMax: ep.mjd + 0.00133,
+            mjd: ep.mjd,
+            date: ep.date,
+            wavelengthUm: ep.wavelength_um,
+            visitKey: extractVisitKey(ep.obs_id),
+          };
+        });
+      }
 
+      if (exposures.length === 0) {
         return {
-          index: idx + 1,
-          obsId: exp.obsId,
-          detector: exp.detector,
-          visitKey: exp.visitKey,
-          mjd: exp.mjd,
-          dateObs,
-          dateEnd,
-          integrationDurationSec: intSec,
-          wavelengthUm: exactWavelengthUm,
-          bandwidthUm: exactBandwidthUm,
-          version: parsed.version || undefined,
-          release: exp.release || parsed.release || undefined,
-          cachedAt: cutout.cachedAt,
-          wcsWave: parsed.wcsWaveMetadata?.table,
-          width: parsed.width,
-          height: parsed.height,
-          flux: Array.from(parsed.data),
-          variance: parsed.variance ? Array.from(parsed.variance) : undefined,
-          flags: parsed.flags ? Array.from(parsed.flags) : undefined,
-          dqDecoded: dq,
-          wcs: parsed.wcs,
-          reprojectedFlux: Array.from(parsed.data),
-          targetPixel: {
-            x: Number(pix.x.toFixed(2)),
-            y: Number(pix.y.toFixed(2)),
-            insideCutout: pix.x >= 0 && pix.y >= 0 && pix.x <= parsed.width - 1 && pix.y <= parsed.height - 1,
-            pxFromEdge: Number(pxFromEdge.toFixed(2)),
+          statusCode: 200,
+          validDetections: 0,
+          unsaturatedCoreCount: 0,
+          unsatSpanDays: 0,
+          wingFitCount: 0,
+          allSaturated: false,
+          meanSnr: 0,
+          totalTapRows: samplingPool.length,
+          body: {
+            status: 'ARCHIVE_ZERO_ROWS',
+            state: 'ARCHIVE_ZERO_ROWS',
+            framesCount: 0,
+            framesReturned: 0,
+            totalExposuresFound: totalExposuresAllDetectors,
+            frames: [],
+            availableDetectors,
+            selectedDetector: chosenDet,
+            targetCoords: { ra, dec },
+            message: `IRSA TAP: 0 SPHEREx observations found in ${chosenDet} for RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°.`,
           },
-          fitsUrl: exp.fitsUrl,
-          accessUrl: exp.accessUrl,
-          isCached: cutout.isCached,
-          isDemoCopy: cutout.isDemoCopy,
-          trueCenter: cutout.trueCenter,
-          trueObsId: cutout.trueObsId,
-          _targetSky: { ra: targetRa, dec: targetDec },
-        } as TimeSeriesFrame & { _targetSky: { ra: number; dec: number } };
-      } catch (frameErr: any) {
-        completedCount++;
-        emitProgress({
-          type: 'progress',
-          phase: 'cutout',
-          loaded: completedCount,
-          total: selectedExposures.length,
-          obsId: exp.obsId,
-          failed: true,
-        });
-        console.info(`[TimeSeries] Frame unavailable for ${exp.obsId}:`, frameErr.message);
-        return null;
+        };
       }
-    });
 
-    const loadedRawAll = (await Promise.all(framePromises)).filter(
-      (f): f is TimeSeriesFrame & { _targetSky: { ra: number; dec: number } } => f !== null
-    );
+      const selectedExposures = exposures;
+      const refMjdTs = selectedExposures[Math.floor((selectedExposures.length - 1) / 2)].mjd;
+      const refEpochYearTs = julianYearFromMjd(refMjdTs);
+      const refPropTs =
+        matchedTargetTs &&
+        matchedTargetTs.pmRaMasYr != null &&
+        matchedTargetTs.pmDecMasYr != null &&
+        matchedTargetTs.coordinateEpochYear != null
+          ? propagatePosition(ra, dec, matchedTargetTs.pmRaMasYr, matchedTargetTs.pmDecMasYr, matchedTargetTs.coordinateEpochYear, refEpochYearTs)
+          : null;
 
-    if (loadedRawAll.length === 0) {
-      return sendJsonOrStream(503, {
-        status: 'CUTOUT_FAILED',
-        state: 'CUTOUT_FAILED',
-        error: 'Could not retrieve any FITS cutouts from NASA/IPAC IRSA for this position.',
-        targetCoords: { ra, dec },
-        availableDetectors,
-        selectedDetector: chosenDet,
-        totalExposuresFound: totalExposuresAllDetectors,
-        canRetry: true,
-      });
-    }
+      let completedCount = 0;
+      emitProgress({ type: 'progress', phase: 'cutout', loaded: 0, total: selectedExposures.length });
 
-    // B1: Ensure pipeline versions/releases are never mixed silently
-    const versionGroups = new Map<string, (TimeSeriesFrame & { _targetSky: { ra: number; dec: number } })[]>();
-    for (const f of loadedRawAll) {
-      const vKey = `${f.release || 'public'}:${f.version || 'default'}`;
-      const list = versionGroups.get(vKey) || [];
-      list.push(f);
-      versionGroups.set(vKey, list);
-    }
-    const sortedVersionKeys = Array.from(versionGroups.keys()).sort((a, b) => {
-      const [relA, verA] = a.split(':');
-      const [relB, verB] = b.split(':');
-      const rDiff = releasePreferenceRank(relA) - releasePreferenceRank(relB);
-      if (rDiff !== 0) return rDiff;
-      return compareSemver(verB, verA);
-    });
-    const loadedRaw =
-      versionGroups.size > 1
-        ? versionGroups.get(sortedVersionKeys[0]) || loadedRawAll
-        : loadedRawAll;
+      interface LoadedFrameInternal extends TimeSeriesFrame {
+        _targetSky: { ra: number; dec: number };
+        _epochYear: number;
+        _nativeData: Float32Array;
+        _nativeVar: Float32Array | null;
+        _nativeFlags: Int32Array | null;
+        _astrometry?: FrameAstrometrySolution;
+        _targetMeas?: FrameTargetAstrometry;
+      }
 
-    const releaseBreakdown = sortedVersionKeys;
-
-    // Optional strict wlWindow post-filter using exact evaluated WCS-WAVE wavelength
-    const filteredLoaded =
-      wlMinFilter !== null && wlMaxFilter !== null
-        ? loadedRaw.filter((f) => f.wavelengthUm >= wlMinFilter! && f.wavelengthUm <= wlMaxFilter!)
-        : loadedRaw;
-    const activeRaw = filteredLoaded.length > 0 ? filteredLoaded : loadedRaw;
-
-    // Re-index sequentially after dropping any failed cutouts
-    activeRaw.sort((a, b) => a.mjd - b.mjd);
-    activeRaw.forEach((f, idx) => {
-      f.index = idx + 1;
-    });
-
-    const failedDownloadCount = selectedExposures.length - loadedRawAll.length;
-    const partialFailures =
-      failedDownloadCount > 0
-        ? {
-            failed: failedDownloadCount,
-            total: selectedExposures.length,
-            notice: `${failedDownloadCount} of ${selectedExposures.length} frames could not be downloaded`,
-          }
-        : undefined;
-
-    const anyDemoCopy = activeRaw.some((f) => f.isDemoCopy);
-    const allCached = activeRaw.every((f) => f.isCached);
-    const trueDemoCenter = activeRaw.find((f) => f.trueCenter)?.trueCenter;
-    const newestCachedIso = activeRaw
-      .map((f) => f.cachedAt)
-      .filter((d): d is string => Boolean(d))
-      .sort()
-      .pop();
-
-    // Use Frame 1 as common reference WCS grid
-    const refWcs = activeRaw[0].wcs;
-    const refW = activeRaw[0].width;
-    const refH = activeRaw[0].height;
-
-    const alignedVarByIdx: (Float32Array | null)[] = new Array(activeRaw.length).fill(null);
-    const alignedFlagsByIdx: (Int32Array | null)[] = new Array(activeRaw.length).fill(null);
-
-    // Reproject frames 1..N-1 onto refWcs (preserving aligned variance & DQ flags)
-    for (let i = 0; i < activeRaw.length; i++) {
-      const fr = activeRaw[i];
-      if (i === 0) {
-        alignedVarByIdx[0] = fr.variance ? new Float32Array(fr.variance) : null;
-        alignedFlagsByIdx[0] = fr.flags ? new Int32Array(fr.flags) : null;
-      } else {
+      const framePromises = selectedExposures.map(async (exp, idx) => {
         try {
-          const reproj = ScientificPipeline.reprojectPixelByPixel(
-            {
-              width: fr.width,
-              height: fr.height,
-              data: new Float32Array(fr.flux),
-              variance: fr.variance ? new Float32Array(fr.variance) : null,
-              flags: fr.flags ? new Int32Array(fr.flags) : null,
-              wcs: fr.wcs,
-            } as any,
-            refWcs,
-            refW,
-            refH
-          );
-          fr.reprojectedFlux = Array.from(reproj.alignedData);
-          alignedVarByIdx[i] = reproj.alignedVariance;
-          alignedFlagsByIdx[i] = reproj.alignedFlags;
-        } catch {
-          fr.reprojectedFlux = fr.flux;
-          alignedVarByIdx[i] = fr.variance ? new Float32Array(fr.variance) : null;
-          alignedFlagsByIdx[i] = fr.flags ? new Int32Array(fr.flags) : null;
-        }
-      }
-
-      // Project this frame's target sky position onto the common reference WCS grid
-      const refPix = WCS.skyToPix(fr._targetSky.ra, fr._targetSky.dec, refWcs);
-      fr.targetRefPixel = {
-        x: Number(refPix.x.toFixed(3)),
-        y: Number(refPix.y.toFixed(3)),
-      };
-    }
-
-    // B5 & B6: Variance-gated centroiding (S/N >= 3 required) with offsets strictly as (dRA*cos(dec), dDec)
-    const refSky0 = activeRaw[0]._targetSky;
-    const cosDec0 = Math.cos((refSky0.dec * Math.PI) / 180);
-    const pixScaleArcsec = refWcs.pixelScaleArcsec || 6.2;
-
-    const measureAroundSeed = (
-      fluxArr: Float32Array,
-      varArr: Float32Array | null,
-      flagsArr: Int32Array | null,
-      seedX: number,
-      seedY: number
-    ) => {
-      let peakX = seedX;
-      let peakY = seedY;
-      let peakVal = -Infinity;
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          const nx = seedX + dx;
-          const ny = seedY + dy;
-          if (nx >= 0 && nx < refW && ny >= 0 && ny < refH) {
-            const v = fluxArr[ny * refW + nx];
-            if (Number.isFinite(v) && v > peakVal) {
-              peakVal = v;
-              peakX = nx;
-              peakY = ny;
+          const expEpochYear = julianYearFromMjd(exp.mjd);
+          const propExp =
+            matchedTargetTs &&
+            matchedTargetTs.pmRaMasYr != null &&
+            matchedTargetTs.pmDecMasYr != null &&
+            matchedTargetTs.coordinateEpochYear != null
+              ? propagatePosition(
+                  ra,
+                  dec,
+                  matchedTargetTs.pmRaMasYr,
+                  matchedTargetTs.pmDecMasYr,
+                  matchedTargetTs.coordinateEpochYear,
+                  expEpochYear
+                )
+              : null;
+          const targetRa = propExp ? propExp.ra : ra;
+          const targetDec = propExp ? propExp.dec : dec;
+          const cutoutCenterRa = frameMode === 'sky' && refPropTs ? refPropTs.ra : targetRa;
+          const cutoutCenterDec = frameMode === 'sky' && refPropTs ? refPropTs.dec : targetDec;
+          const cutout = await getFITSCutout(exp.resolvedFits, cutoutCenterRa, cutoutCenterDec, sizePix, exp.obsId, { allowDemoFallback });
+          const parsed = FITSReader.parse(cutout.buffer);
+          const pix = WCS.skyToPix(targetRa, targetDec, parsed.wcs);
+          const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
+          const dq = decodeBitmaskFlags(parsed.flags, parsed.width * parsed.height);
+          const dateObs = (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || exp.date;
+          const dateEnd = (typeof parsed.header['DATE-END'] === 'string' && parsed.header['DATE-END']) || undefined;
+          let intSec: number | undefined = undefined;
+          if (dateObs && dateEnd) {
+            const s = Date.parse(dateObs.endsWith('Z') ? dateObs : `${dateObs}Z`);
+            const e = Date.parse(dateEnd.endsWith('Z') ? dateEnd : `${dateEnd}Z`);
+            if (Number.isFinite(s) && Number.isFinite(e) && e >= s) {
+              intSec = Number(((e - s) / 1000).toFixed(3));
             }
           }
+
+          const waveEval = parsed.wcsWaveMetadata?.table
+            ? FITSReader.evaluateWaveWcs(parsed.wcsWaveMetadata.table, pix.x, pix.y)
+            : null;
+          const exactWavelengthUm = waveEval ? Number(waveEval.wavelengthUm.toFixed(4)) : exp.wavelengthUm;
+          const exactBandwidthUm = waveEval ? Number(waveEval.bandwidthUm.toFixed(4)) : undefined;
+
+          completedCount++;
+          emitProgress({
+            type: 'progress',
+            phase: 'cutout',
+            loaded: completedCount,
+            total: selectedExposures.length,
+            obsId: exp.obsId,
+          });
+
+          return {
+            index: idx + 1,
+            obsId: exp.obsId,
+            detector: exp.detector,
+            visitKey: exp.visitKey,
+            mjd: exp.mjd,
+            dateObs,
+            dateEnd,
+            integrationDurationSec: intSec,
+            wavelengthUm: exactWavelengthUm,
+            bandwidthUm: exactBandwidthUm,
+            version: parsed.version || exp.provenanceVersion || undefined,
+            release: exp.release || parsed.release || undefined,
+            cachedAt: cutout.cachedAt,
+            wcsWave: parsed.wcsWaveMetadata?.table,
+            width: parsed.width,
+            height: parsed.height,
+            flux: Array.from(parsed.data),
+            variance: parsed.variance ? Array.from(parsed.variance) : undefined,
+            flags: parsed.flags ? Array.from(parsed.flags) : undefined,
+            dqDecoded: dq,
+            wcs: parsed.wcs,
+            reprojectedFlux: Array.from(parsed.data),
+            targetPixel: {
+              x: Number(pix.x.toFixed(2)),
+              y: Number(pix.y.toFixed(2)),
+              insideCutout: pix.x >= 0 && pix.y >= 0 && pix.x <= parsed.width - 1 && pix.y <= parsed.height - 1,
+              pxFromEdge: Number(pxFromEdge.toFixed(2)),
+            },
+            fitsUrl: exp.fitsUrl,
+            accessUrl: exp.accessUrl,
+            isCached: cutout.isCached,
+            isDemoCopy: cutout.isDemoCopy,
+            trueCenter: cutout.trueCenter,
+            trueObsId: cutout.trueObsId,
+            _targetSky: { ra: targetRa, dec: targetDec },
+            _epochYear: expEpochYear,
+            _nativeData: parsed.data,
+            _nativeVar: parsed.variance,
+            _nativeFlags: parsed.flags,
+          } as LoadedFrameInternal;
+        } catch (frameErr: any) {
+          completedCount++;
+          emitProgress({
+            type: 'progress',
+            phase: 'cutout',
+            loaded: completedCount,
+            total: selectedExposures.length,
+            obsId: exp.obsId,
+            failed: true,
+          });
+          console.info(`[TimeSeries] Frame unavailable for ${exp.obsId}:`, frameErr.message);
+          return null;
         }
-      }
-      return ScientificPipeline.computeSubpixelCentroid(fluxArr, refW, refH, peakX, peakY, 2, varArr, flagsArr);
-    };
+      });
 
-    const singleCentroids = activeRaw.map((fr, i) => {
-      const seedX = Math.max(0, Math.min(refW - 1, Math.round(fr.targetRefPixel?.x ?? refW / 2)));
-      const seedY = Math.max(0, Math.min(refH - 1, Math.round(fr.targetRefPixel?.y ?? refH / 2)));
-      return measureAroundSeed(
-        new Float32Array(fr.reprojectedFlux),
-        alignedVarByIdx[i],
-        alignedFlagsByIdx[i],
-        seedX,
-        seedY
+      const loadedRawAll = (await Promise.all(framePromises)).filter(
+        (f): f is LoadedFrameInternal => f !== null
       );
-    });
 
-    const singleValidCount = singleCentroids.filter((c) => c.valid).length;
-    let centroidStacked = false;
-    const finalCentroids = singleCentroids.map((c) => ({ ...c, stacked: false }));
+      if (loadedRawAll.length === 0) {
+        return {
+          statusCode: 503,
+          validDetections: 0,
+          unsaturatedCoreCount: 0,
+          unsatSpanDays: 0,
+          wingFitCount: 0,
+          allSaturated: false,
+          meanSnr: 0,
+          totalTapRows: samplingPool.length,
+          body: {
+            status: 'CUTOUT_FAILED',
+            state: 'CUTOUT_FAILED',
+            error: 'Could not retrieve any FITS cutouts from NASA/IPAC IRSA for this position.',
+            targetCoords: { ra, dec },
+            availableDetectors,
+            selectedDetector: chosenDet,
+            totalExposuresFound: totalExposuresAllDetectors,
+            canRetry: true,
+          },
+        };
+      }
 
-    // B6: Auto short-window co-add stacking when single exposures are faint (valid < 50%)
-    if (activeRaw.length >= 4 && singleValidCount < Math.ceil(activeRaw.length * 0.5)) {
-      const numPix = refW * refH;
-      // Group consecutive frames into short time bins (max 5 days span or up to 4 frames per bin)
-      const bins: number[][] = [];
-      let currentBin: number[] = [];
+      // Track release/version groups for Diff/Stack strict homogeneity while preserving ALL frames for Astrometry/Blink
+      const versionGroups = new Map<string, LoadedFrameInternal[]>();
+      for (const f of loadedRawAll) {
+        const vKey = `${(f.release || 'public').toLowerCase()}::${f.version || 'default'}`;
+        const list = versionGroups.get(vKey) || [];
+        list.push(f);
+        versionGroups.set(vKey, list);
+      }
+      const sortedVersionKeys = Array.from(versionGroups.keys()).sort((a, b) => {
+        const countDiff = (versionGroups.get(b)?.length || 0) - (versionGroups.get(a)?.length || 0);
+        if (countDiff !== 0) return countDiff;
+        const [relA, verA] = a.split(':');
+        const [relB, verB] = b.split(':');
+        const rDiff = releasePreferenceRank(relA) - releasePreferenceRank(relB);
+        if (rDiff !== 0) return rDiff;
+        return compareSemver(verB, verA);
+      });
+
+      const releaseBreakdown = sortedVersionKeys.map((k) => k.replace('::', ':'));
+      const releaseGroupCounts: Record<string, number> = {};
+      for (const [k, v] of versionGroups.entries()) {
+        releaseGroupCounts[k] = v.length;
+      }
+
+      // Optional strict wlWindow post-filter using exact evaluated WCS-WAVE wavelength
+      const filteredLoaded =
+        wlMinFilter !== null && wlMaxFilter !== null
+          ? loadedRawAll.filter((f) => f.wavelengthUm >= wlMinFilter! && f.wavelengthUm <= wlMaxFilter!)
+          : loadedRawAll;
+      const activeRaw = (filteredLoaded.length > 0 ? filteredLoaded : loadedRawAll).slice();
+
+      activeRaw.sort((a, b) => a.mjd - b.mjd);
+      activeRaw.forEach((f, idx) => {
+        f.index = idx + 1;
+      });
+
+      const failedDownloadCount = selectedExposures.length - loadedRawAll.length;
+      const partialFailures =
+        failedDownloadCount > 0
+          ? {
+              failedCount: failedDownloadCount,
+              attemptedCount: selectedExposures.length,
+              failed: failedDownloadCount,
+              total: selectedExposures.length,
+              notice: `${failedDownloadCount} of ${selectedExposures.length} frames could not be downloaded`,
+            }
+          : undefined;
+
+      const anyDemoCopy = activeRaw.some((f) => f.isDemoCopy);
+      const allCached = activeRaw.every((f) => f.isCached);
+      const trueDemoCenter = activeRaw.find((f) => f.trueCenter)?.trueCenter;
+      const newestCachedIso = activeRaw
+        .map((f) => f.cachedAt)
+        .filter((d): d is string => Boolean(d))
+        .sort()
+        .pop();
+
+      const refWcs = activeRaw[0].wcs;
+      const refW = activeRaw[0].width;
+      const refH = activeRaw[0].height;
+      const alignedVarByIdx: (Float32Array | null)[] = new Array(activeRaw.length).fill(null);
+      const alignedFlagsByIdx: (Int32Array | null)[] = new Array(activeRaw.length).fill(null);
+
+      // Reproject onto refWcs for display/Blink/Diff/Stack
       for (let i = 0; i < activeRaw.length; i++) {
-        if (currentBin.length === 0) {
-          currentBin.push(i);
+        const fr = activeRaw[i];
+        if (i === 0) {
+          alignedVarByIdx[0] = fr._nativeVar;
+          alignedFlagsByIdx[0] = fr._nativeFlags;
         } else {
-          const spanDaysBin = activeRaw[i].mjd - activeRaw[currentBin[0]].mjd;
-          if (spanDaysBin <= 5.0 && currentBin.length < 4) {
+          try {
+            const reproj = ScientificPipeline.reprojectPixelByPixel(
+              {
+                width: fr.width,
+                height: fr.height,
+                data: fr._nativeData,
+                variance: fr._nativeVar,
+                flags: fr._nativeFlags,
+                wcs: fr.wcs,
+              } as any,
+              refWcs,
+              refW,
+              refH
+            );
+            fr.reprojectedFlux = Array.from(reproj.alignedData);
+            alignedVarByIdx[i] = reproj.alignedVariance;
+            alignedFlagsByIdx[i] = reproj.alignedFlags;
+          } catch {
+            fr.reprojectedFlux = fr.flux;
+            alignedVarByIdx[i] = fr._nativeVar;
+            alignedFlagsByIdx[i] = fr._nativeFlags;
+          }
+        }
+        const refPix = WCS.skyToPix(fr._targetSky.ra, fr._targetSky.dec, refWcs);
+        fr.targetRefPixel = {
+          x: Number(refPix.x.toFixed(3)),
+          y: Number(refPix.y.toFixed(3)),
+        };
+      }
+
+      // Tasks 1, 2, 3, 4: Measure differential astrometry (+ wing fit if core saturated) and native aperture photometry
+      let unsaturatedCoreCount = 0;
+      const allLooResiduals: LeaveOneOutResidual[] = [];
+      const lightCurve: LightCurvePoint[] = [];
+
+      for (let i = 0; i < activeRaw.length; i++) {
+        const fr = activeRaw[i];
+        const refStars = selectIsolatedReferenceStars(
+          catalogOverlaysField,
+          fr.wcs,
+          fr.width,
+          fr.height,
+          fr._epochYear,
+          fr._targetSky.ra,
+          fr._targetSky.dec,
+          { targetJ2000Ra: ra, targetJ2000Dec: dec, targetId: targetDef?.id, isolationRadiusPix: 3.0 }
+        );
+        const sol = fitFrameAstrometryCorrection(
+          fr._nativeData,
+          fr._nativeVar,
+          fr._nativeFlags,
+          fr.width,
+          fr.height,
+          fr.wcs,
+          refStars
+        );
+        fr._astrometry = sol;
+        if (sol.leaveOneOutResiduals?.length) {
+          allLooResiduals.push(...sol.leaveOneOutResiduals);
+        }
+
+        const predPixFrame = WCS.skyToPix(
+          sol.invertToRawSky(fr._targetSky.ra, fr._targetSky.dec).ra,
+          sol.invertToRawSky(fr._targetSky.ra, fr._targetSky.dec).dec,
+          fr.wcs
+        );
+        if (isCorePixelUnsaturated(fr._nativeData, fr._nativeFlags, fr.width, fr.height, predPixFrame.x, predPixFrame.y, 2.0)) {
+          unsaturatedCoreCount++;
+        }
+
+        let meas = measureFrameTargetDifferential({
+          flux: fr._nativeData,
+          variance: fr._nativeVar,
+          flags: fr._nativeFlags,
+          width: fr.width,
+          height: fr.height,
+          wcs: fr.wcs,
+          epochYear: fr._epochYear,
+          targetEpochRa: fr._targetSky.ra,
+          targetEpochDec: fr._targetSky.dec,
+          targetJ2000Ra: ra,
+          targetJ2000Dec: dec,
+          targetId: targetDef?.id,
+          catalogSources: catalogOverlaysField,
+          astrometry: sol,
+        });
+
+        // Task 3: Where core is saturated/flagged, attempt 2..6 px PSF wing fit
+        if (!meas.valid && meas.maskedReason === 'saturation_or_flag') {
+          const wingMeas = fitSaturatedPsfWing({
+            flux: fr._nativeData,
+            variance: fr._nativeVar,
+            flags: fr._nativeFlags,
+            width: fr.width,
+            height: fr.height,
+            wcs: fr.wcs,
+            epochYear: fr._epochYear,
+            targetEpochRa: fr._targetSky.ra,
+            targetEpochDec: fr._targetSky.dec,
+            targetJ2000Ra: ra,
+            targetJ2000Dec: dec,
+            targetId: targetDef?.id,
+            catalogSources: catalogOverlaysField,
+            astrometry: sol,
+          });
+          if (wingMeas.valid) {
+            meas = wingMeas;
+          }
+        }
+        fr._targetMeas = meas;
+
+        // Task 4: Per-frame aperture photometry (or 2..5 px wing-annulus photometry if core saturated)
+        const photCx = meas.valid ? meas.x : predPixFrame.x;
+        const photCy = meas.valid ? meas.y : predPixFrame.y;
+        const phot = measureFrameApertureFlux({
+          flux: fr._nativeData,
+          variance: fr._nativeVar,
+          flags: fr._nativeFlags,
+          width: fr.width,
+          height: fr.height,
+          cx: photCx,
+          cy: photCy,
+        });
+        lightCurve.push({
+          frameIndex: fr.index,
+          obsId: fr.obsId,
+          mjd: fr.mjd,
+          dateObs: fr.dateObs,
+          detector: fr.detector,
+          wavelengthUm: fr.wavelengthUm,
+          fluxMjySr: phot.fluxMjySr,
+          uncertaintyMjySr: phot.uncertaintyMjySr,
+          snr: phot.snr,
+          valid: phot.valid,
+          isWingAnnulus: phot.isWingAnnulus,
+          unmaskedPixels: phot.unmaskedPixels,
+          maskedReason: phot.maskedReason,
+        });
+      }
+
+      // Short-window co-add fallback ONLY when single frames are faint (maskedReason === 'low_snr')
+      let centroidStacked = false;
+      const singleValidCount = activeRaw.filter((f) => f._targetMeas?.valid).length;
+      const hasSaturatedOrNeighborOnly = activeRaw.every(
+        (f) => f._targetMeas?.maskedReason === 'neighbor_contaminated' || f._targetMeas?.maskedReason === 'saturation_or_flag' || f._targetMeas?.wingFit
+      );
+      if (activeRaw.length >= 4 && singleValidCount < Math.ceil(activeRaw.length * 0.5) && !hasSaturatedOrNeighborOnly) {
+        const numPix = refW * refH;
+        const bins: number[][] = [];
+        let currentBin: number[] = [];
+        for (let i = 0; i < activeRaw.length; i++) {
+          if (currentBin.length === 0) {
+            currentBin.push(i);
+          } else if (activeRaw[i].mjd - activeRaw[currentBin[0]].mjd <= 5.0 && currentBin.length < 4) {
             currentBin.push(i);
           } else {
             bins.push(currentBin);
             currentBin = [i];
           }
         }
-      }
-      if (currentBin.length > 0) bins.push(currentBin);
+        if (currentBin.length > 0) bins.push(currentBin);
 
-      for (const bin of bins) {
-        if (bin.length < 2) continue;
-        const wFlux = new Float32Array(numPix);
-        const wSum = new Float32Array(numPix);
-        const stackVar = new Float32Array(numPix);
-
-        for (const idx of bin) {
-          const fData = activeRaw[idx].reprojectedFlux;
-          const vData = alignedVarByIdx[idx];
-          const flData = alignedFlagsByIdx[idx];
-          for (let p = 0; p < numPix; p++) {
-            if (flData && ((flData[p] & 0x02) !== 0 || (flData[p] & 0x10) !== 0)) continue;
-            const val = fData[p];
-            if (!Number.isFinite(val)) continue;
-            const v = vData && vData[p] > 1e-12 ? vData[p] : 1.0;
-            const w = 1.0 / v;
-            wFlux[p] += val * w;
-            wSum[p] += w;
-          }
-        }
-        for (let p = 0; p < numPix; p++) {
-          if (wSum[p] > 0) {
-            wFlux[p] /= wSum[p];
-            stackVar[p] = 1.0 / wSum[p];
-          }
-        }
-
-        const midIdx = bin[Math.floor(bin.length / 2)];
-        const seedX = Math.max(0, Math.min(refW - 1, Math.round(activeRaw[midIdx].targetRefPixel?.x ?? refW / 2)));
-        const seedY = Math.max(0, Math.min(refH - 1, Math.round(activeRaw[midIdx].targetRefPixel?.y ?? refH / 2)));
-        const stackCent = measureAroundSeed(wFlux, stackVar, null, seedX, seedY);
-        if (stackCent.valid) {
-          centroidStacked = true;
+        for (const bin of bins) {
+          if (bin.length < 2) continue;
+          const wFlux = new Float32Array(numPix);
+          const wSum = new Float32Array(numPix);
+          const stackVar = new Float32Array(numPix);
+          const stackFlags = new Int32Array(numPix);
           for (const idx of bin) {
-            if (!finalCentroids[idx].valid || stackCent.snr > finalCentroids[idx].snr) {
-              finalCentroids[idx] = { ...stackCent, stacked: true };
+            const fData = activeRaw[idx].reprojectedFlux;
+            const vData = alignedVarByIdx[idx];
+            const flData = alignedFlagsByIdx[idx];
+            for (let p = 0; p < numPix; p++) {
+              if (flData && ((flData[p] & 0x02) !== 0 || (flData[p] & 0x10) !== 0)) continue;
+              const val = fData[p];
+              if (!Number.isFinite(val)) continue;
+              const v = vData && vData[p] > 1e-12 ? vData[p] : 1.0;
+              const w = 1.0 / v;
+              wFlux[p] += val * w;
+              wSum[p] += w;
+            }
+          }
+          for (let p = 0; p < numPix; p++) {
+            if (wSum[p] > 0) {
+              wFlux[p] /= wSum[p];
+              stackVar[p] = 1.0 / wSum[p];
+            } else {
+              stackFlags[p] = 0x02;
+              stackVar[p] = 1.0;
+            }
+          }
+          const midIdx = bin[Math.floor(bin.length / 2)];
+          const midFrame = activeRaw[midIdx];
+          const stackRefStars = selectIsolatedReferenceStars(
+            catalogOverlaysField,
+            refWcs,
+            refW,
+            refH,
+            midFrame._epochYear,
+            midFrame._targetSky.ra,
+            midFrame._targetSky.dec,
+            { targetJ2000Ra: ra, targetJ2000Dec: dec, targetId: targetDef?.id, isolationRadiusPix: 3.0 }
+          );
+          const stackSol = fitFrameAstrometryCorrection(wFlux, stackVar, stackFlags, refW, refH, refWcs, stackRefStars);
+          const stackMeas = measureFrameTargetDifferential({
+            flux: wFlux,
+            variance: stackVar,
+            flags: stackFlags,
+            width: refW,
+            height: refH,
+            wcs: refWcs,
+            epochYear: midFrame._epochYear,
+            targetEpochRa: midFrame._targetSky.ra,
+            targetEpochDec: midFrame._targetSky.dec,
+            targetJ2000Ra: ra,
+            targetJ2000Dec: dec,
+            targetId: targetDef?.id,
+            catalogSources: catalogOverlaysField,
+            astrometry: stackSol,
+          });
+          if (stackMeas.valid) {
+            centroidStacked = true;
+            for (const idx of bin) {
+              if (!activeRaw[idx]._targetMeas?.valid || stackMeas.snr > (activeRaw[idx]._targetMeas?.snr ?? 0)) {
+                activeRaw[idx]._targetMeas = stackMeas;
+              }
             }
           }
         }
       }
-    }
 
-    const loadedFrames: TimeSeriesFrame[] = activeRaw.map((fr, i) => {
-      const cent = finalCentroids[i];
-      const sky = WCS.pixToSky(cent.cx, cent.cy, refWcs);
-      const dRaDeg = (((sky.ra - refSky0.ra) + 540) % 360) - 180;
-      const dxArcsec = Number((dRaDeg * cosDec0 * 3600).toFixed(3));
-      const dyArcsec = Number(((sky.dec - refSky0.dec) * 3600).toFixed(3));
-      const uncertaintyArcsec = Number((cent.uncertaintyPix * pixScaleArcsec).toFixed(3));
+      // Compute offsets strictly relative to the FIRST valid calibrated frame
+      const firstValidFrame = activeRaw.find((f) => f._targetMeas?.valid && f._targetMeas.ra != null && f._targetMeas.dec != null);
+      const anchorRa = firstValidFrame?._targetMeas?.ra ?? activeRaw[0]._targetSky.ra;
+      const anchorDec = firstValidFrame?._targetMeas?.dec ?? activeRaw[0]._targetSky.dec;
+      const anchorSky0 = firstValidFrame?._targetSky ?? activeRaw[0]._targetSky;
+      const cosAnchorDec = Math.max(1e-6, Math.cos((anchorDec * Math.PI) / 180));
 
-      const { _targetSky, ...cleanFrame } = fr;
-      return {
-        ...cleanFrame,
-        measuredCentroid: {
-          x: cent.cx,
-          y: cent.cy,
-          ra: Number(sky.ra.toFixed(6)),
-          dec: Number(sky.dec.toFixed(6)),
-          dxArcsec,
-          dyArcsec,
-          uncertaintyArcsec,
-          snr: cent.snr,
-          stacked: cent.stacked,
-          valid: cent.valid,
-        },
-      };
-    });
-
-    // Build pairwise temporal classification between consecutive frames
-    const pairs: TemporalPairInfo[] = [];
-    let intraVisitPairs = 0;
-    let independentVisitPairs = 0;
-    let surveyEpochPairs = 0;
-
-    for (let i = 0; i < loadedFrames.length - 1; i++) {
-      const fA = loadedFrames[i];
-      const fB = loadedFrames[i + 1];
-      const deltaMjd = Math.abs(fB.mjd - fA.mjd);
-      const deltaSec = deltaMjd * 86400;
-      const deltaDays = deltaMjd;
-
-      let baselineType: 'INTRA_VISIT' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' = 'INTRA_VISIT';
-      if (deltaDays > 30) {
-        baselineType = 'SURVEY_EPOCH';
-        surveyEpochPairs++;
-      } else if (fA.visitKey !== fB.visitKey || deltaSec > 3600) {
-        baselineType = 'INDEPENDENT_VISIT';
-        independentVisitPairs++;
-      } else {
-        baselineType = 'INTRA_VISIT';
-        intraVisitPairs++;
-      }
-
-      let humanBaseline = '';
-      if (deltaSec < 3600) {
-        humanBaseline = `${deltaSec.toFixed(1)}s (start-to-start cadence)`;
-      } else if (deltaDays < 2) {
-        humanBaseline = `${(deltaSec / 3600).toFixed(1)} hours`;
-      } else {
-        humanBaseline = `${deltaDays.toFixed(1)} days (~${(deltaDays / 30.4).toFixed(1)} months)`;
-      }
-
-      pairs.push({
-        frameAIndex: fA.index,
-        frameBIndex: fB.index,
-        obsIdA: fA.obsId,
-        obsIdB: fB.obsId,
-        baselineType,
-        deltaMjd,
-        deltaSeconds: deltaSec,
-        deltaDays,
-        humanBaseline,
-        startToStartCadenceSec: deltaSec < 3600 ? Number(deltaSec.toFixed(1)) : undefined,
+      const loadedFrames: TimeSeriesFrame[] = activeRaw.map((fr) => {
+        const m = fr._targetMeas!;
+        let dxArcsec = 0;
+        let dyArcsec = 0;
+        if (m.valid && m.ra != null && m.dec != null) {
+          dxArcsec = Number((wrapDeltaRaDeg(m.ra, anchorRa) * cosAnchorDec * 3600).toFixed(3));
+          dyArcsec = Number(((m.dec - anchorDec) * 3600).toFixed(3));
+        }
+        const { _targetSky, _epochYear, _nativeData, _nativeVar, _nativeFlags, _astrometry, _targetMeas, ...cleanFrame } = fr;
+        return {
+          ...cleanFrame,
+          measuredCentroid: {
+            x: m.x,
+            y: m.y,
+            ra: m.ra,
+            dec: m.dec,
+            dxArcsec,
+            dyArcsec,
+            uncertaintyArcsec: m.uncertaintyArcsec,
+            centroidErrorArcsec: m.centroidErrorArcsec,
+            refFitErrorArcsec: m.refFitErrorArcsec,
+            snr: m.snr,
+            stacked: undefined as boolean | undefined,
+            valid: m.valid,
+            wingFit: m.wingFit,
+            refStarsUsed: m.refStarsUsed,
+            refScatterArcsec: m.refScatterArcsec,
+            astrometryMethod: m.astrometryMethod,
+            lowConfidence: m.lowConfidence,
+            lowConfidenceReason: m.lowConfidenceReason,
+            maskedReason: m.maskedReason,
+            distToPredictedPix: m.distToPredictedPix,
+          },
+        };
       });
-    }
 
-    const spanDays =
-      loadedFrames.length > 1
-        ? Number((loadedFrames[loadedFrames.length - 1].mjd - loadedFrames[0].mjd).toFixed(4))
-        : 0;
-    const dateRange = {
-      start: loadedFrames[0].dateObs,
-      end: loadedFrames[loadedFrames.length - 1].dateObs,
-      spanDays,
-    };
+      // Populate stacked badge accurately
+      loadedFrames.forEach((lf) => {
+        if (lf.measuredCentroid && centroidStacked && singleValidCount < Math.ceil(activeRaw.length * 0.5)) {
+          if (lf.measuredCentroid.valid) lf.measuredCentroid.stacked = true;
+        }
+      });
 
-    const detectorStacks = computeDetectorStacks(loadedFrames);
-    const midTargetPix = loadedFrames[Math.floor(loadedFrames.length / 2)]?.targetRefPixel;
-    const centerX = midTargetPix ? midTargetPix.x : Math.floor(refW / 2);
-    const centerY = midTargetPix ? midTargetPix.y : Math.floor(refH / 2);
-    const spectrumAtCenter = extractApertureSpectrum(loadedFrames, centerX, centerY, 2.5);
+      const validFrames = loadedFrames.filter((f) => f.measuredCentroid?.valid);
+      const validCount = validFrames.length;
+      const wingFitCount = validFrames.filter((f) => f.measuredCentroid?.wingFit).length;
+      const allSaturated =
+        validCount === 0 &&
+        loadedFrames.length > 0 &&
+        loadedFrames.every((f) => f.measuredCentroid?.maskedReason === 'saturation_or_flag');
+      const meanSnr =
+        validCount > 0
+          ? validFrames.reduce((s, f) => s + (f.measuredCentroid?.snr || 0), 0) / validCount
+          : 0;
 
-    const obsEpochYear = 2025.0 + (loadedFrames[0].mjd - 60676.0) / 365.25;
-    const catalogOverlays = await CatalogMatcher.getOverlaySources(
-      anyDemoCopy && trueDemoCenter ? trueDemoCenter.ra : ra,
-      anyDemoCopy && trueDemoCenter ? trueDemoCenter.dec : dec,
-      fovArcmin * 30,
-      obsEpochYear,
-      refWcs
-    );
+      // Update stationary-control error floor store scoped strictly to chosenDet (use unsaturated frames when >= 2 exist)
+      const targetIdLower = (targetDef?.id || caseId || '').toLowerCase();
+      const isControlTarget = targetIdLower.includes('rw-aur') || targetIdLower.includes('r-dra');
+      const unsatValidFrames = validFrames.filter((f) => !f.measuredCentroid?.wingFit);
+      const unsatSpanDays =
+        unsatValidFrames.length >= 2
+          ? Number((unsatValidFrames[unsatValidFrames.length - 1].mjd - unsatValidFrames[0].mjd).toFixed(4))
+          : 0;
 
-    const sourceMode: 'live' | 'saved_benchmark' = anyDemoCopy || process.env.SPHEREX_OFFLINE === '1' ? 'saved_benchmark' : 'live';
-    const cachedDateFormatted = newestCachedIso
-      ? `${newestCachedIso.replace('T', ' ').slice(0, 16)} UTC`
-      : 'local cache';
-    const sourceLabel = anyDemoCopy
-      ? 'DEMO COPY (DIFFERENT FIELD)'
-      : allCached
-      ? (`REAL SPHEREx DATA - cached ${cachedDateFormatted}` as `REAL SPHEREx DATA - cached ${string}`)
-      : 'REAL SPHEREx DATA';
+      if (isControlTarget && loadedFrames.length >= 2) {
+        const useUnsatOnlyForControl = unsatValidFrames.length >= 2;
+        const controlInputs = activeRaw.map((fr, idx) => {
+          const cent = loadedFrames[idx].measuredCentroid;
+          const pRa = wrapDeltaRaDeg(fr._targetSky.ra, anchorSky0.ra) * cosAnchorDec * 3600;
+          const pDec = (fr._targetSky.dec - anchorSky0.dec) * 3600;
+          return {
+            dxArcsec: cent?.dxArcsec ?? 0,
+            dyArcsec: cent?.dyArcsec ?? 0,
+            predDxArcsec: pRa,
+            predDyArcsec: pDec,
+            valid: Boolean(cent?.valid) && (!useUnsatOnlyForControl || !cent?.wingFit),
+          };
+        });
+        const report = measureControlResidualScatter(targetDef?.id || caseId, controlInputs);
+        report.detector = chosenDet;
+        if (report.residualScatterArcsec != null) {
+          controlScatterStore.set(`${chosenDet}::${report.targetId}`, report);
+          saveControlFloorCache();
+        }
+      }
 
-    return sendJsonOrStream(200, {
-      status: 'OK',
-      state: 'OK',
-      sourceMode,
-      sourceLabel,
-      cachedAt: newestCachedIso,
-      releaseBreakdown,
-      centroidStacked: centroidStacked || undefined,
-      partialFailures,
-      isDemoCopy: anyDemoCopy || undefined,
-      demoNotice: anyDemoCopy
-        ? `Showing cached demo cutout from a different field (RA ${trueDemoCenter?.ra.toFixed(4)}°, Dec ${trueDemoCenter?.dec.toFixed(4)}°), NOT your requested coordinates.`
-        : undefined,
-      trueCenter: anyDemoCopy ? trueDemoCenter : undefined,
-      targetCoords: anyDemoCopy && trueDemoCenter ? trueDemoCenter : { ra, dec },
-      frameMode,
-      selectedDetector: chosenDet,
-      availableDetectors,
-      properMotion:
+      // Task 1: Per-detector & per-brightness-class floor (Gaia LOO + same-detector stationary controls)
+      const controlReportsInDetector = Array.from(controlScatterStore.values()).filter(
+        (r) => r.detector === chosenDet
+      );
+      const floorInfo = computeDetectorAndBrightnessFloor({
+        detector: chosenDet,
+        looResiduals: allLooResiduals,
+        targetMeanSnr: meanSnr,
+        controlReportsInDetector,
+      });
+      const astrometricFloorArcsec = floorInfo.floorArcsec;
+
+      // Requirement 1: Error budget computed twice ((a) unsaturated-only, (b) all frames weighted by 1/sigma^2)
+      const budgetInputs = loadedFrames.map((f) => ({
+        mjd: f.mjd,
+        dxArcsec: f.measuredCentroid?.dxArcsec ?? 0,
+        dyArcsec: f.measuredCentroid?.dyArcsec ?? 0,
+        uncertaintyArcsec: f.measuredCentroid?.uncertaintyArcsec ?? astrometricFloorArcsec,
+        valid: Boolean(f.measuredCentroid?.valid),
+        wingFit: f.measuredCentroid?.wingFit,
+      }));
+      const errorBudget = evaluateAstrometryErrorBudget(budgetInputs, astrometricFloorArcsec);
+      const chosenFit = errorBudget.chosen;
+      const measuredNetDxArcsec = chosenFit.valid ? chosenFit.netDxArcsec : 0;
+      const measuredNetDyArcsec = chosenFit.valid ? chosenFit.netDyArcsec : 0;
+      const measuredDisplacementArcsec = chosenFit.valid ? chosenFit.displacementArcsec : 0;
+      const measuredDisplacementErrorArcsec = chosenFit.valid
+        ? chosenFit.displacementErrorArcsec
+        : astrometricFloorArcsec;
+
+      // Task 2: Canonical expected offset (dRA*cos(dec), dDec) over the chosen fit subset's baseline [mjdStart, mjdEnd]
+      const mjdStartOffset = chosenFit.valid
+        ? chosenFit.mjdStart
+        : validFrames.length >= 2
+        ? validFrames[0].mjd
+        : (loadedFrames[0]?.mjd ?? 0);
+      const mjdEndOffset = chosenFit.valid
+        ? chosenFit.mjdEnd
+        : validFrames.length >= 2
+        ? validFrames[validFrames.length - 1].mjd
+        : (loadedFrames[loadedFrames.length - 1]?.mjd ?? mjdStartOffset);
+      const hasCanonicalPm =
         !anyDemoCopy &&
         matchedTargetTs &&
         matchedTargetTs.pmRaMasYr != null &&
-        matchedTargetTs.pmDecMasYr != null &&
-        matchedTargetTs.coordinateEpochYear != null
-          ? {
-              targetId: matchedTargetTs.id,
-              pmRaMasYr: matchedTargetTs.pmRaMasYr,
-              pmDecMasYr: matchedTargetTs.pmDecMasYr,
-              fromEpochYear: matchedTargetTs.coordinateEpochYear,
-              toEpochYear: obsEpochYear,
-              separationArcsec: propagatePosition(
-                ra,
-                dec,
-                matchedTargetTs.pmRaMasYr,
-                matchedTargetTs.pmDecMasYr,
-                matchedTargetTs.coordinateEpochYear,
-                obsEpochYear
-              ).separationArcsec,
-            }
-          : undefined,
-      fovArcmin,
-      sizePix,
-      totalExposuresFound: totalExposuresAllDetectors,
-      framesReturned: loadedFrames.length,
-      framesCount: loadedFrames.length,
-      frames: loadedFrames,
-      temporalPairs: pairs,
-      pairs,
-      cadenceSummary: {
-        totalFrames: loadedFrames.length,
-        totalPairs: pairs.length,
-        intraVisitPairs,
-        independentVisitPairs,
-        surveyEpochPairs,
-      },
-      dateRange,
-      detectorStacks,
-      spectrumAtCenter,
-      referenceWcs: refWcs,
-      catalogOverlays,
-      releaseId: loadedFrames[0]?.release ? `SPHEREx-${loadedFrames[0].release.toUpperCase()}-Level2B` : SPHEREX_RELEASE_ID,
-    });
+        matchedTargetTs.pmDecMasYr != null;
+      const expectedOffset = hasCanonicalPm
+        ? computeExpectedProperMotionOffset(
+            matchedTargetTs!.pmRaMasYr!,
+            matchedTargetTs!.pmDecMasYr!,
+            mjdStartOffset,
+            mjdEndOffset
+          )
+        : computeExpectedProperMotionOffset(0, 0, mjdStartOffset, mjdEndOffset);
+
+      const targetSigmaArcsec = Math.max(0.05, measuredDisplacementErrorArcsec);
+      const sigma = chosenFit.valid
+        ? Number((measuredDisplacementArcsec / targetSigmaArcsec).toFixed(2))
+        : 0;
+      const diffFromExpectedArcsec = Number(
+        Math.hypot(
+          measuredNetDxArcsec - expectedOffset.dxArcsec,
+          measuredNetDyArcsec - expectedOffset.dyArcsec
+        ).toFixed(3)
+      );
+      const diffFromExpectedSigma = chosenFit.valid
+        ? Number((diffFromExpectedArcsec / targetSigmaArcsec).toFixed(2))
+        : 0;
+
+      const activeSubsetFrames =
+        errorBudget.chosenOption === 'a' ? unsatValidFrames : validFrames;
+      const refCountsValid = activeSubsetFrames
+        .map((f) => f.measuredCentroid?.refStarsUsed ?? 0)
+        .sort((a, b) => a - b);
+      const medianRefStarsUsed =
+        refCountsValid.length > 0
+          ? refCountsValid[Math.floor(refCountsValid.length / 2)]
+          : (loadedFrames[0]?.measuredCentroid?.refStarsUsed ?? 0);
+      const usesWingFits = errorBudget.methodLabel === 'includes wing-fit frames, low confidence';
+      const astrometryLowConfidence = medianRefStarsUsed < 3 || usesWingFits;
+      const astrometryLowConfidenceReason = usesWingFits
+        ? 'includes wing-fit frames, low confidence'
+        : medianRefStarsUsed < 3
+        ? `Fewer than 3 usable Gaia DR3 reference stars (median ${medianRefStarsUsed})`
+        : undefined;
+
+      const significanceRatio =
+        astrometricFloorArcsec > 0
+          ? Number((measuredDisplacementArcsec / astrometricFloorArcsec).toFixed(2))
+          : 0;
+      const targetDetectedInDetector = validCount > 0;
+      // Significant ONLY if displacement >= 3 sigma AND |measured - expected| <= 2 sigma
+      const motionSignificant =
+        targetDetectedInDetector &&
+        chosenFit.valid &&
+        sigma >= 3.0 &&
+        (!hasCanonicalPm && !isControlTarget ? true : diffFromExpectedSigma <= 2.0);
+      const motionVerdict = allSaturated
+        ? `saturated in ${chosenDet}`
+        : !targetDetectedInDetector
+        ? `not detected in ${chosenDet}`
+        : motionSignificant
+        ? 'significant motion detected'
+        : 'motion not significant';
+
+      const midFrameForNb = activeRaw[Math.floor(activeRaw.length / 2)];
+      const neighborCacheKey = `${targetDef?.id || queryRa.toFixed(4)}_${queryDec.toFixed(4)}`;
+      const nearbyNeighbors15Arcsec = findNearbyCatalogNeighbors(
+        catalogOverlaysField,
+        midFrameForNb._epochYear,
+        midFrameForNb._targetSky.ra,
+        midFrameForNb._targetSky.dec,
+        { targetJ2000Ra: ra, targetJ2000Dec: dec, targetId: targetDef?.id, radiusArcsec: 15.0 }
+      );
+      if (nearbyNeighbors15Arcsec.length > 0 || !persistedNeighborsStore.has(neighborCacheKey)) {
+        persistedNeighborsStore.set(neighborCacheKey, nearbyNeighbors15Arcsec);
+        saveCatalogDiskCache();
+      }
+
+      // Pairwise temporal classification
+      const pairs: TemporalPairInfo[] = [];
+      let intraVisitPairs = 0;
+      let independentVisitPairs = 0;
+      let surveyEpochPairs = 0;
+      for (let i = 0; i < loadedFrames.length - 1; i++) {
+        const fA = loadedFrames[i];
+        const fB = loadedFrames[i + 1];
+        const deltaMjd = Math.abs(fB.mjd - fA.mjd);
+        const deltaSec = deltaMjd * 86400;
+        const deltaDays = deltaMjd;
+        let baselineType: 'INTRA_VISIT' | 'INDEPENDENT_VISIT' | 'SURVEY_EPOCH' = 'INTRA_VISIT';
+        if (deltaDays > 30) {
+          baselineType = 'SURVEY_EPOCH';
+          surveyEpochPairs++;
+        } else if (fA.visitKey !== fB.visitKey || deltaSec > 3600) {
+          baselineType = 'INDEPENDENT_VISIT';
+          independentVisitPairs++;
+        } else {
+          baselineType = 'INTRA_VISIT';
+          intraVisitPairs++;
+        }
+        const humanBaseline =
+          deltaSec < 3600
+            ? `${deltaSec.toFixed(1)}s (start-to-start cadence)`
+            : deltaDays < 2
+            ? `${(deltaSec / 3600).toFixed(1)} hours`
+            : `${deltaDays.toFixed(1)} days (~${(deltaDays / 30.4).toFixed(1)} months)`;
+        pairs.push({
+          frameAIndex: fA.index,
+          frameBIndex: fB.index,
+          obsIdA: fA.obsId,
+          obsIdB: fB.obsId,
+          baselineType,
+          deltaMjd,
+          deltaSeconds: deltaSec,
+          deltaDays,
+          humanBaseline,
+          startToStartCadenceSec: deltaSec < 3600 ? Number(deltaSec.toFixed(1)) : undefined,
+        });
+      }
+
+      const spanDays =
+        loadedFrames.length > 1
+          ? Number((loadedFrames[loadedFrames.length - 1].mjd - loadedFrames[0].mjd).toFixed(4))
+          : 0;
+      const dateRange = {
+        start: loadedFrames[0].dateObs,
+        end: loadedFrames[loadedFrames.length - 1].dateObs,
+        spanDays,
+      };
+
+      const detectorStacks = computeDetectorStacks(loadedFrames);
+      const midTargetPix = loadedFrames[Math.floor(loadedFrames.length / 2)]?.targetRefPixel;
+      const centerX = midTargetPix ? midTargetPix.x : Math.floor(refW / 2);
+      const centerY = midTargetPix ? midTargetPix.y : Math.floor(refH / 2);
+      const spectrumAtCenter = extractApertureSpectrum(loadedFrames, centerX, centerY, 2.5);
+
+      const obsEpochYear = 2025.0 + (loadedFrames[0].mjd - 60676.0) / 365.25;
+      const catalogOverlays = catalogOverlaysField.map((cat) => {
+        let px = cat.x;
+        let py = cat.y;
+        try {
+          const pix = WCS.skyToPix(cat.raPropagated, cat.decPropagated, refWcs);
+          px = Number(pix.x.toFixed(2));
+          py = Number(pix.y.toFixed(2));
+        } catch {}
+        return { ...cat, x: px, y: py };
+      });
+
+      const sourceMode: 'live' | 'saved_benchmark' =
+        anyDemoCopy || process.env.SPHEREX_OFFLINE === '1' ? 'saved_benchmark' : 'live';
+      const cachedDateFormatted = newestCachedIso
+        ? `${newestCachedIso.replace('T', ' ').slice(0, 16)} UTC`
+        : 'local cache';
+      const sourceLabel = anyDemoCopy
+        ? 'DEMO COPY (DIFFERENT FIELD)'
+        : allCached
+        ? (`REAL SPHEREx DATA - cached ${cachedDateFormatted}` as `REAL SPHEREx DATA - cached ${string}`)
+        : 'REAL SPHEREx DATA';
+
+      return {
+        statusCode: 200,
+        validDetections: validCount,
+        unsaturatedCoreCount,
+        unsatSpanDays,
+        wingFitCount,
+        allSaturated,
+        meanSnr,
+        totalTapRows: samplingPool.length,
+        body: {
+          status: 'OK',
+          state: 'OK',
+          sourceMode,
+          sourceLabel,
+          cachedAt: newestCachedIso,
+          releaseBreakdown,
+          releaseGroupCounts,
+          exposuresPerRelease,
+          mixedReleasesDetected: versionGroups.size > 1,
+          activeRelease: sortedVersionKeys[0]?.split('::')[0] || loadedFrames[0]?.release || undefined,
+          activeVersion: sortedVersionKeys[0]?.split('::')[1] || loadedFrames[0]?.version || undefined,
+          largestDiffGroupKey: sortedVersionKeys[0],
+          centroidStacked: centroidStacked || undefined,
+          astrometrySummary: {
+            method: errorBudget.methodLabel,
+            chosenOption: errorBudget.chosenOption,
+            errorBudgetLabel: errorBudget.methodLabel,
+            annualMotion: {
+              pmRaArcsecYr: chosenFit.pmRaArcsecYr,
+              pmDecArcsecYr: chosenFit.pmDecArcsecYr,
+              totalArcsecYr: chosenFit.annualMotionArcsecYr,
+              errorArcsecYr: chosenFit.annualMotionErrorArcsecYr,
+              reducedChi2: chosenFit.reducedChi2,
+            },
+            optionA: errorBudget.optionA,
+            optionB: errorBudget.optionB,
+            medianRefStarsUsed,
+            lowConfidence: astrometryLowConfidence,
+            lowConfidenceReason: astrometryLowConfidenceReason,
+            astrometricFloorArcsec,
+            detectorLooFloorArcsec: floorInfo.detectorLooFloorArcsec,
+            controlFloorInDetectorArcsec: floorInfo.controlFloorInDetectorArcsec,
+            floorByBrightnessClass: floorInfo.floorByBrightnessClass,
+            brightnessClassUsed: floorInfo.brightnessClassUsed,
+            looSampleCount: floorInfo.looSampleCount,
+            controlsUsed: floorInfo.controlsUsedInDetector,
+            perControlScatterArcsec: Object.fromEntries(
+              controlReportsInDetector.map((r) => [r.targetId, r.residualScatterArcsec])
+            ),
+            measuredNetDxArcsec,
+            measuredNetDyArcsec,
+            measuredDisplacementArcsec,
+            measuredDisplacementErrorArcsec,
+            targetSigmaArcsec: Number(targetSigmaArcsec.toFixed(3)),
+            sigma,
+            expectedOffset,
+            diffFromExpectedArcsec,
+            diffFromExpectedSigma,
+            significanceRatio,
+            motionSignificant,
+            motionVerdict,
+            targetDetectedInDetector,
+            unsaturatedCoreCount,
+            unsatValidFramesCount: unsatValidFrames.length,
+            unsatSpanDays,
+            wingFitCount,
+            saturatedAllDetectors: false,
+            detectorDetectionNote: !targetDetectedInDetector
+              ? allSaturated
+                ? `saturated in ${chosenDet}`
+                : `not detected in ${chosenDet}`
+              : undefined,
+            nearbyNeighbors15Arcsec,
+          },
+          lightCurve,
+          partialFailures,
+          isDemoCopy: anyDemoCopy || undefined,
+          demoNotice: anyDemoCopy
+            ? `Showing cached demo cutout from a different field (RA ${trueDemoCenter?.ra.toFixed(4)}°, Dec ${trueDemoCenter?.dec.toFixed(4)}°), NOT your requested coordinates.`
+            : undefined,
+          trueCenter: anyDemoCopy ? trueDemoCenter : undefined,
+          targetCoords: anyDemoCopy && trueDemoCenter ? trueDemoCenter : { ra, dec },
+          frameMode,
+          selectedDetector: chosenDet,
+          recommendedDetector: recommendedDetOrder[0],
+          availableDetectors,
+          properMotion:
+            !anyDemoCopy &&
+            matchedTargetTs &&
+            matchedTargetTs.pmRaMasYr != null &&
+            matchedTargetTs.pmDecMasYr != null &&
+            matchedTargetTs.coordinateEpochYear != null
+              ? {
+                  targetId: matchedTargetTs.id,
+                  pmRaMasYr: matchedTargetTs.pmRaMasYr,
+                  pmDecMasYr: matchedTargetTs.pmDecMasYr,
+                  fromEpochYear: matchedTargetTs.coordinateEpochYear,
+                  toEpochYear: obsEpochYear,
+                  separationArcsec: propagatePosition(
+                    ra,
+                    dec,
+                    matchedTargetTs.pmRaMasYr,
+                    matchedTargetTs.pmDecMasYr,
+                    matchedTargetTs.coordinateEpochYear,
+                    obsEpochYear
+                  ).separationArcsec,
+                }
+              : undefined,
+          fovArcmin,
+          sizePix,
+          totalExposuresFound: totalExposuresAllDetectors,
+          framesReturned: loadedFrames.length,
+          framesCount: loadedFrames.length,
+          frames: loadedFrames,
+          temporalPairs: pairs,
+          pairs,
+          cadenceSummary: {
+            totalFrames: loadedFrames.length,
+            totalPairs: pairs.length,
+            intraVisitPairs,
+            independentVisitPairs,
+            surveyEpochPairs,
+          },
+          dateRange,
+          detectorStacks,
+          spectrumAtCenter,
+          referenceWcs: refWcs,
+          catalogOverlays,
+          releaseId: loadedFrames[0]?.release ? `SPHEREx-${loadedFrames[0].release.toUpperCase()}-Level2B` : SPHEREX_RELEASE_ID,
+        },
+      };
+    };
+
+    try {
+      // Probe first recommended detector at full maxFrames; if it lacks >=4 unsaturated frames >=180d,
+      // screen all remaining detectors across D1..D6 with 6 evenly-spaced epochs, then upgrade the winner to full maxFrames.
+      const maxAttempts = cleanDet ? 1 : candidateDetectors.length;
+      let bestResult: {
+        statusCode: number;
+        body: Record<string, any>;
+        validDetections: number;
+        unsaturatedCoreCount: number;
+        unsatSpanDays: number;
+        wingFitCount: number;
+        allSaturated: boolean;
+        meanSnr: number;
+        totalTapRows: number;
+      } | null = null;
+      let allDetectorsSaturated = true;
+      let probedOkDetectors = 0;
+
+      for (let i = 0; i < maxAttempts; i++) {
+        const det = candidateDetectors[i];
+        const sampleCap = i === 0 || cleanDet ? maxFrames : Math.min(6, maxFrames);
+        const resDet = await buildResponseForDetector(det, undefined, sampleCap);
+        if (resDet.body.status === 'OK') {
+          probedOkDetectors++;
+          if (!resDet.allSaturated && resDet.validDetections > 0) {
+            allDetectorsSaturated = false;
+          }
+          if (resDet.unsaturatedCoreCount > 0) {
+            allDetectorsSaturated = false;
+          }
+        }
+        const bestHasOptA = bestResult ? bestResult.unsaturatedCoreCount >= 4 && bestResult.unsatSpanDays >= 180 : false;
+        const curHasOptA = resDet.unsaturatedCoreCount >= 4 && resDet.unsatSpanDays >= 180;
+        const bestScore = bestResult
+          ? (bestHasOptA ? 10000 : 0) +
+            bestResult.unsaturatedCoreCount * 100 +
+            bestResult.validDetections * 10 -
+            bestResult.wingFitCount * 2
+          : -1;
+        const curScore =
+          (curHasOptA ? 10000 : 0) +
+          resDet.unsaturatedCoreCount * 100 +
+          resDet.validDetections * 10 -
+          resDet.wingFitCount * 2;
+        if (
+          !bestResult ||
+          (bestResult.body.status !== 'OK' && resDet.body.status === 'OK') ||
+          (resDet.body.status === 'OK' &&
+            (curScore > bestScore || (curScore === bestScore && resDet.meanSnr > bestResult.meanSnr)))
+        ) {
+          bestResult = resDet;
+        }
+        // Stop early ONLY when first/current detector already gives clean >=4 unsaturated cores spanning >=180d
+        if (
+          resDet.body.status === 'OK' &&
+          resDet.unsaturatedCoreCount >= 4 &&
+          resDet.unsatSpanDays >= 180
+        ) {
+          break;
+        }
+      }
+
+      // If winning detector was screened at 6 frames and more TAP exposures exist, upgrade it to full maxFrames
+      if (
+        bestResult &&
+        bestResult.body.status === 'OK' &&
+        (bestResult.body.framesReturned || 0) < maxFrames &&
+        bestResult.totalTapRows > (bestResult.body.framesReturned || 0)
+      ) {
+        bestResult = await buildResponseForDetector(bestResult.body.selectedDetector, undefined, maxFrames);
+      }
+
+      if (bestResult) {
+        if (
+          !cleanDet &&
+          probedOkDetectors === candidateDetectors.length &&
+          allDetectorsSaturated &&
+          bestResult.validDetections === 0 &&
+          bestResult.body.astrometrySummary
+        ) {
+          bestResult.body.astrometrySummary.saturatedAllDetectors = true;
+          bestResult.body.astrometrySummary.errorBudgetLabel =
+            'saturated in all frames of all detectors: predicted track only';
+          bestResult.body.astrometrySummary.motionVerdict =
+            'saturated in all frames of all detectors: predicted track only';
+          bestResult.body.astrometrySummary.detectorDetectionNote =
+            'saturated in all frames of all detectors: predicted track only';
+        }
+        return { statusCode: bestResult.statusCode, body: bestResult.body };
+      }
+      return {
+        statusCode: 200,
+        body: {
+          status: 'ARCHIVE_ZERO_ROWS',
+          state: 'ARCHIVE_ZERO_ROWS',
+          framesCount: 0,
+          framesReturned: 0,
+          totalExposuresFound: 0,
+          frames: [],
+          availableDetectors,
+          targetCoords: { ra, dec },
+          message: `IRSA TAP: 0 SPHEREx observations found for RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°.`,
+        },
+      };
+    } catch (tapErr: any) {
+      return {
+        statusCode: 503,
+        body: {
+          status: 'NETWORK_ERROR',
+          state: 'NETWORK_ERROR',
+          error: tapErr?.message || 'Failed to reach NASA/IPAC IRSA TAP archive.',
+          targetCoords: { ra, dec },
+          canRetry: true,
+        },
+      };
+    }
+    }; // end runLivePipeline
+
+    if (snapshotAvailable) {
+      let liveResult: { statusCode: number; body: Record<string, any> } | null = null;
+      try {
+        liveResult = await Promise.race([
+          runLivePipeline(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
+        ]);
+      } catch {
+        liveResult = null;
+      }
+      if (liveResult && liveResult.statusCode === 200 && liveResult.body?.state === 'OK') {
+        return sendJsonOrStream(200, liveResult.body);
+      }
+      console.warn(`[Snapshot] Live query slow (>25s) or failed for ${caseId || `${ra},${dec}`}; serving archive snapshot.`);
+      return sendJsonOrStream(200, snapshotAvailable);
+    }
+
+    const liveResult = await runLivePipeline();
+    return sendJsonOrStream(liveResult.statusCode, liveResult.body);
   } catch (tsErr: any) {
     console.error('Time series pipeline error:', tsErr);
     return sendJsonOrStream(500, { error: 'Failed to process time series: ' + tsErr.message });
@@ -3003,7 +3765,7 @@ Answer in 1-2 concise sentences with mood tag and optional action tag.`;
         }
       } else {
         fallbackMood = 'greeting';
-        fallbackReply = `أنت بتتفرج على ${targetName} في الأشعة تحت الحمراء؛ السماء هنا مستقرة والبيانات موثقة من رصدات SPHEREx QR2.`;
+        fallbackReply = `أنت بتتفرج على ${targetName} في الأشعة تحت الحمراء؛ السماء هنا مستقرة والبيانات موثقة من أرشيف SPHEREx العام (DR1 / QR3 / QR2).`;
         fallbackAction = 'viewport_canvas';
       }
     } else {
@@ -3039,7 +3801,7 @@ Answer in 1-2 concise sentences with mood tag and optional action tag.`;
         }
       } else {
         fallbackMood = 'greeting';
-        fallbackReply = `You are exploring ${targetName} in calibrated infrared; photometric fields are verified against SPHEREx QR2 benchmarks.`;
+        fallbackReply = `You are exploring ${targetName} in calibrated infrared; photometric fields are verified against the SPHEREx public archive (DR1 / QR3 / QR2).`;
         fallbackAction = 'viewport_canvas';
       }
     }
@@ -3088,18 +3850,20 @@ async function warmPresetCache(port: number) {
   ) {
     return;
   }
+  // Warm stationary controls FIRST so astrometric floor is populated empirically for challenge targets
   const presetCaseIds = [
+    'case-rw-aur',
+    'case-r-dra',
     'case-barnards-star',
     'case-epsilon-indi',
     'case-wise-0855',
-    'case-rw-aur',
-    'case-r-dra',
   ];
   for (const cid of presetCaseIds) {
     try {
-      const resp = await fetch(`http://127.0.0.1:${port}/api/spherex/timeseries?caseId=${encodeURIComponent(cid)}&maxFrames=10`, {
-        signal: AbortSignal.timeout(90000),
-      });
+      const resp = await fetch(
+        `http://127.0.0.1:${port}/api/spherex/timeseries?caseId=${encodeURIComponent(cid)}&maxFrames=16&liveOnly=1`,
+        { signal: AbortSignal.timeout(120000) }
+      );
       console.log(`[WarmCache] ${cid}: HTTP ${resp.status}`);
     } catch (err: any) {
       console.warn(`[WarmCache] ${cid} skipped:`, err?.message || err);

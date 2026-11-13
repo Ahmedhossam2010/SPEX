@@ -69,11 +69,11 @@ export const DataReleaseModal: React.FC<DataReleaseModalProps> = ({
                   {isAr ? 'دليل إدارة واستيراد بيانات SPHEREx' : 'SPHEREx Data Management & Ingestion Guide'}
                 </h3>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/30">
-                  QR2 CACHE · QR3 READY
+                  DR1 / QR3 / QR2
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                NASA IPAC IRSA Level-2B Calibrated Infrared Archive (QR2 & QR3 Architecture)
+                NASA/IPAC IRSA SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates)
               </p>
             </div>
           </div>
@@ -94,19 +94,19 @@ export const DataReleaseModal: React.FC<DataReleaseModalProps> = ({
             </span>
             <div className="flex items-center gap-1.5 text-xs font-mono text-emerald-600 dark:text-emerald-400 font-bold">
               <CheckCircle2 className="w-4 h-4" />
-              <span>{isAr ? 'QR2 نشط محلياً · QR3 مهيأ للاستيراد' : 'QR2 Active Cache · QR3 Ingestion Ready'}</span>
+              <span>{isAr ? 'أرشيف SPHEREx العام نشط (DR1 / QR3 / QR2، تحديثات أسبوعية)' : 'Public Archive Active (DR1 / QR3 / QR2, weekly updates)'}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 block">ACTIVE CACHE</span>
-              <span className="text-xs font-bold text-amber-500 font-mono">QR2 Level-2B</span>
+              <span className="text-[10px] font-mono text-slate-400 block">PUBLIC ARCHIVE</span>
+              <span className="text-xs font-bold text-amber-500 font-mono">DR1 / QR3 / QR2</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 block">QR3 SUPPORT</span>
-              <span className="text-xs font-bold text-emerald-400 font-mono">100% Ingestion Ready</span>
+              <span className="text-[10px] font-mono text-slate-400 block">ARCHIVE CADENCE</span>
+              <span className="text-xs font-bold text-emerald-400 font-mono">Weekly Updates</span>
             </div>
 
             <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
@@ -131,13 +131,13 @@ export const DataReleaseModal: React.FC<DataReleaseModalProps> = ({
           </h4>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-            {/* Tier 1: Authentic QR2 */}
+            {/* Tier 1: Authentic SPHEREx Public Archive */}
             <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-bold text-amber-400 font-mono text-[11px]">AUTHENTIC QR2</span>
+                  <span className="font-bold text-amber-400 font-mono text-[11px]">AUTHENTIC SPHEREx</span>
                   <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300">
-                    {isAr ? 'نشط ومحمل محلياً' : 'ACTIVE IN CACHE'}
+                    {isAr ? 'نشط عبر الأرشيف العام' : 'PUBLIC ARCHIVE'}
                   </span>
                 </div>
                 <p className="text-slate-300 text-[11px] leading-relaxed mb-2">

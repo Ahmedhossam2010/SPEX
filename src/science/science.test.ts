@@ -2884,5 +2884,325 @@ test('Phase B (B4/B5/B6): WCS-WAVE -TAB evaluation & Barnard/WISE 0855 cos(dec) 
   assert.equal(lowSnr.valid, false, 'S/N < 3 source must be flagged valid: false ("not detected")');
 });
 
+test('Astrometry Pass (Tasks 1/2/4): differential Gaia DR3 frame alignment, DQ/neighbor masking & stationary control floor', async () => {
+  const { WCS } = await import('./wcs');
+  const {
+    selectIsolatedReferenceStars,
+    fitFrameAstrometryCorrection,
+    measureFrameTargetDifferential,
+    measureControlResidualScatter,
+    computeAstrometricFloor,
+    wrapDeltaRaDeg,
+  } = await import('./astrometry');
+
+  const W = 64;
+  const H = 64;
+  const baseRa = 200.0;
+  const baseDec = 10.0;
+  const cosDec = Math.cos((baseDec * Math.PI) / 180);
+  const wcs = {
+    crpix1: 32,
+    crpix2: 32,
+    crval1: baseRa,
+    crval2: baseDec,
+    cdelt1: -6.2 / 3600,
+    cdelt2: 6.2 / 3600,
+    cd1_1: -6.2 / 3600,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: 6.2 / 3600,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000.0,
+    radesys: 'ICRS',
+    pixelScaleArcsec: 6.2,
+  };
+
+  // Inject Gaussian point source at (px, py)
+  const addSource = (img: Float32Array, px: number, py: number, amp: number, sigma = 0.85) => {
+    for (let y = Math.max(0, Math.floor(py - 4)); y <= Math.min(H - 1, Math.ceil(py + 4)); y++) {
+      for (let x = Math.max(0, Math.floor(px - 4)); x <= Math.min(W - 1, Math.ceil(px + 4)); x++) {
+        const d2 = (x - px) * (x - px) + (y - py) * (y - py);
+        img[y * W + x] += amp * Math.exp(-d2 / (2 * sigma * sigma));
+      }
+    }
+  };
+
+  // 4 isolated Gaia DR3 stars (|pm| < 20 mas/yr) + 1 close pair (should be excluded by 3 px isolation)
+  const catalog: any[] = [
+    { id: 'gaia-1', catalog: 'Gaia DR3', identifier: 'Gaia DR3 101', raRaw: baseRa - 90 / 3600 / cosDec, decRaw: baseDec - 90 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: 4, pmDecMasYr: -3, magLabel: 'G=14.1', x: 0, y: 0 },
+    { id: 'gaia-2', catalog: 'Gaia DR3', identifier: 'Gaia DR3 102', raRaw: baseRa + 95 / 3600 / cosDec, decRaw: baseDec - 80 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: -6, pmDecMasYr: 2, magLabel: 'G=14.5', x: 0, y: 0 },
+    { id: 'gaia-3', catalog: 'Gaia DR3', identifier: 'Gaia DR3 103', raRaw: baseRa - 85 / 3600 / cosDec, decRaw: baseDec + 88 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: 1, pmDecMasYr: 5, magLabel: 'G=13.9', x: 0, y: 0 },
+    { id: 'gaia-4', catalog: 'Gaia DR3', identifier: 'Gaia DR3 104', raRaw: baseRa + 92 / 3600 / cosDec, decRaw: baseDec + 92 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: -2, pmDecMasYr: -4, magLabel: 'G=14.8', x: 0, y: 0 },
+    // Fast PM star (should be excluded)
+    { id: 'gaia-fast', catalog: 'Gaia DR3', identifier: 'Gaia DR3 999', raRaw: baseRa + 50 / 3600 / cosDec, decRaw: baseDec + 40 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: 45, pmDecMasYr: 10, magLabel: 'G=15.0', x: 0, y: 0 },
+    // Unisolated close pair separated by 1.5 px (~9.3")
+    { id: 'gaia-pair-a', catalog: 'Gaia DR3', identifier: 'Gaia DR3 201', raRaw: baseRa - 45 / 3600 / cosDec, decRaw: baseDec + 45 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: 1, pmDecMasYr: 1, magLabel: 'G=15.1', x: 0, y: 0 },
+    { id: 'gaia-pair-b', catalog: 'Gaia DR3', identifier: 'Gaia DR3 202', raRaw: baseRa - 36 / 3600 / cosDec, decRaw: baseDec + 45 / 3600, raPropagated: baseRa, decPropagated: baseDec, pmRaMasYr: 1, pmDecMasYr: 1, magLabel: 'G=15.2', x: 0, y: 0 },
+  ];
+
+  // Propagate target moving by (-0.80", +5.20") over 2 frames while frames also have rigid WCS jitter (+2.8", -1.9") & (-3.4", +2.2")
+  const epochs = [
+    { epochYear: 2025.1, jitterRaArcsec: 2.8, jitterDecArcsec: -1.9, targetShiftRaArcsec: 0, targetShiftDecArcsec: 0 },
+    { epochYear: 2025.9, jitterRaArcsec: -3.4, jitterDecArcsec: 2.2, targetShiftRaArcsec: -0.8, targetShiftDecArcsec: 5.2 },
+  ];
+
+  const measSky: Array<{ ra: number; dec: number }> = [];
+  for (const ep of epochs) {
+    const flux = new Float32Array(W * H).fill(0.05);
+    const variance = new Float32Array(W * H).fill(0.01);
+    const flags = new Int32Array(W * H).fill(0);
+
+    // Render reference stars shifted by -jitter in raw detector WCS
+    const refStars = selectIsolatedReferenceStars(catalog, wcs, W, H, ep.epochYear, baseRa, baseDec, { isolationRadiusPix: 3.0 });
+    assert.equal(refStars.length, 4, 'Must keep the 4 isolated low-PM Gaia stars and reject fast-PM and close-pair stars');
+
+    for (const s of refStars) {
+      const shiftedRa = s.ra - ep.jitterRaArcsec / 3600 / cosDec;
+      const shiftedDec = s.dec - ep.jitterDecArcsec / 3600;
+      const p = WCS.skyToPix(shiftedRa, shiftedDec, wcs);
+      addSource(flux, p.x, p.y, 40.0);
+    }
+
+    // Target true sky position minus frame WCS jitter
+    const tTrueRa = baseRa + ep.targetShiftRaArcsec / 3600 / cosDec;
+    const tTrueDec = baseDec + ep.targetShiftDecArcsec / 3600;
+    const tRawRa = tTrueRa - ep.jitterRaArcsec / 3600 / cosDec;
+    const tRawDec = tTrueDec - ep.jitterDecArcsec / 3600;
+    const tPix = WCS.skyToPix(tRawRa, tRawDec, wcs);
+    addSource(flux, tPix.x, tPix.y, 50.0);
+
+    const sol = fitFrameAstrometryCorrection(flux, variance, flags, W, H, wcs, refStars);
+    assert.equal(sol.lowConfidence, false, '4 ref stars >= 3 should not be marked low confidence');
+    assert.equal(sol.refStarsUsed, 4);
+
+    const m = measureFrameTargetDifferential({
+      flux,
+      variance,
+      flags,
+      width: W,
+      height: H,
+      wcs,
+      epochYear: ep.epochYear,
+      targetEpochRa: tTrueRa,
+      targetEpochDec: tTrueDec,
+      catalogSources: catalog,
+      astrometry: sol,
+    });
+    assert.equal(m.valid, true, 'Target should be detected cleanly after differential alignment');
+    measSky.push({ ra: m.ra!, dec: m.dec! });
+  }
+
+  const netDx = wrapDeltaRaDeg(measSky[1].ra, measSky[0].ra) * cosDec * 3600;
+  const netDy = (measSky[1].dec - measSky[0].dec) * 3600;
+  assert.ok(Math.abs(netDx - -0.8) < 0.35, `Expected recovered dRA*cos(dec) ~ -0.80", got ${netDx.toFixed(3)}"`);
+  assert.ok(Math.abs(netDy - 5.2) < 0.35, `Expected recovered dDec ~ +5.20", got ${netDy.toFixed(3)}"`);
+
+  // < 3 usable ref stars -> lowConfidence: true
+  const fluxLow = new Float32Array(W * H).fill(0.05);
+  const varLow = new Float32Array(W * H).fill(0.01);
+  const flLow = new Int32Array(W * H).fill(0);
+  const twoRefs = selectIsolatedReferenceStars(catalog.slice(0, 2), wcs, W, H, 2025.5, baseRa, baseDec, { isolationRadiusPix: 3.0 });
+  for (const s of twoRefs) {
+    addSource(fluxLow, s.x, s.y, 40.0);
+  }
+  const lowSol = fitFrameAstrometryCorrection(fluxLow, varLow, flLow, W, H, wcs, twoRefs);
+  assert.equal(lowSol.lowConfidence, true, '< 3 usable Gaia ref stars must be marked low confidence');
+
+  // Task 2: Saturation / OVERFLOW bit (0x02) masks frame before centroiding
+  const satFlux = new Float32Array(W * H).fill(0.05);
+  const satVar = new Float32Array(W * H).fill(0.01);
+  const satFlags = new Int32Array(W * H).fill(0);
+  addSource(satFlux, 31, 31, 50.0);
+  satFlags[31 * W + 31] = 0x02;
+  const satMeas = measureFrameTargetDifferential({
+    flux: satFlux,
+    variance: satVar,
+    flags: satFlags,
+    width: W,
+    height: H,
+    wcs,
+    epochYear: 2025.5,
+    targetEpochRa: baseRa,
+    targetEpochDec: baseDec,
+    catalogSources: [],
+    astrometry: lowSol,
+  });
+  assert.equal(satMeas.valid, false);
+  assert.equal(satMeas.maskedReason, 'saturation_or_flag');
+
+  // Task 2: Non-isolated secondary brighter peak at 2.5 px rejects centroid
+  const blendFlux = new Float32Array(W * H).fill(0.05);
+  addSource(blendFlux, 31, 31, 25.0);
+  addSource(blendFlux, 33.5, 31, 45.0);
+  const blendMeas = measureFrameTargetDifferential({
+    flux: blendFlux,
+    variance: satVar,
+    flags: null,
+    width: W,
+    height: H,
+    wcs,
+    epochYear: 2025.5,
+    targetEpochRa: baseRa,
+    targetEpochDec: baseDec,
+    catalogSources: [],
+    astrometry: lowSol,
+  });
+  assert.equal(blendMeas.valid, false);
+  assert.equal(blendMeas.maskedReason, 'non_isolated_peak');
+
+  // Task 2: Stationary controls RW Aur & R Dra compute empirical astrometric floor & 3x significance threshold
+  const rwReport = measureControlResidualScatter('rw-aur', [
+    { dxArcsec: 0.0, dyArcsec: 0.0, predDxArcsec: 0, predDyArcsec: 0, valid: true },
+    { dxArcsec: 0.42, dyArcsec: -0.35, predDxArcsec: 0, predDyArcsec: 0, valid: true },
+    { dxArcsec: -0.31, dyArcsec: 0.48, predDxArcsec: 0, predDyArcsec: 0, valid: true },
+  ]);
+  const rDraReport = measureControlResidualScatter('r-dra', [
+    { dxArcsec: 0.0, dyArcsec: 0.0, predDxArcsec: 0, predDyArcsec: 0, valid: true },
+    { dxArcsec: -0.55, dyArcsec: 0.25, predDxArcsec: 0, predDyArcsec: 0, valid: true },
+  ]);
+  const floorRes = computeAstrometricFloor([rwReport, rDraReport]);
+  assert.equal(floorRes.controlsUsed.length, 2);
+  assert.ok(floorRes.floorArcsec > 0.2 && floorRes.floorArcsec < 1.0, `Expected control floor ~0.45", got ${floorRes.floorArcsec}`);
+  const stationarySignal = Math.hypot(0.5, 0.4);
+  assert.ok(stationarySignal <= 3 * floorRes.floorArcsec, 'Stationary residual displacement <= 3 * floor -> motion not significant');
+});
+
+test('Final Validity Pass: expected offsets (Barnard, Eps Indi, WISE 0855), LOO target-sigma gating, PSF wing fit & light curve', async () => {
+  const { computeExpectedProperMotionOffset } = await import('./properMotion');
+  const { OFFICIAL_CHALLENGE_TARGETS } = await import('./challengeTargets');
+  const {
+    selectIsolatedReferenceStars,
+    fitFrameAstrometryCorrection,
+    fitSaturatedPsfWing,
+    isCorePixelUnsaturated,
+    measureFrameApertureFlux,
+    computeDetectorAndBrightnessFloor,
+  } = await import('./astrometry');
+  const { WCS } = await import('./wcs');
+
+  // Task 2: Exact expected offset formula matches pm * baseline (fixing +0.39" sign bug for Barnard)
+  const barnard = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-barnards-star')!;
+  const epsIndi = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-epsilon-indi-bab')!;
+  const wise0855 = OFFICIAL_CHALLENGE_TARGETS.find((t) => t.id === 'target-wise-0855')!;
+
+  const bOff = computeExpectedProperMotionOffset(barnard.pmRaMasYr!, barnard.pmDecMasYr!, 60700.0, 61070.0); // 370d
+  assert.ok(bOff.dxArcsec < -0.75 && bOff.dxArcsec > -0.90, `Barnard 370d dRA*cos(dec) must be ~ -0.81", got ${bOff.dxArcsec}`);
+  assert.ok(bOff.dyArcsec > 10.40 && bOff.dyArcsec < 10.60, `Barnard 370d dDec must be ~ +10.50", got ${bOff.dyArcsec}`);
+
+  const eOff = computeExpectedProperMotionOffset(epsIndi.pmRaMasYr!, epsIndi.pmDecMasYr!, 60700.0, 61070.0);
+  const expEpsDx = (epsIndi.pmRaMasYr! / 1000) * (370 / 365.25);
+  const expEpsDy = (epsIndi.pmDecMasYr! / 1000) * (370 / 365.25);
+  assert.ok(Math.abs(eOff.dxArcsec - expEpsDx) < 0.01);
+  assert.ok(Math.abs(eOff.dyArcsec - expEpsDy) < 0.01);
+
+  const wOff = computeExpectedProperMotionOffset(wise0855.pmRaMasYr!, wise0855.pmDecMasYr!, 60700.0, 61070.0);
+  const expWiseDx = (wise0855.pmRaMasYr! / 1000) * (370 / 365.25);
+  const expWiseDy = (wise0855.pmDecMasYr! / 1000) * (370 / 365.25);
+  assert.ok(wOff.dxArcsec < -8.0 && Math.abs(wOff.dxArcsec - expWiseDx) < 0.01);
+  assert.ok(wOff.dyArcsec > 0.5 && Math.abs(wOff.dyArcsec - expWiseDy) < 0.01);
+
+  // Task 1, 3, 4: Synthetic 64x64 frame with 4 bright/medium Gaia ref stars -> LOO floor + saturated wing fit + photometry
+  const W = 64;
+  const H = 64;
+  const baseRa = 269.452;
+  const baseDec = 4.693;
+  const wcs = {
+    crval1: baseRa,
+    crval2: baseDec,
+    crpix1: 32,
+    crpix2: 32,
+    cd1_1: -6.2 / 3600,
+    cd1_2: 0,
+    cd2_1: 0,
+    cd2_2: 6.2 / 3600,
+    cdelt1: -6.2 / 3600,
+    cdelt2: 6.2 / 3600,
+    pixelScaleArcsec: 6.2,
+    rotationDeg: 0,
+    ctype1: 'RA---TAN',
+    ctype2: 'DEC--TAN',
+    equinox: 2000,
+    radesys: 'ICRS',
+  };
+
+  const catalog: any[] = [
+    { identifier: 'Gaia-1', catalog: 'Gaia DR3', raJ2000: baseRa - 0.03, decJ2000: baseDec - 0.03, raPropagated: baseRa - 0.03, decPropagated: baseDec - 0.03, pmRaMasYr: 1, pmDecMasYr: -1, pmTotalMasYr: 1.4, mag: 13.0, magLabel: 'G=13.0' },
+    { identifier: 'Gaia-2', catalog: 'Gaia DR3', raJ2000: baseRa + 0.03, decJ2000: baseDec - 0.03, raPropagated: baseRa + 0.03, decPropagated: baseDec - 0.03, pmRaMasYr: -2, pmDecMasYr: 1, pmTotalMasYr: 2.2, mag: 13.2, magLabel: 'G=13.2' },
+    { identifier: 'Gaia-3', catalog: 'Gaia DR3', raJ2000: baseRa - 0.03, decJ2000: baseDec + 0.03, raPropagated: baseRa - 0.03, decPropagated: baseDec + 0.03, pmRaMasYr: 0, pmDecMasYr: 2, pmTotalMasYr: 2.0, mag: 15.1, magLabel: 'G=15.1' },
+    { identifier: 'Gaia-4', catalog: 'Gaia DR3', raJ2000: baseRa + 0.03, decJ2000: baseDec + 0.03, raPropagated: baseRa + 0.03, decPropagated: baseDec + 0.03, pmRaMasYr: 3, pmDecMasYr: -1, pmTotalMasYr: 3.1, mag: 15.3, magLabel: 'G=15.3' },
+  ];
+
+  const addGaussian = (arr: Float32Array, cx: number, cy: number, amp: number, sig: number) => {
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const r2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+        if (r2 < 64) arr[y * W + x] += amp * Math.exp(-r2 / (2 * sig * sig));
+      }
+    }
+  };
+
+  const flux = new Float32Array(W * H).fill(1.0);
+  const variance = new Float32Array(W * H).fill(0.04);
+  const flags = new Int32Array(W * H).fill(0);
+
+  const refs = selectIsolatedReferenceStars(catalog, wcs, W, H, 2025.5, baseRa, baseDec, { isolationRadiusPix: 3.0 });
+  for (const r of refs) addGaussian(flux, r.x, r.y, 45.0, 0.9);
+
+  // Add bright saturated target at (31.2, 31.2) with wide PSF wing and saturated 0x02 core
+  addGaussian(flux, 31.2, 31.2, 5000.0, 1.45);
+  for (let py = 30; py <= 32; py++) {
+    for (let px = 30; px <= 32; px++) {
+      if (Math.hypot(px - 31.2, py - 31.2) <= 1.3) {
+        flags[py * W + px] = 0x02;
+        flux[py * W + px] = Number.NaN;
+      }
+    }
+  }
+
+  assert.equal(isCorePixelUnsaturated(flux, flags, W, H, 31.2, 31.2, 2.0), false, 'Saturated core must fail core unsaturation check');
+
+  const sol = fitFrameAstrometryCorrection(flux, variance, flags, W, H, wcs, refs);
+  assert.ok(sol.leaveOneOutResiduals.length >= 3, 'Must compute leave-one-out residuals on Gaia ref stars');
+  assert.ok(sol.leaveOneOutFloorArcsec != null && sol.leaveOneOutFloorArcsec < 0.8, `Expected tight LOO floor, got ${sol.leaveOneOutFloorArcsec}`);
+
+  const floorStats = computeDetectorAndBrightnessFloor({
+    detector: 'D5',
+    looResiduals: sol.leaveOneOutResiduals,
+    targetMeanSnr: 95,
+    controlReportsInDetector: [],
+  });
+  assert.equal(floorStats.brightnessClassUsed, 'bright');
+  assert.ok(floorStats.floorArcsec > 0 && floorStats.floorArcsec < 1.0);
+
+  // Wing fit recovers position on saturated core and marks "wing fit, low confidence"
+  const wing = fitSaturatedPsfWing({
+    flux,
+    variance,
+    flags,
+    width: W,
+    height: H,
+    wcs,
+    epochYear: 2025.5,
+    targetEpochRa: baseRa,
+    targetEpochDec: baseDec,
+    catalogSources: catalog,
+    astrometry: sol,
+  });
+  assert.equal(wing.valid, true, '2..6 px radial wing fit must recover bright saturated target');
+  assert.equal(wing.wingFit, true);
+  assert.equal(wing.lowConfidence, true);
+  assert.equal(wing.lowConfidenceReason, 'wing fit, low confidence');
+  assert.ok(wing.uncertaintyArcsec >= 1.8, 'Wing fit uncertainty must be conservatively large >= 1.8"');
+  assert.ok(Math.hypot(wing.x - 31.2, wing.y - 31.2) < 0.7, `Expected wing fit near (31.2,31.2), got (${wing.x},${wing.y})`);
+
+  // Aperture photometry falls back cleanly to 2..5 px wing annulus when core saturates
+  const lcWing = measureFrameApertureFlux({ flux, variance, flags, width: W, height: H, cx: 31.2, cy: 31.2 });
+  assert.equal(lcWing.valid, true);
+  assert.equal(lcWing.isWingAnnulus, true);
+  assert.ok(lcWing.fluxMjySr > 10 && lcWing.uncertaintyMjySr > 0);
+});
+
+
 
 

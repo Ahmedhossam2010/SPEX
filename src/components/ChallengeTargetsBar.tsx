@@ -104,7 +104,7 @@ export const ChallengeTargetsBar: React.FC<ChallengeTargetsBarProps> = ({
             {/* Coverage Status Badge */}
             <div className="flex items-center gap-1.5 text-xs font-mono">
               <span className="text-slate-500">
-                {selectedTarget.angularDistanceDegToNEP.toFixed(1)}° from QR2 NEP Strip
+                {isAr ? 'أرشيف SPHEREx العام (DR1 / QR3 / QR2، تحديثات أسبوعية)' : 'SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates)'}
               </span>
             </div>
           </div>
@@ -142,7 +142,7 @@ export const ChallengeTargetsBar: React.FC<ChallengeTargetsBarProps> = ({
             >
               <Telescope className="w-3.5 h-3.5 text-slate-950" />
               <span>
-                {isAr ? 'عرض الحقل المرجعي المعاير (NEP Benchmark)' : 'Load Verified NEP Benchmark Analogue'}
+                {isAr ? 'عرض الحقل المرجعي المعاير' : 'Load Verified Benchmark Analogue'}
               </span>
             </button>
           </div>

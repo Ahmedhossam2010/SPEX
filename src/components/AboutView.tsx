@@ -161,7 +161,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
           SPHEREx — The Changing Sky • NASA Space Apps Challenge
         </p>
         <p>
-          Data provided by NASA/IPAC Infrared Science Archive (IRSA) • SPHEREx Public Releases QR2 & QR3 Ready
+          Data provided by NASA/IPAC Infrared Science Archive (IRSA) • SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates)
         </p>
         <p className="text-[10px] text-slate-600">
           Built for astronomers, students, and citizen scientists worldwide. Fully bilingual (EN / AR RTL).

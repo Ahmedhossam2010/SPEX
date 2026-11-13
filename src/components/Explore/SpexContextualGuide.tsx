@@ -196,7 +196,7 @@ export const SpexContextualGuide: React.FC<SpexContextualGuideProps> = ({
       level2: isRtl
         ? 'اضغط على عدسة الزمن لمقارنة اللقطات، أو ألوان الأشعة تحت الحمراء، أو فحص الشك والكتالوجات.'
         : 'Tap the Time lens to compare visits, explore infrared spectral colors, or inspect detector flags and catalogs.',
-      level3Metric: `NASA/IPAC SPHEREx QR2 Calibrated Dataset`,
+      level3Metric: `NASA/IPAC SPHEREx Public Archive (DR1 / QR3 / QR2, weekly updates)`,
     };
   }, [
     activeLens,

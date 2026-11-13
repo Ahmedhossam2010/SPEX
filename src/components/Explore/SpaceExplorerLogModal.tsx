@@ -435,8 +435,8 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
               <Info className="w-4 h-4 shrink-0 text-purple-400" />
               <span>
                 {isRtl
-                  ? 'محاكاة تعليمية تفاعلية لتوضيح مبادئ استكشاف الفضاء — البيانات الفلكية الأساسية في المستكشف مستخرجة من أرشيف SPHEREx QR2 المعتمد.'
-                  : 'EDUCATIONAL SIMULATION FOR CONCEPT LEARNING — All sky data in the main viewer is authentic NASA SPHEREx QR2 observations.'}
+                  ? 'محاكاة تعليمية تفاعلية لتوضيح مبادئ استكشاف الفضاء — البيانات الفلكية الأساسية في المستكشف مستخرجة من أرشيف SPHEREx العام الحالي (DR1 / QR3 / QR2، تحديثات أسبوعية).'
+                  : 'EDUCATIONAL SIMULATION FOR CONCEPT LEARNING — All sky data in the main viewer is read from the current SPHEREx public archive (DR1 / QR3 / QR2, weekly updates).'}
               </span>
             </div>
 
