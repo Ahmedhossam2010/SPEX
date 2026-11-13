@@ -11,8 +11,8 @@ interface SpherexLogoProps {
 
 /**
  * Authoritative SPEX "The Changing Sky" Celestial Eye Brand Logo
- * Displays the authentic original celestial Eye of Horus emblem
- * (/assets/aistudio/eye_logo_no_text_centered_e772aeab.png)
+ * Displays the authentic celestial Eye of Horus emblem
+ * (/assets/aistudio/eye_logo.svg)
  * with sharp vector fallback for bulletproof rendering.
  */
 export const SpherexLogo: React.FC<SpherexLogoProps> = ({
@@ -23,7 +23,7 @@ export const SpherexLogo: React.FC<SpherexLogoProps> = ({
   subtext,
   usePng = true,
 }) => {
-  const [pngFailed, setPngFailed] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
     <div className={`inline-flex items-center gap-3 ${className}`}>
@@ -31,14 +31,14 @@ export const SpherexLogo: React.FC<SpherexLogoProps> = ({
         className="relative flex items-center justify-center flex-shrink-0 transition-transform duration-300 hover:scale-105"
         style={{ width: size, height: size }}
       >
-        {usePng && !pngFailed ? (
+        {usePng && !imgFailed ? (
           <img
-            src="/assets/aistudio/eye_logo_no_text_centered_e772aeab.png"
+            src="/assets/aistudio/eye_logo.svg"
             alt="SPEX Celestial Eye"
             width={size}
             height={size}
             className="w-full h-full object-contain filter drop-shadow-[0_0_12px_rgba(245,158,11,0.4)] pointer-events-none select-none"
-            onError={() => setPngFailed(true)}
+            onError={() => setImgFailed(true)}
             loading="eager"
           />
         ) : (

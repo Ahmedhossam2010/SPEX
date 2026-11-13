@@ -4,6 +4,10 @@ import {
   CandidateDetection,
   SPHERExObservation,
 } from '../../science/types';
+import {
+  canClaimDiscovery,
+  getSourceClassificationMeta,
+} from '../../science/provenance';
 import { StretchMode, ColormapMode, DisplayMode } from '../../utils/astronomyRender';
 import { Language, translations } from '../../utils/translations';
 import {
@@ -265,27 +269,51 @@ export const ScientistInvestigationPanel: React.FC<ScientistInvestigationPanelPr
               </div>
             </div>
 
-            {/* Authenticity & Checksums */}
-            <div className="bg-emerald-950/20 border border-emerald-500/20 p-3 rounded-xl flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <ShieldCheck className="w-5 h-5 text-emerald-400 shrink-0" />
-                <div>
-                  <h5 className="text-xs font-bold text-emerald-300">
-                    {isRtl ? 'بيانات رصدية معتمدة' : 'AUTHENTIC NASA/IPAC SPHEREx OBSERVATION'}
-                  </h5>
-                  <p className="text-[10px] text-emerald-400/80 font-mono">
-                    SHA-256 Checksum Verified · Calibrated Level-2B Science Cutout
-                  </p>
+            {/* Authenticity, Source Classification & Checksums */}
+            {(() => {
+              const gate = canClaimDiscovery(currentResult);
+              const meta = getSourceClassificationMeta(gate.sourceClassification, language);
+              const cardClasses =
+                meta.tone === 'emerald'
+                  ? 'bg-emerald-950/20 border-emerald-500/25 text-emerald-300'
+                  : meta.tone === 'cyan'
+                  ? 'bg-cyan-950/25 border-cyan-500/30 text-cyan-300'
+                  : meta.tone === 'amber'
+                  ? 'bg-amber-950/25 border-amber-500/35 text-amber-300'
+                  : meta.tone === 'indigo'
+                  ? 'bg-indigo-950/25 border-indigo-500/35 text-indigo-300'
+                  : meta.tone === 'orange'
+                  ? 'bg-orange-950/25 border-orange-500/35 text-orange-300'
+                  : 'bg-rose-950/25 border-rose-500/35 text-rose-300';
+              return (
+                <div className={`border p-3 rounded-xl flex items-center justify-between gap-3 ${cardClasses}`}>
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    {gate.allowed ? (
+                      <ShieldCheck className="w-5 h-5 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0">
+                      <h5 className="text-xs font-bold tracking-wide">
+                        {meta.badgeLabel}
+                      </h5>
+                      <p className="text-[10px] opacity-85 font-mono leading-relaxed mt-0.5">
+                        {gate.allowed
+                          ? `${gate.fitsChecksums.length || 2} FITS SHA-256 Verified · ${isRtl ? t.provenanceDiscoveryEligible : 'Discovery Eligible'}`
+                          : gate.reason}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onOpenProvenanceModal}
+                    className="px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-slate-100 font-mono text-[10px] transition cursor-pointer shrink-0"
+                  >
+                    {isRtl ? 'سجل السلسلة' : 'Provenance'}
+                  </button>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenProvenanceModal}
-                className="px-2.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-mono text-[10px] transition cursor-pointer shrink-0"
-              >
-                {isRtl ? 'سجل السلسلة' : 'Provenance'}
-              </button>
-            </div>
+              );
+            })()}
           </div>
         )}
 

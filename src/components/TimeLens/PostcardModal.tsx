@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X, Download, Share2, Check, Sparkles } from 'lucide-react';
+import { X, Download, Share2, Check, Sparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '../../design/components/Button';
 import { CandidateDetection, InvestigationResult } from '../../science/types';
+import { canClaimDiscovery, getSourceClassificationMeta } from '../../science/provenance';
 import { Language, translations } from '../../utils/translations';
 
 interface PostcardModalProps {
@@ -24,6 +25,8 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [copied, setCopied] = useState(false);
   const t = translations[language];
+  const gate = canClaimDiscovery(result);
+  const classMeta = getSourceClassificationMeta(gate.sourceClassification, language);
 
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return;
@@ -137,8 +140,14 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
 
     // Header branding
     ctx.font = 'bold 12px "JetBrains Mono", monospace';
-    ctx.fillStyle = '#F5A623';
-    ctx.fillText('SPHEREx // DISCOVERY POSTCARD', 36, 48);
+    ctx.fillStyle = gate.allowed ? '#F5A623' : '#94A3B8';
+    ctx.fillText(
+      gate.allowed
+        ? 'SPHEREx // DISCOVERY POSTCARD'
+        : `SPHEREx // ${gate.sourceClassification} REFERENCE CARD`,
+      36,
+      48
+    );
 
     ctx.font = '11px "Inter", sans-serif';
     ctx.fillStyle = '#7E91B3';
@@ -164,29 +173,40 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     textY += 32;
 
     // Verdict Box
-    ctx.fillStyle = 'rgba(245, 166, 35, 0.08)';
+    ctx.fillStyle = gate.allowed ? 'rgba(245, 166, 35, 0.08)' : 'rgba(99, 102, 241, 0.08)';
     ctx.fillRect(infoX, textY - 14, 470, 72);
-    ctx.strokeStyle = 'rgba(245, 166, 35, 0.3)';
+    ctx.strokeStyle = gate.allowed ? 'rgba(245, 166, 35, 0.3)' : 'rgba(129, 140, 248, 0.35)';
     ctx.lineWidth = 1;
     ctx.strokeRect(infoX, textY - 14, 470, 72);
 
     ctx.font = 'bold 13px "Inter", sans-serif';
-    ctx.fillStyle = '#F5A623';
-    const verdictTitle = candidate?.status ? `VERDICT: ${candidate.status.toUpperCase()}` : 'SPHEREx TIME LENS DISCOVERY';
+    ctx.fillStyle = gate.allowed ? '#F5A623' : '#A5B4FC';
+    const verdictTitle = !gate.allowed
+      ? `REFERENCE SNAPSHOT (${gate.sourceClassification})`
+      : candidate?.status
+      ? `VERDICT: ${candidate.status.toUpperCase()}`
+      : 'SPHEREx TIME LENS OBSERVATION';
     ctx.fillText(verdictTitle, infoX + 14, textY + 8);
 
     ctx.font = '12px "Inter", sans-serif';
     ctx.fillStyle = '#CBD5E1';
     const verdictDesc = candidate?.whyFlagged || result.description ||
-      'Detected flux difference across survey epochs consistent with variable astrophysical origin.';
+      'Infrared comparison across SPHEREx archive epochs.';
     const trimmedDesc = verdictDesc.length > 80 ? verdictDesc.substring(0, 77) + '...' : verdictDesc;
     ctx.fillText(trimmedDesc, infoX + 14, textY + 28);
 
-    // Confidence Level
-    const sigma = candidate?.peakSignificance ? `${candidate.peakSignificance.toFixed(1)}σ` : '4.8σ';
+    // Confidence Level (strictly computed, never fabricated)
+    const computedSigma = candidate?.peakSignificance ?? result.evidence?.maxSignificance;
+    const sigma = typeof computedSigma === 'number' && Number.isFinite(computedSigma)
+      ? `${computedSigma.toFixed(1)}σ`
+      : 'N/A';
     ctx.font = 'bold 11px "JetBrains Mono", monospace';
     ctx.fillStyle = '#00E5FF';
-    ctx.fillText(`DETECTION SIGNIFICANCE: ${sigma}`, infoX + 14, textY + 46);
+    ctx.fillText(
+      `DETECTION SIGNIFICANCE: ${sigma} · SOURCE: ${gate.sourceClassification}`,
+      infoX + 14,
+      textY + 46
+    );
     textY += 86;
 
     // Observations list snippet
@@ -199,9 +219,9 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     ctx.fillStyle = '#CBD5E1';
     const obsA = result.epoch1?.metadata;
     const obsB = result.epoch2?.metadata;
-    ctx.fillText(`Epoch 1: ${obsA?.date_obs?.split('T')[0] || '2025-06-12'} (${obsA?.detector || 'D1'})`, infoX, textY);
+    ctx.fillText(`Epoch 1: ${obsA?.date_obs?.split('T')[0] || 'N/A'} (${obsA?.obs_id || 'Obs 1'})`, infoX, textY);
     textY += 16;
-    ctx.fillText(`Epoch 2: ${obsB?.date_obs?.split('T')[0] || '2025-12-08'} (${obsB?.detector || 'D2'})`, infoX, textY);
+    ctx.fillText(`Epoch 2: ${obsB?.date_obs?.split('T')[0] || 'N/A'} (${obsB?.obs_id || 'Obs 2'})`, infoX, textY);
     textY += 32;
 
     // Bottom banner
@@ -212,18 +232,24 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     ctx.stroke();
 
     ctx.font = '10px "Inter", sans-serif';
-    ctx.fillStyle = '#5A6E8C';
-    ctx.fillText('OFFICIAL SPHEREx SCIENCE PIPELINE VALIDATOR • SPECTRO-PHOTOMETRIC SURVEY OF THE SKY', 36, height - 32);
+    ctx.fillStyle = gate.allowed ? '#5A6E8C' : '#F59E0B';
+    ctx.fillText(
+      gate.allowed
+        ? 'VERIFIED SPHEREx ARCHIVE OBSERVATION • SPECTRO-PHOTOMETRIC SURVEY OF THE SKY'
+        : 'NON-LIVE / REFERENCE DATA ONLY — NOT ELIGIBLE FOR OFFICIAL DISCOVERY CLAIMS',
+      36,
+      height - 32
+    );
 
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.fillStyle = '#F5A623';
     ctx.fillText(new Date().toISOString().split('T')[0], width - 110, height - 32);
-  }, [isOpen, result, candidate]);
+  }, [isOpen, result, candidate, gate.allowed, gate.sourceClassification, sourceCanvas]);
 
   if (!isOpen) return null;
 
   const handleDownload = () => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || !gate.allowed) return;
     const url = canvasRef.current.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
@@ -257,7 +283,13 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-obs-amber" />
             <h3 className="text-lg font-serif font-bold text-white tracking-wide">
-              {language === 'ar' ? 'مشاركة بطاقة الاكتشاف الفلكي' : 'Share Discovery Postcard'}
+              {gate.allowed
+                ? language === 'ar'
+                  ? 'مشاركة بطاقة الاكتشاف الفلكي'
+                  : 'Share Discovery Postcard'
+                : language === 'ar'
+                ? 'بطاقة مرجعية (مصدر غير مباشر)'
+                : 'Reference Snapshot Preview'}
             </h3>
           </div>
           <button
@@ -268,6 +300,15 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {!gate.allowed && (
+          <div className="mt-4 p-3 rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-200 text-xs font-mono flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <span>
+              <strong>{classMeta.badgeLabel}:</strong> {t.provenanceBlockedPassportNotice}
+            </span>
+          </div>
+        )}
 
         {/* Canvas Preview Container */}
         <div className="my-5 flex justify-center bg-black/60 p-2 rounded-lg border border-obs-border overflow-hidden">
@@ -295,10 +336,18 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
             <Button
               variant="primary"
               size="sm"
+              disabled={!gate.allowed}
               icon={<Download className="w-4 h-4" />}
               onClick={handleDownload}
+              title={gate.allowed ? 'Download Discovery Postcard' : t.provenanceBlockedPassportNotice}
             >
-              {language === 'ar' ? 'تحميل البطاقة' : 'Download Postcard'}
+              {gate.allowed
+                ? language === 'ar'
+                  ? 'تحميل البطاقة'
+                  : 'Download Postcard'
+                : language === 'ar'
+                ? 'التصدير محظور (غير مباشر)'
+                : 'Export Blocked (Non-Live)'}
             </Button>
           </div>
         </div>

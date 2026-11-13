@@ -1,11 +1,25 @@
 import dotenv from 'dotenv';
 dotenv.config();
 import express, { Request, Response } from 'express';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { GoogleGenAI, Type } from '@google/genai';
+import {
+  FitsCacheManager,
+  atomicWriteFileSync,
+  resolveFitsCacheMaxBytes,
+  isValidFitsHeaderBuffer,
+  computeBufferSha256,
+} from './src/utils/fitsCacheManager';
+import {
+  SourceClassification,
+  TapFreshness,
+  FitsOrigin,
+  FitsChecksumRecord,
+  evaluateDiscoveryEligibility,
+  extractProvenanceArtifacts,
+} from './src/science/provenance';
 import {
   SpexExplainRequest,
   SpexExplainResponse,
@@ -235,7 +249,9 @@ process.on('unhandledRejection', (reason) => {
 process.on('uncaughtException', (err) => {
   console.error('[SPHEREx Engine] Uncaught Exception:', err);
 });
-const CACHE_DIR = path.join('/tmp', 'spherex_cache');
+const CACHE_DIR = process.env.SPHEREX_CACHE_DIR
+  ? path.resolve(process.env.SPHEREX_CACHE_DIR)
+  : path.join('/tmp', 'spherex_cache');
 
 // Concurrency limit for IRSA cutout downloads (max 3 parallel to prevent IRSA 503 burst throttling)
 class Semaphore {
@@ -346,10 +362,25 @@ function dedupeByNewestRelease(rows: TapObsRow[]): TapObsRow[] {
   return Array.from(bestByKey.values()).sort((a, b) => a.t_min - b.t_min);
 }
 
+export interface TapSummaryDetailedResult {
+  rows: TapDetectorSummaryRow[];
+  tapFreshness: TapFreshness;
+  cachedAt?: string;
+}
+
+export interface TapQueryDetailedResult {
+  rows: TapObsRow[];
+  tapFreshness: TapFreshness;
+  cachedAt?: string;
+}
+
 const tapSummaryCache = new Map<string, { ts: number; rows: TapDetectorSummaryRow[] }>();
 const tapQueryCache = new Map<string, { ts: number; rows: TapObsRow[] }>();
-const tapInflightCache = new Map<string, Promise<TapObsRow[]>>();
-const TAP_CACHE_TTL_MS = 30 * 60 * 1000;
+const tapInflightCache = new Map<string, Promise<TapQueryDetailedResult>>();
+const TAP_CACHE_TTL_MS =
+  Number(process.env.SPHEREX_TAP_CACHE_TTL_MS) > 0
+    ? Number(process.env.SPHEREX_TAP_CACHE_TTL_MS)
+    : 30 * 60 * 1000;
 
 function parseCsvRows(csv: string): Record<string, string>[] {
   const lines = csv.trim().split('\n').filter((l) => l.trim().length > 0);
@@ -385,16 +416,54 @@ function parseCsvRows(csv: string): Record<string, string>[] {
   return result;
 }
 
+function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function linkAbortSignal(externalSignal: AbortSignal | undefined, controller: AbortController): () => void {
+  if (!externalSignal) return () => {};
+  if (externalSignal.aborted) {
+    controller.abort();
+    return () => {};
+  }
+  const onAbort = () => controller.abort();
+  externalSignal.addEventListener('abort', onAbort, { once: true });
+  return () => externalSignal.removeEventListener('abort', onAbort);
+}
+
 /**
  * Fast detector-first summary query (B8) using GROUP BY p.energy_bandpassname.
  * Returns per-detector counts and MJD bounds in ~1-2s even on 2,500-exposure fields like R Dra.
  */
-async function queryDetectorSummary(ra: number, dec: number, deadlineMs = 120000): Promise<TapDetectorSummaryRow[]> {
-  if (process.env.SPHEREX_OFFLINE === '1') return [];
+async function queryDetectorSummaryDetailed(
+  ra: number,
+  dec: number,
+  options: number | { deadlineMs?: number; signal?: AbortSignal } = 120000
+): Promise<TapSummaryDetailedResult> {
+  if (process.env.SPHEREX_OFFLINE === '1') {
+    return { rows: [], tapFreshness: 'offline' };
+  }
+  const deadlineMs = typeof options === 'number' ? options : options.deadlineMs ?? 120000;
+  const externalSignal = typeof options === 'object' ? options.signal : undefined;
   const cacheKey = `${ra.toFixed(5)}_${dec.toFixed(5)}`;
   const cached = tapSummaryCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < TAP_CACHE_TTL_MS) {
-    return cached.rows;
+    return {
+      rows: cached.rows,
+      tapFreshness: 'fresh_cache',
+      cachedAt: new Date(cached.ts).toISOString(),
+    };
   }
 
   const adql = `SELECT p.energy_bandpassname, COUNT(DISTINCT p.obsid) AS exposure_count, MIN(p.time_bounds_lower) AS min_mjd, MAX(p.time_bounds_upper) AS max_mjd FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1 GROUP BY p.energy_bandpassname`;
@@ -404,17 +473,22 @@ async function queryDetectorSummary(ra: number, dec: number, deadlineMs = 120000
   const startedAt = Date.now();
   let lastErr: any = null;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (externalSignal?.aborted) {
+      throw Object.assign(new Error('IRSA TAP detector summary aborted'), { name: 'AbortError' });
+    }
     const remainingMs = deadlineMs - (Date.now() - startedAt);
     if (remainingMs <= 2000) break;
     const perAttemptMs = Math.min(45000, remainingMs);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), perAttemptMs);
+    const unlinkAbort = linkAbortSignal(externalSignal, controller);
     try {
       const res = await fetch(tapUrl, {
         headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
         signal: controller.signal,
       });
       clearTimeout(timeout);
+      unlinkAbort();
       if (!res.ok) {
         const err: any = new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
         err.statusCode = res.status;
@@ -438,55 +512,108 @@ async function queryDetectorSummary(ra: number, dec: number, deadlineMs = 120000
         })
         .filter((s) => s.exposureCount > 0)
         .sort((a, b) => a.detector.localeCompare(b.detector));
-      tapSummaryCache.set(cacheKey, { ts: Date.now(), rows: summary });
-      return summary;
+      const now = Date.now();
+      tapSummaryCache.set(cacheKey, { ts: now, rows: summary });
+      return {
+        rows: summary,
+        tapFreshness: 'live',
+        cachedAt: new Date(now).toISOString(),
+      };
     } catch (err: any) {
       clearTimeout(timeout);
+      unlinkAbort();
       lastErr = err;
+      if (externalSignal?.aborted) {
+        throw Object.assign(new Error('IRSA TAP detector summary aborted'), { name: 'AbortError' });
+      }
       const status = err?.statusCode;
       if (status && status >= 400 && status < 500) break;
       if (attempt < MAX_RETRIES) {
         const backoff = Math.min(8000, 1500 * Math.pow(2, attempt - 1));
         if (Date.now() - startedAt + backoff < deadlineMs - 2000) {
-          await new Promise((r) => setTimeout(r, backoff));
+          const continued = await sleepWithAbort(backoff, externalSignal);
+          if (!continued) {
+            throw Object.assign(new Error('IRSA TAP detector summary aborted'), { name: 'AbortError' });
+          }
         } else {
           break;
         }
       }
     }
   }
+  if (cached) {
+    console.log(`[TAP] Upstream summary slow/unavailable; serving stale cached summary for RA ${ra}, Dec ${dec}`);
+    return {
+      rows: cached.rows,
+      tapFreshness: 'stale_cache',
+      cachedAt: new Date(cached.ts).toISOString(),
+    };
+  }
   throw new Error(`IRSA TAP detector summary failed: ${lastErr?.message || 'network error'}`);
+}
+
+async function queryDetectorSummary(
+  ra: number,
+  dec: number,
+  options: number | { deadlineMs?: number; signal?: AbortSignal } = 120000
+): Promise<TapDetectorSummaryRow[]> {
+  const res = await queryDetectorSummaryDetailed(ra, dec, options);
+  return res.rows;
 }
 
 /**
  * Authoritative IRSA TAP query joining spherex.artifact and spherex.plane on planeid.
- * Retries on 5xx / network timeouts with exponential backoff up to 120s budget,
- * supports single-detector filtering, and deduplicates across releases.
+ * Retries on 5xx / network timeouts with exponential backoff up to deadline budget,
+ * supports single-detector filtering, caller AbortSignal cancellation, deduplicates across releases,
+ * and explicitly reports whether returned metadata is live, fresh_cache, or stale_cache.
  */
-async function queryIrsaTapObs(
+async function queryIrsaTapObsDetailed(
   ra: number,
   dec: number,
-  options: number | { limit?: number; detector?: string | null; deadlineMs?: number } = 3000
-): Promise<TapObsRow[]> {
+  options: number | { limit?: number; detector?: string | null; deadlineMs?: number; signal?: AbortSignal } = 3000
+): Promise<TapQueryDetailedResult> {
   if (process.env.SPHEREX_OFFLINE === '1') {
-    return [];
+    return { rows: [], tapFreshness: 'offline' };
   }
 
   const limit = typeof options === 'number' ? options : options.limit ?? 3000;
   const detectorFilter = typeof options === 'object' && options.detector ? options.detector.toUpperCase() : null;
   const deadlineMs = typeof options === 'object' && options.deadlineMs ? options.deadlineMs : 120000;
+  const externalSignal = typeof options === 'object' ? options.signal : undefined;
   const cacheKey = `${ra.toFixed(5)}_${dec.toFixed(5)}_${detectorFilter || 'ALL'}_${limit}`;
   const cached = tapQueryCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < TAP_CACHE_TTL_MS) {
-    return cached.rows;
+    return {
+      rows: cached.rows,
+      tapFreshness: 'fresh_cache',
+      cachedAt: new Date(cached.ts).toISOString(),
+    };
+  }
+  if (externalSignal?.aborted) {
+    throw Object.assign(new Error('IRSA TAP query aborted'), { name: 'AbortError' });
   }
 
   const existingInflight = tapInflightCache.get(cacheKey);
   if (existingInflight) {
-    return existingInflight;
+    if (!externalSignal) return existingInflight;
+    return await new Promise<TapQueryDetailedResult>((resolve, reject) => {
+      const onAbort = () => reject(Object.assign(new Error('IRSA TAP query aborted'), { name: 'AbortError' }));
+      if (externalSignal.aborted) return onAbort();
+      externalSignal.addEventListener('abort', onAbort, { once: true });
+      existingInflight.then(
+        (resDet) => {
+          externalSignal.removeEventListener('abort', onAbort);
+          resolve(resDet);
+        },
+        (err) => {
+          externalSignal.removeEventListener('abort', onAbort);
+          reject(err);
+        }
+      );
+    });
   }
 
-  const runPromise = (async (): Promise<TapObsRow[]> => {
+  const runPromise = (async (): Promise<TapQueryDetailedResult> => {
     const detClause = detectorFilter ? ` AND p.energy_bandpassname = 'SPHEREx-${detectorFilter}'` : '';
     const adql = `SELECT TOP ${limit} p.obsid, p.energy_bandpassname, p.time_bounds_lower, p.time_bounds_upper, p.energy_bounds_lower, p.energy_bounds_upper, p.provenance_version, p.datarelease, a.uri FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1${detClause} ORDER BY p.time_bounds_lower ASC`;
     const tapUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(adql)}&FORMAT=csv`;
@@ -496,17 +623,22 @@ async function queryIrsaTapObs(
     let lastErr: any = null;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      if (externalSignal?.aborted) {
+        throw Object.assign(new Error('IRSA TAP query aborted'), { name: 'AbortError' });
+      }
       const remainingMs = deadlineMs - (Date.now() - startedAt);
       if (remainingMs <= 2000) break;
       const perAttemptMs = Math.min(45000, remainingMs);
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), perAttemptMs);
+      const unlinkAbort = linkAbortSignal(externalSignal, controller);
       try {
         const res = await fetch(tapUrl, {
           headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
           signal: controller.signal,
         });
         clearTimeout(timeout);
+        unlinkAbort();
         if (!res.ok) {
           const err: any = new Error(`IRSA TAP HTTP ${res.status}: ${res.statusText}`);
           err.statusCode = res.status;
@@ -543,28 +675,50 @@ async function queryIrsaTapObs(
           };
         });
         const deduped = dedupeByNewestRelease(mapped);
-        tapQueryCache.set(cacheKey, { ts: Date.now(), rows: deduped });
-        return deduped;
+        const now = Date.now();
+        tapQueryCache.set(cacheKey, { ts: now, rows: deduped });
+        return {
+          rows: deduped,
+          tapFreshness: 'live',
+          cachedAt: new Date(now).toISOString(),
+        };
       } catch (err: any) {
         clearTimeout(timeout);
+        unlinkAbort();
         lastErr = err;
+        if (externalSignal?.aborted) {
+          console.log(`[TAP] Cancelled for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): caller deadline/disconnect`);
+          throw Object.assign(new Error('IRSA TAP query aborted'), { name: 'AbortError' });
+        }
         const status = err?.statusCode;
         const willRetry = !(status && status >= 400 && status < 500) && attempt < MAX_RETRIES;
         if (willRetry) {
           console.log(`[TAP] Attempt ${attempt}/${MAX_RETRIES} retrying for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
         } else {
-          console.warn(`[TAP] Attempt ${attempt}/${MAX_RETRIES} failed for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
+          console.log(`[TAP] Attempt ${attempt}/${MAX_RETRIES} unavailable for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
         }
         if (status && status >= 400 && status < 500) break;
         if (attempt < MAX_RETRIES) {
           const backoff = Math.min(8000, 1500 * Math.pow(2, attempt - 1));
           if (Date.now() - startedAt + backoff < deadlineMs - 2000) {
-            await new Promise((r) => setTimeout(r, backoff));
+            const continued = await sleepWithAbort(backoff, externalSignal);
+            if (!continued) {
+              throw Object.assign(new Error('IRSA TAP query aborted'), { name: 'AbortError' });
+            }
           } else {
             break;
           }
         }
       }
+    }
+
+    if (cached) {
+      console.log(`[TAP] Upstream slow/unavailable; serving stale cached observations for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'})`);
+      return {
+        rows: cached.rows,
+        tapFreshness: 'stale_cache',
+        cachedAt: new Date(cached.ts).toISOString(),
+      };
     }
 
     throw new Error(`IRSA TAP query failed: ${lastErr?.message || 'network error'}`);
@@ -576,6 +730,15 @@ async function queryIrsaTapObs(
   } finally {
     tapInflightCache.delete(cacheKey);
   }
+}
+
+async function queryIrsaTapObs(
+  ra: number,
+  dec: number,
+  options: number | { limit?: number; detector?: string | null; deadlineMs?: number; signal?: AbortSignal } = 3000
+): Promise<TapObsRow[]> {
+  const res = await queryIrsaTapObsDetailed(ra, dec, options);
+  return res.rows;
 }
 
 /**
@@ -605,24 +768,24 @@ function sampleAcrossEpochs<T extends { t_min: number; obs_id: string }>(rows: T
   return picked.sort((a, b) => a.t_min - b.t_min);
 }
 
-if (!fs.existsSync(CACHE_DIR)) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-}
+const PERSISTENT_CACHE_DIR = process.env.SPHEREX_PERSISTENT_CACHE_DIR
+  ? path.resolve(process.env.SPHEREX_PERSISTENT_CACHE_DIR)
+  : path.join(process.cwd(), 'data', 'spherex_cache');
+const fitsCache = new FitsCacheManager({
+  cacheDir: CACHE_DIR,
+  persistentDir: PERSISTENT_CACHE_DIR,
+  maxBytes: resolveFitsCacheMaxBytes(),
+});
 
-// Ensure persistent benchmark FITS are copied into ephemeral cache on container boot
-const PERSISTENT_CACHE_DIR = path.join(process.cwd(), 'data', 'spherex_cache');
-if (fs.existsSync(PERSISTENT_CACHE_DIR)) {
-  try {
-    const pFiles = fs.readdirSync(PERSISTENT_CACHE_DIR).filter((f) => f.endsWith('.fits'));
-    for (const pf of pFiles) {
-      const destFile = path.join(CACHE_DIR, pf);
-      if (!fs.existsSync(destFile)) {
-        fs.copyFileSync(path.join(PERSISTENT_CACHE_DIR, pf), destFile);
-      }
-    }
-  } catch (seedErr) {
-    console.warn('[Cache] Could not seed cache from persistent storage:', seedErr);
-  }
+try {
+  const seedSummary = fitsCache.seedFromPersistent();
+  console.log(
+    `[Cache] Seeded ${seedSummary.seededCount} FITS (${(seedSummary.seededBytes / (1024 * 1024)).toFixed(1)} MB), ` +
+      `active=${seedSummary.fileCount} files (${(seedSummary.totalBytes / (1024 * 1024)).toFixed(1)} / ${(seedSummary.maxBytes / (1024 * 1024)).toFixed(0)} MB), ` +
+      `skippedBudget=${seedSummary.skippedBudgetCount}`
+  );
+} catch (seedErr) {
+  console.warn('[Cache] Could not seed cache from persistent storage:', seedErr);
 }
 
 app.use(express.json({ limit: '20mb' }));
@@ -905,6 +1068,8 @@ const CURATED_CASES: CuratedCase[] = [
 interface CutoutFetchResult {
   buffer: Buffer;
   checksum: string;
+  origin: FitsOrigin;
+  integrityVerified: boolean;
   isCached?: boolean;
   cachedAt?: string;
   isDemoCopy?: boolean;
@@ -936,7 +1101,7 @@ function buildDirectCutoutUrl(
   return buildCutoutRequestUrl(fitsSource, ra, dec, sizePix);
 }
 
-// Helper: Download or read cached FITS cutout from IRSA with sha256(cutoutUrl) cache, in-flight dedup, 30s timeout & Semaphore(3)
+// Helper: Download or read verified cached FITS cutout from IRSA with sha256(cutoutUrl) cache, header/checksum validation, in-flight dedup, 30s timeout & Semaphore(3)
 async function getFITSCutout(
   fitsSource: ResolvedFitsUrl | string,
   ra: number,
@@ -956,9 +1121,21 @@ async function getFITSCutout(
     const localPath = path.isAbsolute(localRel) ? localRel : path.join(process.cwd(), localRel);
     if (fs.existsSync(localPath)) {
       const buffer = fs.readFileSync(localPath);
+      if (!isValidFitsHeaderBuffer(buffer)) {
+        throw Object.assign(new Error(`Corrupt local FITS fixture header: ${localRel}`), {
+          code: 'CACHE_CHECKSUM_MISMATCH',
+        });
+      }
       const stat = fs.statSync(localPath);
-      const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-      return { buffer, checksum, isCached: true, cachedAt: stat.mtime.toISOString() };
+      const checksum = computeBufferSha256(buffer);
+      return {
+        buffer,
+        checksum,
+        origin: 'seeded_fixture_cache',
+        integrityVerified: true,
+        isCached: true,
+        cachedAt: stat.mtime.toISOString(),
+      };
     }
   }
 
@@ -969,48 +1146,100 @@ async function getFITSCutout(
     const isExactNepField = WCS.angularSeparationArcsec(ra, dec, 276.2614, 64.8258) < 1800;
     if (matchedFixture && isExactNepField && fs.existsSync(matchedFixture)) {
       const buffer = fs.readFileSync(matchedFixture);
+      if (!isValidFitsHeaderBuffer(buffer)) {
+        throw Object.assign(new Error(`Corrupt FITS fixture header: ${matchedFixture}`), {
+          code: 'CACHE_CHECKSUM_MISMATCH',
+        });
+      }
       const stat = fs.statSync(matchedFixture);
-      const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-      return { buffer, checksum, isCached: true, cachedAt: stat.mtime.toISOString() };
-    }
-    const cachedFiles = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits')) : [];
-    if (cachedFiles.length > 0) {
-      const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
-      const buffer = fs.readFileSync(fallbackPath);
-      const stat = fs.statSync(fallbackPath);
-      const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+      const checksum = computeBufferSha256(buffer);
       return {
         buffer,
         checksum,
+        origin: 'seeded_fixture_cache',
+        integrityVerified: true,
         isCached: true,
         cachedAt: stat.mtime.toISOString(),
-        isDemoCopy: true,
-        trueCenter: { ra: 276.2614, dec: 64.8258 },
-        trueObsId: '2025W18_1B_0001_1',
       };
     }
-    throw new Error('Offline mode active and no local cached FITS files found.');
+    const cachedFiles = fitsCache.listFiles();
+    for (const file of cachedFiles) {
+      const verified = fitsCache.readVerifiedFileSync(file);
+      if (verified.status === 'verified' && verified.buffer && verified.computedSha256) {
+        return {
+          buffer: verified.buffer,
+          checksum: verified.computedSha256,
+          origin: 'synthetic_demo',
+          integrityVerified: true,
+          isCached: true,
+          cachedAt: (verified.mtime || new Date()).toISOString(),
+          isDemoCopy: true,
+          trueCenter: { ra: 276.2614, dec: 64.8258 },
+          trueObsId: '2025W18_1B_0001_1',
+        };
+      }
+    }
+    throw new Error('Offline mode active and no integrity-verified cached FITS files found.');
   }
 
   const cacheKey = crypto.createHash('sha256').update(cutoutUrl).digest('hex');
-  const cacheFile = path.join(CACHE_DIR, `${cacheKey}.fits`);
-  const persistentFile = path.join(PERSISTENT_CACHE_DIR, `${cacheKey}.fits`);
+  const cacheFileName = `${cacheKey}.fits`;
+  const persistentFile = path.join(PERSISTENT_CACHE_DIR, cacheFileName);
 
-  if (fs.existsSync(cacheFile)) {
-    const buffer = fs.readFileSync(cacheFile);
-    const stat = fs.statSync(cacheFile);
-    const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-    return { buffer, checksum, isCached: true, cachedAt: stat.mtime.toISOString() };
+  let rejectedCorruptCache = false;
+  let corruptCacheReason = '';
+
+  const verifiedLocal = fitsCache.readVerifiedFileSync(cacheFileName);
+  if (verifiedLocal.status === 'verified' && verifiedLocal.buffer && verifiedLocal.computedSha256) {
+    const cachedOrigin: FitsOrigin =
+      verifiedLocal.meta?.origin === 'seeded_fixture_cache' ? 'seeded_fixture_cache' : 'verified_fits_cache';
+    return {
+      buffer: verifiedLocal.buffer,
+      checksum: verifiedLocal.computedSha256,
+      origin: cachedOrigin,
+      integrityVerified: true,
+      isCached: true,
+      cachedAt: verifiedLocal.meta?.recordedAt || verifiedLocal.mtime?.toISOString() || new Date().toISOString(),
+    };
+  } else if (verifiedLocal.status === 'checksum_mismatch' || verifiedLocal.status === 'corrupt_header') {
+    rejectedCorruptCache = true;
+    corruptCacheReason = `${verifiedLocal.status} (expected=${verifiedLocal.expectedSha256?.slice(0, 12) || 'n/a'}, got=${verifiedLocal.computedSha256?.slice(0, 12) || 'n/a'})`;
+    console.warn(`[FITS Integrity] Rejected corrupted ephemeral cache for ${obsId || cacheFileName}: ${corruptCacheReason}`);
+    // Do not fall back to an unverified persistent copy when ephemeral sidecar explicitly failed checksum verification
+    try {
+      if (fs.existsSync(persistentFile)) fs.unlinkSync(persistentFile);
+    } catch {}
   }
 
-  if (fs.existsSync(persistentFile)) {
+  if (!rejectedCorruptCache && fs.existsSync(persistentFile)) {
     const buffer = fs.readFileSync(persistentFile);
     const stat = fs.statSync(persistentFile);
-    try {
-      fs.writeFileSync(cacheFile, buffer);
-    } catch {}
-    const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-    return { buffer, checksum, isCached: true, cachedAt: stat.mtime.toISOString() };
+    if (!isValidFitsHeaderBuffer(buffer)) {
+      rejectedCorruptCache = true;
+      corruptCacheReason = 'corrupt_header in persistent cache';
+      console.warn(`[FITS Integrity] Rejected corrupted persistent FITS header for ${obsId || cacheFileName}`);
+      try {
+        fs.unlinkSync(persistentFile);
+      } catch {}
+    } else {
+      try {
+        fitsCache.writeFileSync(cacheFileName, buffer, {
+          origin: 'persistent_cache',
+          obsId,
+          sourceUrl: cutoutUrl,
+          recordedAt: stat.mtime.toISOString(),
+        });
+      } catch {}
+      const checksum = computeBufferSha256(buffer);
+      return {
+        buffer,
+        checksum,
+        origin: 'verified_fits_cache',
+        integrityVerified: true,
+        isCached: true,
+        cachedAt: stat.mtime.toISOString(),
+      };
+    }
   }
 
   // Deduplicate concurrent requests for the exact same cutout URL
@@ -1077,17 +1306,31 @@ async function getFITSCutout(
 
         const arrayBuf = await res.arrayBuffer();
         const buffer = Buffer.from(arrayBuf);
-        fs.writeFileSync(cacheFile, buffer);
+        if (!isValidFitsHeaderBuffer(buffer)) {
+          throw new Error(`IRSA Cutout returned non-FITS payload for ${obsId || cutoutUrl}`);
+        }
+        fitsCache.writeFileSync(cacheFileName, buffer, {
+          origin: 'live_ibe',
+          obsId,
+          sourceUrl: cutoutUrl,
+        });
         if (fs.existsSync(PERSISTENT_CACHE_DIR)) {
           try {
-            fs.writeFileSync(persistentFile, buffer);
+            atomicWriteFileSync(persistentFile, buffer);
           } catch {}
         }
         const nowIso = new Date().toISOString();
-        const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
+        const checksum = computeBufferSha256(buffer);
         console.log(`[IRSA Cutout] Downloaded FITS sha256=${checksum.slice(0, 12)} bytes=${buffer.length} obs=${obsId || 'n/a'}`);
 
-        return { buffer, checksum, isCached: false, cachedAt: nowIso };
+        return {
+          buffer,
+          checksum,
+          origin: 'live_ibe',
+          integrityVerified: true,
+          isCached: false,
+          cachedAt: nowIso,
+        };
       } catch (err: any) {
         clearTimeout(timeout);
         lastError = err;
@@ -1133,22 +1376,30 @@ async function getFITSCutout(
     }
 
     if (options?.allowDemoFallback) {
-      const cachedFiles = fs.existsSync(CACHE_DIR) ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits')) : [];
-      if (cachedFiles.length > 0) {
-        const fallbackPath = path.join(CACHE_DIR, cachedFiles[0]);
-        const buffer = fs.readFileSync(fallbackPath);
-        const stat = fs.statSync(fallbackPath);
-        const checksum = crypto.createHash('sha256').update(buffer).digest('hex');
-        return {
-          buffer,
-          checksum,
-          isCached: true,
-          cachedAt: stat.mtime.toISOString(),
-          isDemoCopy: true,
-          trueCenter: { ra: 276.2614, dec: 64.8258 },
-          trueObsId: '2025W18_1B_0001_1',
-        };
+      const cachedFiles = fitsCache.listFiles();
+      for (const file of cachedFiles) {
+        const verified = fitsCache.readVerifiedFileSync(file);
+        if (verified.status === 'verified' && verified.buffer && verified.computedSha256) {
+          return {
+            buffer: verified.buffer,
+            checksum: verified.computedSha256,
+            origin: 'synthetic_demo',
+            integrityVerified: true,
+            isCached: true,
+            cachedAt: (verified.mtime || new Date()).toISOString(),
+            isDemoCopy: true,
+            trueCenter: { ra: 276.2614, dec: 64.8258 },
+            trueObsId: '2025W18_1B_0001_1',
+          };
+        }
       }
+    }
+
+    if (rejectedCorruptCache) {
+      throw Object.assign(
+        new Error(`CACHE_CHECKSUM_MISMATCH: Cached FITS failed integrity verification (${corruptCacheReason}) and IRSA re-fetch failed (${lastError?.message || 'unavailable'})`),
+        { code: 'CACHE_CHECKSUM_MISMATCH' }
+      );
     }
 
     throw lastError || new Error(`Failed to retrieve SPHEREx FITS cutout from NASA IRSA (${obsId || cutoutUrl})`);
@@ -1214,6 +1465,10 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
       return res.status(503).json({
         state: 'NETWORK_ERROR',
         status: 'NETWORK_ERROR',
+        sourceClassification: 'UNAVAILABLE',
+        discoveryEligible: false,
+        discoveryEligibilityReason: 'IRSA TAP archive unavailable due to network failure.',
+        tapFreshness: 'unavailable',
         error: tapRes.error || 'Network error communicating with NASA IRSA TAP archive.',
         canRetry: true,
         target: { ra, dec, radius },
@@ -1224,6 +1479,10 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
       return res.status(tapRes.statusCode || 500).json({
         state: 'HTTP_ERROR',
         status: 'HTTP_ERROR',
+        sourceClassification: 'UNAVAILABLE',
+        discoveryEligible: false,
+        discoveryEligibilityReason: `IRSA TAP returned HTTP ${tapRes.statusCode || 500}.`,
+        tapFreshness: 'unavailable',
         error: tapRes.error || 'NASA IRSA TAP archive returned HTTP error.',
         statusCode: tapRes.statusCode,
         target: { ra, dec, radius },
@@ -1234,9 +1493,14 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
       return res.status(200).json({
         state: 'ARCHIVE_ZERO_ROWS',
         status: 'ARCHIVE_ZERO_ROWS',
+        sourceClassification: 'UNAVAILABLE',
+        discoveryEligible: false,
+        discoveryEligibilityReason: '0 SPHEREx observations found in IRSA archive for requested coordinates.',
+        tapFreshness: 'live',
         target: { ra, dec, radius },
         count: 0,
         observations: [],
+        observationIds: [],
         message: `IRSA TAP: 0 observations found for requested coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°). This celestial field has not yet been observed in ${tapRes.dataRelease}.`,
         dataRelease: tapRes.dataRelease,
       });
@@ -1273,9 +1537,23 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
       groupedByVisit[obs.visitKey] = (groupedByVisit[obs.visitKey] || 0) + 1;
     }
 
+    const queryClassification: SourceClassification =
+      tapRes.isOfflineMode || tapRes.isSavedCopy ? 'SAVED_BENCHMARK' : 'LIVE_ARCHIVE_DATA';
+    const queryTapFreshness: TapFreshness = tapRes.isOfflineMode ? 'offline' : 'live';
+    const queryElig = evaluateDiscoveryEligibility({
+      sourceClassification: queryClassification,
+      tapFreshness: queryTapFreshness,
+      observationIds: observations.map((o) => o.obs_id),
+    });
+
     return res.json({
       state: 'OK',
       status: 'OK',
+      sourceClassification: queryClassification,
+      discoveryEligible: queryElig.discoveryEligible,
+      discoveryEligibilityReason: queryElig.reason,
+      tapFreshness: queryTapFreshness,
+      observationIds: observations.map((o) => o.obs_id),
       target: { ra, dec, radius },
       count: observations.length,
       observations,
@@ -1290,6 +1568,9 @@ app.get('/api/spherex/query', async (req: Request, res: Response) => {
     return res.status(500).json({
       state: 'HTTP_ERROR',
       status: 'FAILED',
+      sourceClassification: 'UNAVAILABLE',
+      discoveryEligible: false,
+      discoveryEligibilityReason: err?.message || 'Failed to contact IRSA TAP service.',
       error: 'Failed to contact NASA/IPAC IRSA TAP service: ' + err.message,
     });
   }
@@ -1357,20 +1638,34 @@ app.get('/api/spherex/coverage', async (req: Request, res: Response) => {
     try {
       const targetDef = findTargetDefinition(undefined, ra, dec);
       const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
-      const tapRows = await queryIrsaTapObs(queryRa, queryDec, 100);
+      const tapDetail = await queryIrsaTapObsDetailed(queryRa, queryDec, 100);
+      const tapRows = tapDetail.rows;
       const inside = tapRows.length > 0;
+      const covClassification: SourceClassification =
+        tapDetail.tapFreshness === 'stale_cache'
+          ? 'STALE_TAP_CACHE'
+          : tapDetail.tapFreshness === 'offline'
+          ? 'SAVED_BENCHMARK'
+          : inside
+          ? 'LIVE_ARCHIVE_DATA'
+          : 'UNAVAILABLE';
       userCoordCheck = {
         inside,
         coverageCount: tapRows.length,
         distanceDeg: 0,
+        tapFreshness: tapDetail.tapFreshness,
+        tapCachedAt: tapDetail.cachedAt,
+        sourceClassification: covClassification,
         reason: inside
-          ? `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) are verified with ${tapRows.length}+ live exposures in IRSA SPHEREx (${SPHEREX_ARTIFACT_TABLE} + ${SPHEREX_PLANE_TABLE}).`
+          ? `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) match ${tapRows.length}+ exposures (${tapDetail.tapFreshness}) in IRSA SPHEREx (${SPHEREX_ARTIFACT_TABLE} + ${SPHEREX_PLANE_TABLE}).`
           : `Coordinates (RA ${ra.toFixed(4)}°, Dec ${dec >= 0 ? '+' : ''}${dec.toFixed(4)}°) currently have 0 observations in ${SPHEREX_DATA_RELEASE}.`,
       };
     } catch (err: any) {
       return res.status(503).json({
         state: 'NETWORK_ERROR',
         status: 'NETWORK_ERROR',
+        sourceClassification: 'UNAVAILABLE',
+        discoveryEligible: false,
         error: err?.message || 'Failed to query NASA/IPAC IRSA TAP service.',
       });
     }
@@ -1405,9 +1700,7 @@ let lastProcessingTimestamp: string = new Date().toISOString();
 
 // API: Live Mission Status for Mission Control Telemetry
 app.get('/api/status', (_req: Request, res: Response) => {
-  const cachedFiles = fs.existsSync(CACHE_DIR)
-    ? fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits')).length
-    : 0;
+  const cacheStats = fitsCache.getStats();
   return res.json({
     status: 'ONLINE',
     mission: 'NASA SPHEREx',
@@ -1424,7 +1717,9 @@ app.get('/api/status', (_req: Request, res: Response) => {
       : 'FALLBACK ENGINE (ASTROPHYSICAL RULES & GAIA XMATCH)',
     activeRelease: 'SPHEREx-QR2-Level2B',
     benchmarkCasesCount: CURATED_CASES.length,
-    cachedFITSFiles: cachedFiles,
+    cachedFITSFiles: cacheStats.fileCount,
+    cacheBytes: cacheStats.totalBytes,
+    cacheMaxBytes: cacheStats.maxBytes,
     lastProcessingRun: lastProcessingTimestamp,
   });
 });
@@ -1538,13 +1833,19 @@ app.get('/api/health', async (req: Request, res: Response) => {
 // API: Release Validation & Ingestion Engine (November 13 Challenge Release Readiness)
 app.get('/api/spherex/validate-release', async (_req: Request, res: Response) => {
   try {
-    const cachedFiles = fs.readdirSync(CACHE_DIR).filter((f) => f.endsWith('.fits'));
-    const candidates = cachedFiles.map((f) => ({
-      fileName: f,
-      buffer: fs.readFileSync(path.join(CACHE_DIR, f)),
-      sourceType: 'DEVELOPMENT_BENCHMARK' as const,
-      releaseId: 'SPHEREx-QR2-Level2B',
-    }));
+    const cachedFiles = fitsCache.listFiles();
+    const candidates = cachedFiles
+      .map((f) => {
+        const readRes = fitsCache.readFileSync(f);
+        if (!readRes) return null;
+        return {
+          fileName: f,
+          buffer: readRes.buffer,
+          sourceType: 'DEVELOPMENT_BENCHMARK' as const,
+          releaseId: 'SPHEREx-QR2-Level2B',
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null);
 
     const report = DataReleaseAdapter.validateDatasetRelease(candidates, 'DEVELOPMENT_BENCHMARK');
     return res.json(report);
@@ -1621,16 +1922,26 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       !customCoords &&
       (caseId === 'case-nep-var-01' || caseId === 'case-cal-stable-02' || caseId === 'case-artifact-flag-03');
 
+    let procTapFreshness: TapFreshness = isLocalNepOfflineCase || process.env.SPHEREX_OFFLINE === '1' ? 'offline' : 'live';
+    let procTapCachedAt: string | undefined;
+
     if (!isLocalNepOfflineCase && process.env.SPHEREX_OFFLINE !== '1') {
       const { queryRa, queryDec } = getTapQueryCoords(ra, dec, targetDef);
       let tapObsList: TapObsRow[] = [];
       try {
-        tapObsList = await queryIrsaTapObs(queryRa, queryDec, 3000);
+        const tapDetail = await queryIrsaTapObsDetailed(queryRa, queryDec, 3000);
+        tapObsList = tapDetail.rows;
+        procTapFreshness = tapDetail.tapFreshness;
+        procTapCachedAt = tapDetail.cachedAt;
       } catch (tapErr: any) {
         return res.status(503).json({
           error: tapErr?.message || 'Failed to reach NASA/IPAC IRSA TAP archive.',
           status: 'NETWORK_ERROR',
           state: 'NETWORK_ERROR',
+          sourceClassification: 'UNAVAILABLE',
+          discoveryEligible: false,
+          discoveryEligibilityReason: tapErr?.message || 'NASA/IPAC IRSA TAP archive unavailable.',
+          tapFreshness: 'unavailable',
           canRetry: true,
         });
       }
@@ -1642,7 +1953,15 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
         return res.json({
           caseId: caseId || `target-${famousObj?.id || 'unobserved'}`,
           sourceMode: 'live',
-          sourceClassification: 'DATA_UNAVAILABLE',
+          sourceClassification: 'UNAVAILABLE',
+          discoveryEligible: false,
+          discoveryEligibilityReason: `IRSA TAP returned 0 SPHEREx observations for RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}° in ${SPHEREX_DATA_RELEASE}.`,
+          tapFreshness: procTapFreshness,
+          tapCachedAt: procTapCachedAt,
+          fitsOrigin: 'unavailable',
+          cacheIntegrityVerified: false,
+          observationIds: [],
+          fitsChecksums: [],
           title: famousObj
             ? `${famousObj.name}${famousObj.designation ? ` (${famousObj.designation})` : ''}`
             : `Target at RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°`,
@@ -1693,6 +2012,12 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
           provenance: {
             caseId: caseId || 'unavailable-target',
             sourceMode: 'live',
+            sourceClassification: 'UNAVAILABLE',
+            discoveryEligible: false,
+            discoveryEligibilityReason: 'No SPHEREx observations found in archive.',
+            tapFreshness: procTapFreshness,
+            fitsOrigin: 'unavailable',
+            cacheIntegrityVerified: false,
             investigationType: 'Live IRSA Query',
             timestamp: new Date().toISOString(),
             irsaArchiveSource: `NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx (${SPHEREX_ARTIFACT_TABLE} + ${SPHEREX_PLANE_TABLE})`,
@@ -1702,6 +2027,7 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
             fitsUrl2: '',
             fitsChecksum1: '',
             fitsChecksum2: '',
+            fitsChecksums: [],
             dataRelease: SPHEREX_DATA_RELEASE,
             pipelineVersion: 'SPHEREx-ChangingSky-v1.5.0',
             algorithms: {
@@ -1878,8 +2204,32 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       dec = demoTrueCenter.dec;
     }
 
+    const usedCachedFits = Boolean(fits1Res.isCached || fits2Res.isCached);
+    const procCacheVerified = Boolean(fits1Res.integrityVerified && fits2Res.integrityVerified);
+    const procClassification: SourceClassification =
+      isDemoCopy
+        ? 'SYNTHETIC_DEMO'
+        : isLocalNepOfflineCase || process.env.SPHEREX_OFFLINE === '1'
+        ? 'SAVED_BENCHMARK'
+        : procTapFreshness === 'stale_cache'
+        ? 'STALE_TAP_CACHE'
+        : usedCachedFits
+        ? 'VERIFIED_FITS_CACHE'
+        : 'LIVE_ARCHIVE_DATA';
+
+    const procFitsOrigin: FitsOrigin =
+      isDemoCopy
+        ? 'synthetic_demo'
+        : isLocalNepOfflineCase || process.env.SPHEREX_OFFLINE === '1'
+        ? 'seeded_fixture_cache'
+        : usedCachedFits
+        ? 'verified_fits_cache'
+        : 'live_ibe';
+
     const sourceMode: 'live' | 'saved_benchmark' =
-      isDemoCopy || isLocalNepOfflineCase ? 'saved_benchmark' : 'live';
+      procClassification === 'LIVE_ARCHIVE_DATA' || procClassification === 'VERIFIED_FITS_CACHE'
+        ? 'live'
+        : 'saved_benchmark';
     const caseIdToUse = caseId || (isCustomSearch ? 'custom-irsa-target' : selectedCase.id);
     const caseTitle = isDemoCopy
       ? `DEMO COPY (Different Field: RA ${centerRa.toFixed(4)}°, Dec ${centerDec.toFixed(4)}°)`
@@ -2026,6 +2376,25 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       wcs: any;
     }> | undefined = undefined;
 
+    const procChecksums: FitsChecksumRecord[] = [
+      {
+        obsId: obs1.obs_id,
+        sha256: fits1Res.checksum,
+        origin: fits1Res.origin,
+        verified: fits1Res.integrityVerified,
+        cachedAt: fits1Res.cachedAt,
+        sizeBytes: fits1Res.buffer.length,
+      },
+      {
+        obsId: obs2.obs_id,
+        sha256: fits2Res.checksum,
+        origin: fits2Res.origin,
+        verified: fits2Res.integrityVerified,
+        cachedAt: fits2Res.cachedAt,
+        sizeBytes: fits2Res.buffer.length,
+      },
+    ];
+
     const epochsToUse: Array<CuratedEpoch & { resolvedFits?: ResolvedFitsUrl | string }> | undefined =
       liveEpochs && liveEpochs.length >= 3
         ? liveEpochs
@@ -2038,6 +2407,16 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
         const visitPromises = epochsToUse.map(async (ep, idx) => {
           const resF = await getFITSCutout(ep.resolvedFits || ep.fits_url, centerRa, centerDec, sizePix, ep.obs_id, { allowDemoFallback });
           const parsed = FITSReader.parse(resF.buffer);
+          if (!procChecksums.some((c) => c.obsId === ep.obs_id)) {
+            procChecksums.push({
+              obsId: ep.obs_id,
+              sha256: resF.checksum,
+              origin: resF.origin,
+              verified: resF.integrityVerified,
+              cachedAt: resF.cachedAt,
+              sizeBytes: resF.buffer.length,
+            });
+          }
           const epDateObs =
             (typeof parsed.header['DATE-OBS'] === 'string' && parsed.header['DATE-OBS']) || ep.date;
           const epDateEnd =
@@ -2092,19 +2471,44 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       })
     );
 
+    const procObsIds = Array.from(new Set([obs1.obs_id, obs2.obs_id, ...procChecksums.map((c) => c.obsId)]));
+    const procElig = evaluateDiscoveryEligibility({
+      sourceClassification: procClassification,
+      tapFreshness: procTapFreshness,
+      cacheIntegrityVerified: procCacheVerified,
+      observationIds: procObsIds,
+      fitsChecksums: procChecksums,
+    });
+    const procLatestCachedAt = [fits1Res.cachedAt, fits2Res.cachedAt].filter(Boolean).sort().pop();
+
     const provenance: ProvenanceRecord = {
       caseId: caseIdToUse,
       sourceMode,
-      investigationType: isCustomSearch ? 'Live IRSA Query' : 'Curated Archival Case',
+      sourceClassification: procClassification,
+      discoveryEligible: procElig.discoveryEligible,
+      discoveryEligibilityReason: procElig.reason,
+      tapFreshness: procTapFreshness,
+      fitsOrigin: procFitsOrigin,
+      cacheIntegrityVerified: procCacheVerified,
+      cachedAt: procLatestCachedAt,
+      investigationType:
+        procClassification === 'SAVED_BENCHMARK'
+          ? 'Saved Benchmark Snapshot'
+          : procClassification === 'STALE_TAP_CACHE'
+          ? 'Stale TAP Fallback'
+          : isCustomSearch
+          ? 'Live IRSA Query'
+          : 'Curated Archival Case',
       timestamp: new Date().toISOString(),
-      irsaArchiveSource: 'NASA/IPAC Infrared Science Archive (IRSA) — SPHEREx Public Data Release QR2',
+      irsaArchiveSource: `NASA/IPAC Infrared Science Archive (IRSA) — ${SPHEREX_DATA_RELEASE}`,
       obsId1: obs1.obs_id,
       obsId2: obs2.obs_id,
       fitsUrl1: ep1.fits_url,
       fitsUrl2: ep2.fits_url,
       fitsChecksum1: fits1Res.checksum,
       fitsChecksum2: fits2Res.checksum,
-      dataRelease: 'SPHEREx QR2 (Level 2B Processed Science Frames)',
+      fitsChecksums: procChecksums,
+      dataRelease: `${SPHEREX_DATA_RELEASE} (Level 2B Processed Science Frames)`,
       pipelineVersion: 'SPHEREx-ChangingSky-v1.5.0 (astronomical difference imaging engine)',
       algorithms: {
         fitsParser: 'FITS-MEF IEEE-754 Big-Endian HDU extractor',
@@ -2120,6 +2524,15 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
     const responseData: InvestigationResult = {
       caseId: caseIdToUse,
       sourceMode,
+      sourceClassification: procClassification,
+      discoveryEligible: procElig.discoveryEligible,
+      discoveryEligibilityReason: procElig.reason,
+      tapFreshness: procTapFreshness,
+      tapCachedAt: procTapCachedAt,
+      fitsOrigin: procFitsOrigin,
+      cacheIntegrityVerified: procCacheVerified,
+      fitsChecksums: procChecksums,
+      cachedAt: procLatestCachedAt,
       title: caseTitle,
       description: caseDescription,
       targetCoords: { ra: centerRa, dec: centerDec },
@@ -2160,11 +2573,14 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
       candidates: diffResult.candidates,
       evidence: diffResult.evidence,
       provenance,
-      datasetSource: 'DEVELOPMENT_BENCHMARK',
-      releaseId: 'SPHEREx-QR2-Level2B',
+      datasetSource:
+        procClassification === 'LIVE_ARCHIVE_DATA' || procClassification === 'VERIFIED_FITS_CACHE'
+          ? 'OFFICIAL_CHALLENGE_RELEASE'
+          : 'DEVELOPMENT_BENCHMARK',
+      releaseId: SPHEREX_RELEASE_ID,
       isSimulated: selectedCase.isSimulated ?? false,
       simulatedLabel: selectedCase.simulatedLabel,
-      observationIds: [obs1.obs_id, obs2.obs_id],
+      observationIds: procObsIds,
       fileIdentifiers: [ep1.fits_url, ep2.fits_url],
       observationTimestamps: [obs1.date_obs || ep1.date, obs2.date_obs || ep2.date],
       processingVersion: '2.7.0-forensic-verified',
@@ -2185,6 +2601,10 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
     return res.status(statusCode).json({
       error: err.message || 'Scientific pipeline execution error',
       status: 'FAILED',
+      sourceClassification: 'UNAVAILABLE',
+      discoveryEligible: false,
+      discoveryEligibilityReason: err.message || 'Scientific pipeline execution error',
+      cacheIntegrityVerified: err?.code === 'CACHE_CHECKSUM_MISMATCH' ? false : undefined,
       sourceMode: req.body?.customCoords ? 'live' : 'saved_benchmark',
       canRetry: true,
       suggestedCaseId: 'case-nep-var-01',
@@ -2302,15 +2722,32 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         const snap = JSON.parse(fs.readFileSync(snapPath, 'utf-8'));
         const takenAtIso = snap.snapshotTakenAt || new Date(fs.statSync(snapPath).mtimeMs).toISOString();
         const takenDateStr = `${takenAtIso.replace('T', ' ').slice(0, 16)} UTC`;
+        const { observationIds: snapObsIds, fitsChecksums: snapChecksums } = extractProvenanceArtifacts(snap);
+        const snapObsList =
+          snapObsIds.length > 0
+            ? snapObsIds
+            : Array.isArray(snap.frames)
+            ? Array.from(new Set(snap.frames.map((f: any) => String(f?.obsId || '')).filter(Boolean)))
+            : [];
         return {
           ...snap,
           status: 'OK',
           state: 'OK',
           sourceMode: 'saved_benchmark',
+          sourceClassification: 'SAVED_BENCHMARK' as SourceClassification,
+          discoveryEligible: false,
+          discoveryEligibilityReason:
+            'Saved benchmark snapshot is a static reference fallback, not a live IRSA archive retrieval.',
+          tapFreshness: 'snapshot' as TapFreshness,
+          tapCachedAt: takenAtIso,
+          fitsOrigin: 'saved_snapshot' as FitsOrigin,
+          cacheIntegrityVerified: Boolean(snap.frames?.length),
+          observationIds: snapObsList,
+          fitsChecksums: snapChecksums,
           isSnapshot: true,
           snapshotTakenAt: takenAtIso,
           cachedAt: takenAtIso,
-          sourceLabel: `REAL SPHEREx DATA - archive snapshot taken ${takenDateStr} (live archive slow or unreachable)`,
+          sourceLabel: `SAVED BENCHMARK SNAPSHOT - cached ${takenDateStr} (NOT LIVE)`,
         };
       } catch (snapErr: any) {
         console.warn(`[Snapshot] Failed to parse ${snapPath}:`, snapErr?.message);
@@ -2380,17 +2817,42 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       totalTapRows: number;
     }> => {
       let tapRows: TapObsRow[] = prefetchedRows || [];
+      let detTapFreshness: TapFreshness = process.env.SPHEREX_OFFLINE === '1' ? 'offline' : 'live';
+      let detTapCachedAt: string | undefined;
 
       if (process.env.SPHEREX_OFFLINE !== '1' && !prefetchedRows) {
-        tapRows = await queryIrsaTapObs(queryRa, queryDec, { detector: chosenDet, limit: 3000 });
+        const remMs = pipelineDeadlineMs ? Math.max(3000, pipelineDeadlineMs - Date.now()) : undefined;
+        const tapDetail = await queryIrsaTapObsDetailed(queryRa, queryDec, {
+          detector: chosenDet,
+          limit: 3000,
+          deadlineMs: remMs,
+          signal: pipelineSignal,
+        });
+        tapRows = tapDetail.rows;
+        detTapFreshness = tapDetail.tapFreshness;
+        detTapCachedAt = tapDetail.cachedAt;
         if (tapRows.length === 0 && !cleanDet) {
-          detectorSummary = await queryDetectorSummary(queryRa, queryDec);
+          const sumRemMs = pipelineDeadlineMs ? Math.max(3000, pipelineDeadlineMs - Date.now()) : undefined;
+          const sumDetail = await queryDetectorSummaryDetailed(queryRa, queryDec, {
+            deadlineMs: sumRemMs,
+            signal: pipelineSignal,
+          });
+          detectorSummary = sumDetail.rows;
+          if (sumDetail.tapFreshness === 'stale_cache') {
+            detTapFreshness = 'stale_cache';
+            detTapCachedAt = sumDetail.cachedAt || detTapCachedAt;
+          }
         }
       }
 
-      const cachedSummary = tapSummaryCache.get(`${queryRa.toFixed(5)}_${queryDec.toFixed(5)}`)?.rows;
+      const cachedSummaryEntry = tapSummaryCache.get(`${queryRa.toFixed(5)}_${queryDec.toFixed(5)}`);
+      const cachedSummary = cachedSummaryEntry?.rows;
       if (detectorSummary.length === 0 && cachedSummary) {
         detectorSummary = cachedSummary;
+        if (cachedSummaryEntry && Date.now() - cachedSummaryEntry.ts >= TAP_CACHE_TTL_MS && tapRows.length === 0) {
+          detTapFreshness = 'stale_cache';
+          detTapCachedAt = new Date(cachedSummaryEntry.ts).toISOString();
+        }
       }
       if (availableDetectors.length === 0) {
         if (detectorSummary.length > 0) {
@@ -2541,6 +3003,15 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           body: {
             status: 'ARCHIVE_ZERO_ROWS',
             state: 'ARCHIVE_ZERO_ROWS',
+            sourceClassification: 'UNAVAILABLE' as SourceClassification,
+            discoveryEligible: false,
+            discoveryEligibilityReason: `IRSA TAP returned 0 SPHEREx observations in ${chosenDet} for RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°.`,
+            tapFreshness: detTapFreshness,
+            tapCachedAt: detTapCachedAt,
+            fitsOrigin: 'unavailable' as FitsOrigin,
+            cacheIntegrityVerified: false,
+            observationIds: [],
+            fitsChecksums: [],
             framesCount: 0,
             framesReturned: 0,
             totalExposuresFound: totalExposuresAllDetectors,
@@ -2576,6 +3047,9 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         _astrometry?: FrameAstrometrySolution;
         _targetMeas?: FrameTargetAstrometry;
       }
+
+      let hadCacheIntegrityFailure = false;
+      let cacheIntegrityFailureMessage: string | undefined;
 
       const framePromises = selectedExposures.map(async (exp, idx) => {
         try {
@@ -2647,6 +3121,9 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
             version: parsed.version || exp.provenanceVersion || undefined,
             release: exp.release || parsed.release || undefined,
             cachedAt: cutout.cachedAt,
+            fitsSha256: cutout.checksum,
+            fitsOrigin: cutout.origin,
+            fitsChecksumVerified: cutout.integrityVerified,
             wcsWave: parsed.wcsWaveMetadata?.table,
             width: parsed.width,
             height: parsed.height,
@@ -2677,6 +3154,10 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         } catch (frameErr: any) {
           if (pipelineSignal?.aborted || frameErr?.name === 'AbortError') {
             return null;
+          }
+          if (frameErr?.code === 'CACHE_CHECKSUM_MISMATCH') {
+            hadCacheIntegrityFailure = true;
+            cacheIntegrityFailureMessage = frameErr.message;
           }
           completedCount++;
           emitProgress({
@@ -2709,7 +3190,21 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           body: {
             status: 'CUTOUT_FAILED',
             state: 'CUTOUT_FAILED',
-            error: 'Could not retrieve any FITS cutouts from NASA/IPAC IRSA for this position.',
+            sourceClassification: 'UNAVAILABLE' as SourceClassification,
+            discoveryEligible: false,
+            discoveryEligibilityReason: hadCacheIntegrityFailure
+              ? cacheIntegrityFailureMessage || 'Cached FITS failed SHA-256 / header verification and IRSA re-fetch failed.'
+              : 'Could not retrieve any valid SPHEREx FITS cutouts from NASA/IPAC IRSA.',
+            tapFreshness: detTapFreshness,
+            tapCachedAt: detTapCachedAt,
+            fitsOrigin: 'unavailable' as FitsOrigin,
+            cacheIntegrityVerified: !hadCacheIntegrityFailure,
+            cacheIntegrityError: cacheIntegrityFailureMessage,
+            observationIds: [],
+            fitsChecksums: [],
+            error: hadCacheIntegrityFailure
+              ? cacheIntegrityFailureMessage
+              : 'Could not retrieve any FITS cutouts from NASA/IPAC IRSA for this position.',
             targetCoords: { ra, dec },
             availableDetectors,
             selectedDetector: chosenDet,
@@ -3301,16 +3796,66 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         return { ...cat, x: px, y: py };
       });
 
+      const anyCached = activeRaw.some((f) => f.isCached);
+      const cachedFrameCount = activeRaw.filter((f) => f.isCached).length;
+      const liveFrameCount = activeRaw.length - cachedFrameCount;
+      const offlineFixtureMode =
+        process.env.SPHEREX_OFFLINE === '1' && !anyDemoCopy;
+      const cacheIntegrityVerified = activeRaw.every((f) => f.fitsChecksumVerified !== false);
+
+      const tsClassification: SourceClassification = anyDemoCopy
+        ? 'SYNTHETIC_DEMO'
+        : offlineFixtureMode
+        ? 'SAVED_BENCHMARK'
+        : detTapFreshness === 'stale_cache'
+        ? 'STALE_TAP_CACHE'
+        : anyCached
+        ? 'VERIFIED_FITS_CACHE'
+        : 'LIVE_ARCHIVE_DATA';
+
+      const tsFitsOrigin: FitsOrigin = anyDemoCopy
+        ? 'synthetic_demo'
+        : offlineFixtureMode
+        ? 'seeded_fixture_cache'
+        : anyCached
+        ? 'verified_fits_cache'
+        : 'live_ibe';
+
+      const tsObservationIds = Array.from(new Set(loadedFrames.map((f) => f.obsId)));
+      const tsFitsChecksums: FitsChecksumRecord[] = loadedFrames.map((f) => ({
+        obsId: f.obsId,
+        detector: f.detector,
+        sha256: f.fitsSha256 || '',
+        origin: f.fitsOrigin || tsFitsOrigin,
+        verified: Boolean(f.fitsSha256) && f.fitsChecksumVerified !== false,
+        cachedAt: f.cachedAt,
+      }));
+      const tsEligibility = evaluateDiscoveryEligibility({
+        sourceClassification: tsClassification,
+        tapFreshness: detTapFreshness,
+        cacheIntegrityVerified,
+        observationIds: tsObservationIds,
+        fitsChecksums: tsFitsChecksums,
+      });
+
       const sourceMode: 'live' | 'saved_benchmark' =
-        anyDemoCopy || process.env.SPHEREX_OFFLINE === '1' ? 'saved_benchmark' : 'live';
+        tsClassification === 'LIVE_ARCHIVE_DATA' || tsClassification === 'VERIFIED_FITS_CACHE'
+          ? 'live'
+          : 'saved_benchmark';
+
       const cachedDateFormatted = newestCachedIso
         ? `${newestCachedIso.replace('T', ' ').slice(0, 16)} UTC`
         : 'local cache';
-      const sourceLabel = anyDemoCopy
-        ? 'DEMO COPY (DIFFERENT FIELD)'
-        : allCached
-        ? (`REAL SPHEREx DATA - cached ${cachedDateFormatted}` as `REAL SPHEREx DATA - cached ${string}`)
-        : 'REAL SPHEREx DATA';
+      const sourceLabel =
+        tsClassification === 'SYNTHETIC_DEMO'
+          ? 'DEMO COPY (DIFFERENT FIELD)'
+          : tsClassification === 'SAVED_BENCHMARK'
+          ? 'SAVED BENCHMARK - offline fixture (NOT LIVE)'
+          : tsClassification === 'STALE_TAP_CACHE'
+          ? `STALE TAP CACHE - expired metadata (IRSA unreachable, cached ${detTapCachedAt ? detTapCachedAt.replace('T', ' ').slice(0, 16) + ' UTC' : cachedDateFormatted})`
+          : tsClassification === 'VERIFIED_FITS_CACHE'
+          ? `VERIFIED FITS CACHE - SHA-256 verified (${cachedDateFormatted})`
+          : 'REAL SPHEREx DATA';
 
       return {
         statusCode: 200,
@@ -3325,6 +3870,18 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           status: 'OK',
           state: 'OK',
           sourceMode,
+          sourceClassification: tsClassification,
+          discoveryEligible: tsEligibility.discoveryEligible,
+          discoveryEligibilityReason: tsEligibility.reason,
+          tapFreshness: detTapFreshness,
+          tapCachedAt: detTapCachedAt,
+          fitsOrigin: tsFitsOrigin,
+          cacheIntegrityVerified,
+          cachedFrameCount,
+          liveFrameCount,
+          observationIds: tsObservationIds,
+          fitsChecksums: tsFitsChecksums,
+          isSnapshot: false,
           sourceLabel,
           cachedAt: newestCachedIso,
           releaseBreakdown,
@@ -3463,6 +4020,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       let allDetectorsSaturated = true;
       let probedOkDetectors = 0;
 
+      let lastTapError: any = null;
       for (let i = 0; i < maxAttempts; i++) {
         if (pipelineSignal?.aborted) break;
         if (
@@ -3475,7 +4033,16 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         }
         const det = candidateDetectors[i];
         const sampleCap = i === 0 || cleanDet ? maxFrames : Math.min(6, maxFrames);
-        const resDet = await buildResponseForDetector(det, undefined, sampleCap);
+        let resDet: Awaited<ReturnType<typeof buildResponseForDetector>>;
+        try {
+          resDet = await buildResponseForDetector(det, undefined, sampleCap);
+        } catch (detErr: any) {
+          if (pipelineSignal?.aborted || detErr?.name === 'AbortError') break;
+          lastTapError = detErr;
+          console.log(`[Timeseries] Detector ${det} probe unavailable: ${detErr?.message || detErr}`);
+          if (cleanDet || maxAttempts === 1) throw detErr;
+          continue;
+        }
         if (pipelineSignal?.aborted) break;
         if (resDet.body.status === 'OK') {
           probedOkDetectors++;
@@ -3553,11 +4120,22 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         }
         return { statusCode: bestResult.statusCode, body: bestResult.body };
       }
+      if (probedOkDetectors === 0 && lastTapError) {
+        throw lastTapError;
+      }
       return {
         statusCode: 200,
         body: {
           status: 'ARCHIVE_ZERO_ROWS',
           state: 'ARCHIVE_ZERO_ROWS',
+          sourceClassification: 'UNAVAILABLE' as SourceClassification,
+          discoveryEligible: false,
+          discoveryEligibilityReason: `IRSA TAP returned 0 SPHEREx observations for RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°.`,
+          tapFreshness: 'live' as TapFreshness,
+          fitsOrigin: 'unavailable' as FitsOrigin,
+          cacheIntegrityVerified: false,
+          observationIds: [],
+          fitsChecksums: [],
           framesCount: 0,
           framesReturned: 0,
           totalExposuresFound: 0,
@@ -3573,6 +4151,14 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         body: {
           status: 'NETWORK_ERROR',
           state: 'NETWORK_ERROR',
+          sourceClassification: 'UNAVAILABLE' as SourceClassification,
+          discoveryEligible: false,
+          discoveryEligibilityReason: tapErr?.message || 'NASA/IPAC IRSA TAP archive unreachable.',
+          tapFreshness: 'unavailable' as TapFreshness,
+          fitsOrigin: 'unavailable' as FitsOrigin,
+          cacheIntegrityVerified: tapErr?.code === 'CACHE_CHECKSUM_MISMATCH' ? false : undefined,
+          observationIds: [],
+          fitsChecksums: [],
           error: tapErr?.message || 'Failed to reach NASA/IPAC IRSA TAP archive.',
           targetCoords: { ra, dec },
           canRetry: true,
@@ -3588,7 +4174,13 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         const abortController = new AbortController();
         const promise = runLivePipeline(abortController.signal, deadlineMs)
           .then((result) => {
-            if (result.statusCode === 200 && result.body?.state === 'OK' && !result.body?.isSnapshot) {
+            if (
+              result.statusCode === 200 &&
+              result.body?.state === 'OK' &&
+              !result.body?.isSnapshot &&
+              (result.body?.sourceClassification === 'LIVE_ARCHIVE_DATA' ||
+                result.body?.sourceClassification === 'VERIFIED_FITS_CACHE')
+            ) {
               timeseriesResponseCache.set(tsBaseCacheKey, { ts: Date.now(), body: result.body });
             }
             return result;
@@ -3800,6 +4392,17 @@ app.post('/api/spex/chat', async (req: Request, res: Response) => {
           }
         : null,
       isCompatible: compatibility?.isCompatible ?? true,
+      sourceClassification:
+        rawContext?.sourceClassification ||
+        currentResult?.sourceClassification ||
+        (provenance?.sourceMode === 'saved_benchmark' ? 'SAVED_BENCHMARK' : 'LIVE_ARCHIVE_DATA'),
+      discoveryEligible:
+        typeof rawContext?.discoveryEligible === 'boolean'
+          ? rawContext.discoveryEligible
+          : typeof currentResult?.discoveryEligible === 'boolean'
+          ? currentResult.discoveryEligible
+          : provenance?.sourceMode !== 'saved_benchmark',
+      tapFreshness: rawContext?.tapFreshness || currentResult?.tapFreshness || 'unknown',
       provenance: {
         obsId1: provenance?.obsId1,
         obsId2: provenance?.obsId2,
@@ -3813,7 +4416,7 @@ STRICT RULES:
 2. Ground your answer strictly in the provided astronomical context for ${targetName}.
 3. Explain technical concepts in simple, intuitive terms.
 4. If guiding the user to a UI feature, mention the control naturally.
-5. Never invent fake data or claim false discoveries.
+5. Never invent fake data or claim false discoveries. If discoveryEligible=false or sourceClassification is SAVED_BENCHMARK, STALE_TAP_CACHE, SYNTHETIC_DEMO, or UNAVAILABLE, state clearly that this is a cached/benchmark/stale fallback and NOT a live discovery.
 6. Tag format at end of output:
 <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
 <!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
@@ -3824,7 +4427,7 @@ STRICT RULES:
 2. Ground your answer strictly in the provided astronomical context for ${targetName}.
 3. Explain technical concepts in simple, friendly terms.
 4. If guiding the user to a UI feature, refer to it naturally.
-5. Never invent fake observations or claim false discoveries.
+5. Never invent fake observations or claim false discoveries. If discoveryEligible=false or sourceClassification is SAVED_BENCHMARK, STALE_TAP_CACHE, SYNTHETIC_DEMO, or UNAVAILABLE, never claim this is a live observation or verified scientific discovery.
 6. Tag format at end of output:
 <!--MOOD:{"mood":"greeting"|"explaining"|"thinking"|"investigator"|"eureka"|"sassy"|"serious"}-->
 <!--ACTION:{"highlight":"lens_time"|"lens_colors"|"lens_doubt"|"lens_neighbors"|"curtain_divider"|"epoch_selector"|"postcard_button"|"scientist_toggle"|"viewport_canvas"}-->`;
@@ -3838,7 +4441,7 @@ ${JSON.stringify(structuredContext, null, 2)}
 QUESTION: "${userMessage || defaultQuestion}"
 Answer in 1-2 concise sentences with mood tag and optional action tag.`;
 
-    const primaryModel = process.env.PRIMARY_MODEL || 'gemini-3.8-flash';
+    const primaryModel = process.env.PRIMARY_MODEL || 'gemini-3.1-flash-lite';
     const secondaryModel = process.env.SECONDARY_MODEL || 'gemini-3.1-flash-lite';
     const candidateModels = [primaryModel, secondaryModel];
 
@@ -4194,6 +4797,24 @@ async function warmPresetCache(port: number) {
   ) {
     return;
   }
+
+  // Quick preflight against IRSA TAP so startup warmup skips cleanly if upstream archive is slow/down
+  try {
+    const preflightAdql = `SELECT TOP 1 obsid FROM ${SPHEREX_PLANE_TABLE}`;
+    const preflightUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(preflightAdql)}&FORMAT=csv`;
+    const preflightRes = await fetch(preflightUrl, {
+      headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!preflightRes.ok) {
+      console.log(`[WarmCache] Skipped startup warmup: IRSA TAP returned HTTP ${preflightRes.status}`);
+      return;
+    }
+  } catch (preflightErr: any) {
+    console.log(`[WarmCache] Skipped startup warmup: IRSA TAP unreachable (${preflightErr?.message || 'timeout'})`);
+    return;
+  }
+
   // Warm stationary controls FIRST so astrometric floor is populated empirically for challenge targets
   const presetCaseIds = [
     'case-rw-aur',
@@ -4219,10 +4840,18 @@ async function warmPresetCache(port: number) {
 async function startServer() {
   if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(process.cwd(), 'dist')));
+    // Genuinely missing /assets/* files must return 404 rather than falling through to SPA index.html
+    app.use('/assets', (_req: Request, res: Response) => {
+      res.status(404).json({ error: 'Asset not found' });
+    });
     app.get('*', (_req, res) => {
       res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });
   } else {
+    app.use('/assets', (_req: Request, res: Response) => {
+      res.status(404).json({ error: 'Asset not found' });
+    });
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',

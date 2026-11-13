@@ -40,7 +40,16 @@ export interface SpexExplainContext {
   detector?: string;
   wavelengthUm?: number;
   release?: string;
-  dataSourceType?: 'live' | 'snapshot' | 'cached' | 'demo';
+  dataSourceType?: 'live' | 'snapshot' | 'cached' | 'demo' | 'stale_tap' | 'unavailable';
+  sourceClassification?:
+    | 'LIVE_ARCHIVE_DATA'
+    | 'VERIFIED_FITS_CACHE'
+    | 'STALE_TAP_CACHE'
+    | 'SAVED_BENCHMARK'
+    | 'SYNTHETIC_DEMO'
+    | 'UNAVAILABLE';
+  discoveryEligible?: boolean;
+  tapFreshness?: string;
   snapshotDate?: string;
   renderMode?: string;
   targetPixel?: { x: number; y: number } | null;
@@ -182,6 +191,7 @@ STRICT GROUNDING RULES:
 6. ${langRule}
 7. Only place "highlights" at valid pixel coordinates (0..${(context?.frameWidth || 64) - 1}) taken directly from selection, targetPixel, predictedPixel, measuredCentroidPixel, or catalog sources in context. Leave highlights as [] if no specific pixel applies.
 8. For "terms", choose relevant keys strictly from: ${BEGINNER_TERMS_MAP.map((t) => t.key).join(', ')}.
+9. PROVENANCE HONESTY: Current data source classification is "${context?.sourceClassification || context?.dataSourceType || 'UNKNOWN'}" (discoveryEligible=${context?.discoveryEligible === false ? 'false' : context?.discoveryEligible === true ? 'true' : 'unknown'}). If classification is SAVED_BENCHMARK, STALE_TAP_CACHE, SYNTHETIC_DEMO, or UNAVAILABLE (or discoveryEligible=false), NEVER claim this is a live archive observation or a verified new scientific discovery.
 
 VERIFIED FACTS FOR THIS SESSION:
 ${factsBlock.map((f, i) => `- (${i + 1}) ${f}`).join('\n')}`;

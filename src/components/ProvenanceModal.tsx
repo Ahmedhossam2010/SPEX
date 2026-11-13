@@ -1,6 +1,7 @@
 import React from 'react';
-import { X, ExternalLink, ShieldCheck, Database, Cpu, Hash, Clock, CheckCircle2, Radio } from 'lucide-react';
+import { X, ExternalLink, ShieldCheck, AlertTriangle, Database, Cpu, Hash, CheckCircle2, Radio } from 'lucide-react';
 import { ProvenanceRecord, EvidenceSummary } from '../science/types';
+import { canClaimDiscovery, getSourceClassificationMeta } from '../science/provenance';
 import { Language, translations } from '../utils/translations';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 
@@ -29,6 +30,9 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
   language = 'en',
 }) => {
   const isRtl = language === 'ar';
+  const t = translations[language];
+  const gate = canClaimDiscovery({ provenance, ...provenance });
+  const meta = getSourceClassificationMeta(gate.sourceClassification, language);
 
   useModalBehavior(true, onClose);
 
@@ -75,25 +79,48 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
         {/* Content */}
         <div className="mt-4 space-y-4 max-h-[70vh] overflow-y-auto pr-1 text-xs font-mono">
           {/* Data Source & Status */}
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10">
-            <div className="flex items-center justify-between mb-2">
+          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-amber-300 font-semibold text-xs">
                 <Database className="h-4 w-4" />
-                <span>Official Archive Source</span>
+                <span>{isRtl ? 'التصنيف والمصدر المرجعي' : 'Canonical Source Classification'}</span>
               </div>
-              <div
-                className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                  provenance.sourceMode === 'live'
-                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
-                    : 'border-sky-500/40 bg-sky-500/15 text-sky-300'
-                }`}
-              >
-                <Radio className="h-2.5 w-2.5 animate-pulse" />
-                <span>{provenance.sourceMode === 'live' ? 'Live IRSA Query' : 'Saved Benchmark'}</span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span
+                  className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                    meta.tone === 'emerald'
+                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                      : meta.tone === 'cyan'
+                      ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                      : meta.tone === 'amber'
+                      ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                      : meta.tone === 'indigo'
+                      ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
+                      : meta.tone === 'orange'
+                      ? 'border-orange-500/40 bg-orange-500/15 text-orange-300'
+                      : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                  }`}
+                >
+                  <Radio className="h-2.5 w-2.5" />
+                  <span>{meta.badgeLabel}</span>
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                    gate.allowed
+                      ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                      : 'border-rose-500/40 bg-rose-500/15 text-rose-300'
+                  }`}
+                >
+                  {gate.allowed ? t.provenanceDiscoveryEligible : t.provenanceDiscoveryBlocked}
+                </span>
               </div>
             </div>
-            <p className="text-slate-300 mb-3 text-[11px] leading-relaxed">{provenance.irsaArchiveSource}</p>
+            <p className="text-slate-300 text-[11px] leading-relaxed">{provenance.irsaArchiveSource}</p>
             <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+              <div>Classification: <span className="text-slate-100 font-bold">{gate.sourceClassification}</span></div>
+              <div>Discovery Eligible: <span className={gate.allowed ? 'text-emerald-300 font-bold' : 'text-rose-300 font-bold'}>{gate.allowed ? 'YES' : 'NO'}</span></div>
+              <div>TAP Freshness: <span className="text-slate-200">{provenance.tapFreshness || (provenance.sourceMode === 'live' ? 'live' : 'snapshot')}</span></div>
+              <div>FITS Origin: <span className="text-slate-200">{provenance.fitsOrigin || (provenance.sourceMode === 'live' ? 'live_ibe' : 'saved_snapshot')}</span></div>
               <div>Type: <span className="text-amber-300 font-bold">{provenance.investigationType || 'Curated Archival Case'}</span></div>
               <div>Release: <span className="text-slate-200">{provenance.dataRelease}</span></div>
               <div>Timestamp: <span className="text-slate-200">{new Date(provenance.timestamp).toUTCString()}</span></div>
@@ -126,46 +153,72 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
           <div className="space-y-2.5">
             <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1.5">
               <Hash className="h-3.5 w-3.5 text-amber-400" />
-              <span>Cryptographic Integrity (SHA-256 Checksums)</span>
+              <span>Cryptographic Integrity (SHA-256 Checksums · {gate.observationIds.length} Observation IDs)</span>
             </div>
 
-            {/* Obs 1 */}
-            <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-slate-200">Exposure 1: {provenance.obsId1}</span>
-                <a
-                  href={provenance.fitsUrl1}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-[11px] font-semibold"
-                >
-                  <span>IRSA FITS Cutout</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-              <div className="text-[10px] text-slate-400 break-all bg-black/60 p-2 rounded-xl border border-white/5 font-mono">
-                SHA-256: {provenance.fitsChecksum1}
-              </div>
-            </div>
+            {Array.isArray(provenance.fitsChecksums) && provenance.fitsChecksums.length > 0 ? (
+              provenance.fitsChecksums.map((rec, idx) => (
+                <div key={`${rec.obsId}-${idx}`} className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <span className="font-bold text-slate-200">
+                      Exposure {idx + 1}: {rec.obsId} {rec.detector ? `(${rec.detector})` : ''}
+                    </span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded border ${
+                        rec.verified
+                          ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-300'
+                          : 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+                      }`}
+                    >
+                      {rec.origin} · {rec.verified ? 'SHA-256 VERIFIED' : 'UNVERIFIED'}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 break-all bg-black/60 p-2 rounded-xl border border-white/5 font-mono">
+                    SHA-256: {rec.sha256}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <>
+                {/* Obs 1 */}
+                <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-slate-200">Exposure 1: {provenance.obsId1}</span>
+                    <a
+                      href={provenance.fitsUrl1}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-[11px] font-semibold"
+                    >
+                      <span>IRSA FITS Cutout</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="text-[10px] text-slate-400 break-all bg-black/60 p-2 rounded-xl border border-white/5 font-mono">
+                    SHA-256: {provenance.fitsChecksum1}
+                  </div>
+                </div>
 
-            {/* Obs 2 */}
-            <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-bold text-slate-200">Exposure 2: {provenance.obsId2}</span>
-                <a
-                  href={provenance.fitsUrl2}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-[11px] font-semibold"
-                >
-                  <span>IRSA FITS Cutout</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              </div>
-              <div className="text-[10px] text-slate-400 break-all bg-black/60 p-2 rounded-xl border border-white/5 font-mono">
-                SHA-256: {provenance.fitsChecksum2}
-              </div>
-            </div>
+                {/* Obs 2 */}
+                <div className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/10">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-bold text-slate-200">Exposure 2: {provenance.obsId2}</span>
+                    <a
+                      href={provenance.fitsUrl2}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-[11px] font-semibold"
+                    >
+                      <span>IRSA FITS Cutout</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
+                  <div className="text-[10px] text-slate-400 break-all bg-black/60 p-2 rounded-xl border border-white/5 font-mono">
+                    SHA-256: {provenance.fitsChecksum2}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Algorithm Versioning */}
@@ -184,13 +237,22 @@ export const ProvenanceModal: React.FC<ProvenanceModalProps> = ({
             </div>
           </div>
 
-          {/* Reproducibility statement */}
-          <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-[11px] leading-relaxed">
-            <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" />
-            <p>
-              This investigation is deterministically reproducible against the Caltech/IPAC IRSA archive using the exact cutout URLs and SHA-256 cryptographic hashes above.
-            </p>
-          </div>
+          {/* Reproducibility & Eligibility statement */}
+          {gate.allowed ? (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 text-emerald-300 text-[11px] leading-relaxed">
+              <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0 text-emerald-400" />
+              <p>
+                {gate.reason} Deterministically traceable to Caltech/IPAC IRSA observation IDs and SHA-256 FITS hashes above.
+              </p>
+            </div>
+          ) : (
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-400" />
+              <p>
+                <strong>{t.provenanceDiscoveryBlocked}:</strong> {gate.reason}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Footer */}

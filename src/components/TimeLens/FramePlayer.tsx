@@ -43,6 +43,14 @@ import {
 import { computeExpectedProperMotionOffset } from '../../science/properMotion';
 import { WCSParams } from '../../science/types';
 import { WCS } from '../../science/wcs';
+import {
+  SourceClassification,
+  TapFreshness,
+  FitsOrigin,
+  FitsChecksumRecord,
+  normalizeSourceClassification,
+  getSourceClassificationMeta,
+} from '../../science/provenance';
 
 export type PlayerRenderMode = 'raw' | 'diff_ref' | 'diff_median' | 'coadd';
 export type PlayerStretchMode = 'asinh' | 'linear' | 'sqrt' | 'log';
@@ -98,6 +106,17 @@ export interface TimeSeriesResponse {
   status: string;
   state?: string;
   sourceMode?: 'live' | 'saved_benchmark';
+  sourceClassification?: SourceClassification;
+  discoveryEligible?: boolean;
+  discoveryEligibilityReason?: string;
+  tapFreshness?: TapFreshness;
+  tapCachedAt?: string;
+  fitsOrigin?: FitsOrigin;
+  cacheIntegrityVerified?: boolean;
+  cachedFrameCount?: number;
+  liveFrameCount?: number;
+  observationIds?: string[];
+  fitsChecksums?: FitsChecksumRecord[];
   sourceLabel?:
     | 'REAL SPHEREx DATA'
     | 'REAL DATA, SAVED COPY (NOT LIVE)'
@@ -780,13 +799,32 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
 
     const predictedPix = fr.targetRefPixel || fr.targetPixel || null;
     const aSum = data.astrometrySummary;
-    const dataSourceType: 'live' | 'snapshot' | 'cached' | 'demo' = data.isDemoCopy
-      ? 'demo'
-      : data.isSnapshot || data.sourceMode === 'saved_benchmark'
-      ? 'snapshot'
-      : fr.isCached
-      ? 'cached'
-      : 'live';
+    const canonicalClass = normalizeSourceClassification(data.sourceClassification, {
+      sourceMode: data.sourceMode,
+      isSnapshot: Boolean(data.isSnapshot),
+      isDemoCopy: Boolean(data.isDemoCopy),
+      tapFreshness: data.tapFreshness,
+      cacheIntegrityVerified: data.cacheIntegrityVerified,
+      someCached: Boolean(data.cachedFrameCount && data.cachedFrameCount > 0) || Boolean(fr.isCached),
+      status: data.status,
+      state: data.state,
+    });
+    const isDiscoveryEligible =
+      typeof data.discoveryEligible === 'boolean'
+        ? data.discoveryEligible
+        : canonicalClass === 'LIVE_ARCHIVE_DATA' || canonicalClass === 'VERIFIED_FITS_CACHE';
+    const dataSourceType: 'live' | 'snapshot' | 'cached' | 'demo' | 'stale_tap' | 'unavailable' =
+      canonicalClass === 'SYNTHETIC_DEMO'
+        ? 'demo'
+        : canonicalClass === 'STALE_TAP_CACHE'
+        ? 'stale_tap'
+        : canonicalClass === 'SAVED_BENCHMARK'
+        ? 'snapshot'
+        : canonicalClass === 'VERIFIED_FITS_CACHE'
+        ? 'cached'
+        : canonicalClass === 'UNAVAILABLE'
+        ? 'unavailable'
+        : 'live';
 
     const nearestCatalogSources: SpexNearbySource[] = (data.catalogOverlays || [])
       .slice(0, 6)
@@ -829,6 +867,9 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       wavelengthUm: fr.wavelengthUm,
       release: (fr.release || data.activeRelease || 'public').toUpperCase(),
       dataSourceType,
+      sourceClassification: canonicalClass,
+      discoveryEligible: isDiscoveryEligible,
+      tapFreshness: data.tapFreshness,
       snapshotDate: data.snapshotTakenAt || data.cachedAt || fr.dateObs?.slice(0, 10),
       renderMode,
       targetPixel: fr.targetPixel || null,
@@ -1114,15 +1155,23 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       : 'Months apart (all-sky survey epochs — ideal for proper motion)';
   })();
 
-  const sourceBadgeVariant =
-    data.sourceLabel === 'DEMO COPY (DIFFERENT FIELD)'
-      ? 'TRAINING'
-      : data.isSnapshot ||
-        data.sourceLabel?.startsWith('REAL SPHEREx DATA - archive snapshot') ||
-        data.sourceLabel?.startsWith('REAL SPHEREx DATA - cached') ||
-        data.sourceLabel === 'REAL DATA, SAVED COPY (NOT LIVE)'
-      ? 'SAVED'
-      : 'REAL';
+  const activeClassification = normalizeSourceClassification(data.sourceClassification, {
+    sourceMode: data.sourceMode,
+    isSnapshot: Boolean(data.isSnapshot),
+    isDemoCopy: Boolean(data.isDemoCopy),
+    tapFreshness: data.tapFreshness,
+    cacheIntegrityVerified: data.cacheIntegrityVerified,
+    someCached:
+      Boolean(data.cachedFrameCount && data.cachedFrameCount > 0) ||
+      Boolean(currentFrame.isCached),
+    status: data.status,
+    state: data.state,
+  });
+  const classificationMeta = getSourceClassificationMeta(activeClassification, language);
+  const effectiveDiscoveryEligible =
+    typeof data.discoveryEligible === 'boolean'
+      ? data.discoveryEligible
+      : classificationMeta.discoveryEligible;
 
   // Build Centroid vs Time series values for SVG chart (P0.3 & Task 2 exact PM offset)
   const mjd0 = data.frames[0]?.mjd ?? 0;
@@ -1266,13 +1315,42 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         </div>
       )}
 
+      {/* Honest Provenance Warning Strip for non-live / stale / benchmark views */}
+      {!effectiveDiscoveryEligible && !data.isDemoCopy && (
+        <div
+          data-testid="provenance-nonlive-banner"
+          className={`p-2.5 rounded-xl border text-xs font-mono flex items-start gap-2 ${
+            activeClassification === 'STALE_TAP_CACHE'
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+              : activeClassification === 'SAVED_BENCHMARK'
+              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
+              : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <div className="font-bold">
+              {classificationMeta.badgeLabel} · {t.provenanceDiscoveryBlocked}
+            </div>
+            <div className="text-[11px] opacity-90">
+              {data.discoveryEligibilityReason ||
+                (activeClassification === 'STALE_TAP_CACHE'
+                  ? t.provenanceStaleBanner
+                  : activeClassification === 'SAVED_BENCHMARK'
+                  ? t.provenanceSnapshotBanner
+                  : classificationMeta.description)}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Row (A3 Default Visible — Scientist Mode only): Source Badge, Detector (D1-D6 Auto), Normal/Show changes toggle, Advanced Drawer toggle */}
       {!explorerMode && (
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge
-            variant={sourceBadgeVariant}
-            customText={data.sourceLabel?.startsWith('REAL SPHEREx DATA - ') ? data.sourceLabel : undefined}
+            variant={activeClassification}
+            customText={classificationMeta.badgeLabel}
             size="sm"
           />
           <span className="font-mono text-xs text-[#00D3F3] font-bold">
@@ -1280,18 +1358,20 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           </span>
           <span
             className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold border ${
-              data.isSnapshot || currentFrame.isCached
-                ? 'bg-slate-800 border-slate-600 text-slate-300'
-                : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+              effectiveDiscoveryEligible
+                ? activeClassification === 'VERIFIED_FITS_CACHE'
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
+                  : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                : 'bg-amber-500/15 border-amber-500/40 text-amber-300'
             }`}
           >
-            {data.isDemoCopy
-              ? 'DEMO COPY'
-              : data.isSnapshot
-              ? 'ARCHIVE SNAPSHOT'
-              : currentFrame.isCached
-              ? 'CACHED FITS'
-              : 'LIVE IRSA'}
+            {effectiveDiscoveryEligible
+              ? isRtl
+                ? 'مؤهل للاكتشاف'
+                : 'DISCOVERY ELIGIBLE'
+              : isRtl
+              ? 'مرجع غير مباشر'
+              : 'NOT FOR LIVE DISCOVERY'}
           </span>
           <span className="px-2 py-0.5 rounded font-mono text-[10px] border border-cyan-500/30 bg-cyan-500/10 text-cyan-200">
             {activeReleaseLabel} · VER {activeVersionLabel}
@@ -2032,26 +2112,44 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             <span
               data-testid="explorer-data-badge"
               className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border shrink-0 ${
-                data.isDemoCopy
+                activeClassification === 'SYNTHETIC_DEMO'
+                  ? 'bg-orange-500/15 border-orange-500/40 text-orange-200'
+                  : activeClassification === 'STALE_TAP_CACHE'
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-                  : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
-                  ? 'bg-slate-800 border-slate-600 text-slate-200'
+                  : activeClassification === 'SAVED_BENCHMARK'
+                  ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
+                  : activeClassification === 'VERIFIED_FITS_CACHE'
+                  ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
+                  : activeClassification === 'UNAVAILABLE'
+                  ? 'bg-rose-500/15 border-rose-500/40 text-rose-200'
                   : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
               }`}
             >
               <span
                 className={`w-2 h-2 rounded-full ${
-                  data.isDemoCopy
+                  activeClassification === 'SYNTHETIC_DEMO'
+                    ? 'bg-orange-400'
+                    : activeClassification === 'STALE_TAP_CACHE'
                     ? 'bg-amber-400'
-                    : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
-                    ? 'bg-slate-400'
+                    : activeClassification === 'SAVED_BENCHMARK'
+                    ? 'bg-indigo-400'
+                    : activeClassification === 'VERIFIED_FITS_CACHE'
+                    ? 'bg-cyan-400'
+                    : activeClassification === 'UNAVAILABLE'
+                    ? 'bg-rose-400'
                     : 'bg-emerald-400'
                 }`}
               />
-              {data.isDemoCopy
+              {activeClassification === 'SYNTHETIC_DEMO'
                 ? t.explorerBadgeTrainingCopy
-                : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
+                : activeClassification === 'SAVED_BENCHMARK'
                 ? `${t.explorerBadgeSavedCopy} ${(data.snapshotTakenAt || data.cachedAt || currentFrame.dateObs || '').slice(0, 10)}`
+                : activeClassification === 'STALE_TAP_CACHE'
+                ? t.provenanceStaleTap
+                : activeClassification === 'VERIFIED_FITS_CACHE'
+                ? t.provenanceVerifiedCache
+                : activeClassification === 'UNAVAILABLE'
+                ? t.provenanceUnavailable
                 : t.explorerBadgeLiveNasa}
             </span>
           </div>

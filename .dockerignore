@@ -2,6 +2,14 @@ node_modules
 dist
 server.js
 .env
+.env.local
 /tmp
 *.png
 chrome-headless-shell
+verification
+*.fits
+**/*.fits
+data/spherex_cache/*.fits
+!data/spherex_cache/b6a1e605728059ea6b7def1e9683adb2.fits
+!data/spherex_cache/569dafa911ec60ff30abb1807d719fef.fits
+!data/spherex_cache/75b2c2369c175060576bec8d2e5333c0.fits

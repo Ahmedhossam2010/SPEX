@@ -92,6 +92,9 @@ export interface TimeSeriesFrame {
   measuredCentroid?: MeasuredCentroid;
   fitsUrl: string;
   accessUrl: string;
+  fitsSha256?: string;
+  fitsOrigin?: 'live_ibe' | 'verified_fits_cache' | 'seeded_fixture_cache' | 'saved_snapshot' | 'synthetic_demo' | 'unavailable';
+  fitsChecksumVerified?: boolean;
   isCached?: boolean;
   isDemoCopy?: boolean;
   trueCenter?: { ra: number; dec: number };
@@ -179,11 +182,45 @@ export interface TimeSeriesResult {
   status?: string;
   state?: string;
   sourceMode?: 'live' | 'saved_benchmark';
+  sourceClassification?:
+    | 'LIVE_ARCHIVE_DATA'
+    | 'VERIFIED_FITS_CACHE'
+    | 'STALE_TAP_CACHE'
+    | 'SAVED_BENCHMARK'
+    | 'SYNTHETIC_DEMO'
+    | 'UNAVAILABLE';
+  discoveryEligible?: boolean;
+  discoveryEligibilityReason?: string;
+  tapFreshness?: 'live' | 'fresh_cache' | 'stale_cache' | 'offline' | 'snapshot' | 'unavailable';
+  tapCachedAt?: string;
+  fitsOrigin?:
+    | 'live_ibe'
+    | 'verified_fits_cache'
+    | 'seeded_fixture_cache'
+    | 'saved_snapshot'
+    | 'synthetic_demo'
+    | 'unavailable';
+  cacheIntegrityVerified?: boolean;
+  cachedFrameCount?: number;
+  liveFrameCount?: number;
+  observationIds?: string[];
+  fitsChecksums?: Array<{
+    obsId: string;
+    detector?: string;
+    sha256: string;
+    origin: string;
+    verified: boolean;
+    cachedAt?: string;
+    sizeBytes?: number;
+  }>;
+  isSnapshot?: boolean;
+  snapshotTakenAt?: string;
   sourceLabel?:
     | 'REAL SPHEREx DATA'
     | `REAL SPHEREx DATA - cached ${string}`
     | 'REAL DATA, SAVED COPY (NOT LIVE)'
-    | 'DEMO COPY (DIFFERENT FIELD)';
+    | 'DEMO COPY (DIFFERENT FIELD)'
+    | string;
   cachedAt?: string;
   releaseBreakdown?: string[];
   centroidStacked?: boolean;

@@ -234,7 +234,27 @@ export interface EvidenceSummary {
 export interface ProvenanceRecord {
   caseId: string;
   sourceMode: 'live' | 'saved_benchmark';
-  investigationType?: 'Curated Archival Case' | 'Live IRSA Query';
+  sourceClassification?:
+    | 'LIVE_ARCHIVE_DATA'
+    | 'VERIFIED_FITS_CACHE'
+    | 'STALE_TAP_CACHE'
+    | 'SAVED_BENCHMARK'
+    | 'SYNTHETIC_DEMO'
+    | 'UNAVAILABLE';
+  discoveryEligible?: boolean;
+  discoveryEligibilityReason?: string;
+  tapFreshness?: 'live' | 'fresh_cache' | 'stale_cache' | 'offline' | 'snapshot' | 'unavailable';
+  fitsOrigin?:
+    | 'live_ibe'
+    | 'verified_fits_cache'
+    | 'seeded_fixture_cache'
+    | 'saved_snapshot'
+    | 'synthetic_demo'
+    | 'unavailable';
+  cacheIntegrityVerified?: boolean;
+  snapshotTakenAt?: string;
+  cachedAt?: string;
+  investigationType?: 'Curated Archival Case' | 'Live IRSA Query' | 'Saved Benchmark Snapshot' | 'Stale TAP Fallback';
   timestamp: string;
   irsaArchiveSource: string;
   obsId1: string;
@@ -243,6 +263,15 @@ export interface ProvenanceRecord {
   fitsUrl2: string;
   fitsChecksum1: string;
   fitsChecksum2: string;
+  fitsChecksums?: Array<{
+    obsId: string;
+    detector?: string;
+    sha256: string;
+    origin: string;
+    verified: boolean;
+    cachedAt?: string;
+    sizeBytes?: number;
+  }>;
   dataRelease: string;
   pipelineVersion: string;
   algorithms: {
@@ -419,7 +448,41 @@ export interface InvestigationResult {
   };
   isSimulated?: boolean;
   simulatedLabel?: string;
-  sourceClassification?: 'REAL_SPHEREX_DATA' | 'REFERENCE_DATA' | 'EDUCATIONAL_SIMULATION' | 'DATA_UNAVAILABLE';
+  sourceClassification?:
+    | 'LIVE_ARCHIVE_DATA'
+    | 'VERIFIED_FITS_CACHE'
+    | 'STALE_TAP_CACHE'
+    | 'SAVED_BENCHMARK'
+    | 'SYNTHETIC_DEMO'
+    | 'UNAVAILABLE'
+    | 'REAL_SPHEREX_DATA'
+    | 'REFERENCE_DATA'
+    | 'EDUCATIONAL_SIMULATION'
+    | 'DATA_UNAVAILABLE';
+  discoveryEligible?: boolean;
+  discoveryEligibilityReason?: string;
+  tapFreshness?: 'live' | 'fresh_cache' | 'stale_cache' | 'offline' | 'snapshot' | 'unavailable';
+  tapCachedAt?: string;
+  fitsOrigin?:
+    | 'live_ibe'
+    | 'verified_fits_cache'
+    | 'seeded_fixture_cache'
+    | 'saved_snapshot'
+    | 'synthetic_demo'
+    | 'unavailable';
+  cacheIntegrityVerified?: boolean;
+  fitsChecksums?: Array<{
+    obsId: string;
+    detector?: string;
+    sha256: string;
+    origin: string;
+    verified: boolean;
+    cachedAt?: string;
+    sizeBytes?: number;
+  }>;
+  isSnapshot?: boolean;
+  snapshotTakenAt?: string;
+  cachedAt?: string;
   availabilityStatus?: {
     isAvailable: boolean;
     reasonEn: string;

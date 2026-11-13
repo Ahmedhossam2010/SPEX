@@ -1,6 +1,18 @@
 import React from 'react';
 
-export type BadgeVariant = 'REAL' | 'SAVED' | 'TRAINING' | 'UNVERIFIED' | 'ENLARGED_MOTION' | 'INFO';
+export type BadgeVariant =
+  | 'LIVE_ARCHIVE_DATA'
+  | 'VERIFIED_FITS_CACHE'
+  | 'STALE_TAP_CACHE'
+  | 'SAVED_BENCHMARK'
+  | 'SYNTHETIC_DEMO'
+  | 'UNAVAILABLE'
+  | 'REAL'
+  | 'SAVED'
+  | 'TRAINING'
+  | 'UNVERIFIED'
+  | 'ENLARGED_MOTION'
+  | 'INFO';
 
 export interface BadgeProps {
   variant: BadgeVariant;
@@ -19,6 +31,44 @@ export const Badge: React.FC<BadgeProps> = ({
     BadgeVariant,
     { label: string; bg: string; text: string; border: string; glow?: string }
   > = {
+    LIVE_ARCHIVE_DATA: {
+      label: 'LIVE ARCHIVE DATA',
+      bg: 'bg-emerald-500/12',
+      text: 'text-emerald-300',
+      border: 'border-emerald-500/35',
+      glow: 'shadow-[0_0_12px_rgba(16,185,129,0.15)]',
+    },
+    VERIFIED_FITS_CACHE: {
+      label: 'VERIFIED FITS CACHE',
+      bg: 'bg-[#00D3F3]/12',
+      text: 'text-[#00D3F3]',
+      border: 'border-[#00D3F3]/35',
+      glow: 'shadow-[0_0_12px_rgba(0,211,243,0.15)]',
+    },
+    STALE_TAP_CACHE: {
+      label: 'STALE TAP CACHE (NOT LIVE)',
+      bg: 'bg-amber-500/15',
+      text: 'text-amber-300',
+      border: 'border-amber-500/40',
+    },
+    SAVED_BENCHMARK: {
+      label: 'SAVED BENCHMARK SNAPSHOT',
+      bg: 'bg-indigo-500/15',
+      text: 'text-indigo-300',
+      border: 'border-indigo-500/35',
+    },
+    SYNTHETIC_DEMO: {
+      label: 'SYNTHETIC DEMO FIELD',
+      bg: 'bg-orange-500/15',
+      text: 'text-orange-300',
+      border: 'border-orange-500/40',
+    },
+    UNAVAILABLE: {
+      label: 'ARCHIVE UNAVAILABLE',
+      bg: 'bg-rose-500/15',
+      text: 'text-rose-300',
+      border: 'border-rose-500/40',
+    },
     REAL: {
       label: 'REAL SPHEREx DATA',
       bg: 'bg-[#00D3F3]/10',

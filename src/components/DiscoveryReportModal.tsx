@@ -14,6 +14,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { CandidateDetection, InvestigationResult } from '../science/types';
+import { canClaimDiscovery, getSourceClassificationMeta } from '../science/provenance';
 import { Language, translations } from '../utils/translations';
 import { useModalBehavior } from '../hooks/useModalBehavior';
 
@@ -40,11 +41,20 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
   const allwiseMatch = candidate.catalogMatches?.find((m) => m.catalog === 'AllWISE');
   const isMoving = candidate.motion?.isMoving === true || candidate.status === 'Moving object candidate';
   const isArtifact = candidate.status === 'Possible artifact' || (candidate.artifactScore ?? 0) >= 0.5;
+  const gate = canClaimDiscovery(investigation);
+  const classMeta = getSourceClassificationMeta(gate.sourceClassification, language);
 
   // Build full Discovery Passport JSON object
   const passportJson = {
-    passportTitle: 'NASA Space Apps 2026 — SPHEREx Changing Sky Discovery Passport',
+    passportTitle: gate.allowed
+      ? 'NASA Space Apps 2026 — SPHEREx Changing Sky Discovery Passport'
+      : 'SPHEREx Reference Audit (NON-LIVE DATA — NOT AN OFFICIAL DISCOVERY PASSPORT)',
     generatedAt: new Date().toISOString(),
+    sourceClassification: gate.sourceClassification,
+    discoveryEligible: gate.allowed,
+    discoveryEligibilityReason: gate.reason,
+    observationIds: gate.observationIds,
+    fitsChecksums: gate.fitsChecksums,
     candidate: {
       id: candidate.id,
       coordinates: {
@@ -115,6 +125,7 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
   };
 
   const handleDownloadJson = () => {
+    if (!gate.allowed) return;
     const blob = new Blob([JSON.stringify(passportJson, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -189,8 +200,13 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
             <button
               type="button"
               onClick={handleDownloadJson}
-              className="p-2 rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-white/[0.05] transition-colors cursor-pointer"
-              title="Download JSON Passport"
+              disabled={!gate.allowed}
+              className={`p-2 rounded-xl transition-colors ${
+                gate.allowed
+                  ? 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-white/[0.05] cursor-pointer'
+                  : 'text-slate-600 opacity-40 cursor-not-allowed'
+              }`}
+              title={gate.allowed ? 'Download JSON Passport' : t.provenanceBlockedPassportNotice}
             >
               <Download className="w-4 h-4" />
             </button>
@@ -211,6 +227,21 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Discovery Eligibility / Non-Live Source Block Banner */}
+        {!gate.allowed && (
+          <div className="p-3.5 rounded-2xl border border-amber-500/40 bg-amber-500/15 text-amber-200 text-xs font-mono flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <div className="font-bold">
+                {classMeta.badgeLabel} · {t.provenanceDiscoveryBlocked}
+              </div>
+              <div className="text-[11px] opacity-90">
+                {gate.reason} {t.provenanceBlockedPassportNotice}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4 Core Evidence Metric Tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -420,10 +451,24 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
             <button
               type="button"
               onClick={handleDownloadJson}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-all shadow-xs cursor-pointer"
+              disabled={!gate.allowed}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-xs ${
+                gate.allowed
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 cursor-pointer'
+                  : 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-60'
+              }`}
+              title={gate.allowed ? 'Download Official JSON Discovery Passport' : t.provenanceBlockedPassportNotice}
             >
               <Download className="w-3.5 h-3.5" />
-              <span>{isRtl ? 'تحميل جواز الاكتشاف (JSON)' : 'Download Passport (JSON)'}</span>
+              <span>
+                {gate.allowed
+                  ? isRtl
+                    ? 'تحميل جواز الاكتشاف (JSON)'
+                    : 'Download Passport (JSON)'
+                  : isRtl
+                  ? 'التصدير محظور (مصدر غير مباشر)'
+                  : 'Passport Export Blocked (Non-Live)'}
+              </span>
             </button>
           </div>
         </div>

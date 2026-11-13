@@ -49,7 +49,17 @@ export interface AstronomicalSkyViewportProps {
   isLoading?: boolean;
   targetName?: string;
   fovArcmin?: number;
-  sourceClassification?: 'REAL_SPHEREX_DATA' | 'REFERENCE_DATA' | 'EDUCATIONAL_SIMULATION' | 'DATA_UNAVAILABLE';
+  sourceClassification?:
+    | 'LIVE_ARCHIVE_DATA'
+    | 'VERIFIED_FITS_CACHE'
+    | 'STALE_TAP_CACHE'
+    | 'SAVED_BENCHMARK'
+    | 'SYNTHETIC_DEMO'
+    | 'UNAVAILABLE'
+    | 'REAL_SPHEREX_DATA'
+    | 'REFERENCE_DATA'
+    | 'EDUCATIONAL_SIMULATION'
+    | 'DATA_UNAVAILABLE';
   availabilityStatus?: {
     isAvailable: boolean;
     reasonEn: string;
@@ -106,7 +116,10 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
   const isRtl = language === 'ar';
   const t = translations[language];
 
-  const isUnavailable = sourceClassification === 'DATA_UNAVAILABLE' || (availabilityStatus && !availabilityStatus.isAvailable);
+  const isUnavailable =
+    sourceClassification === 'UNAVAILABLE' ||
+    sourceClassification === 'DATA_UNAVAILABLE' ||
+    (availabilityStatus && !availabilityStatus.isAvailable);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);

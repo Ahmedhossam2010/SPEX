@@ -2015,6 +2015,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       candidate={selectedCandidate}
                       viewMode={presentationLevel === 'science' ? 'scientist' : 'beginner'}
                       language={language}
+                      sourceClassification={currentResult?.sourceClassification}
+                      discoveryEligible={currentResult?.discoveryEligible}
                       onClose={() => setSelectedCandidate(null)}
                     />
                   </div>
@@ -2033,6 +2035,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                         setShowDiscoveryReport(true);
                       }}
                       language={language}
+                      sourceClassification={currentResult?.sourceClassification}
+                      discoveryEligible={currentResult?.discoveryEligible}
                     />
                   ))
                 ) : (

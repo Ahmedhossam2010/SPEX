@@ -12,6 +12,11 @@ import {
   FileText,
 } from 'lucide-react';
 import { CandidateDetection } from '../science/types';
+import {
+  SourceClassification,
+  normalizeSourceClassification,
+  getSourceClassificationMeta,
+} from '../science/provenance';
 import { ScienceTerm } from './ScienceTerm';
 import { Language, translations } from '../utils/translations';
 
@@ -23,6 +28,8 @@ interface FindingCardProps {
   onAskSpex: (prompt: string) => void;
   onOpenPassport?: (candidate: CandidateDetection) => void;
   language: Language;
+  sourceClassification?: SourceClassification | string;
+  discoveryEligible?: boolean;
 }
 
 export const FindingCard: React.FC<FindingCardProps> = ({
@@ -33,9 +40,18 @@ export const FindingCard: React.FC<FindingCardProps> = ({
   onAskSpex,
   onOpenPassport,
   language,
+  sourceClassification,
+  discoveryEligible,
 }) => {
   const [showTechnical, setShowTechnical] = useState(false);
   const isRtl = language === 'ar';
+  const t = translations[language];
+  const resolvedClass = normalizeSourceClassification(sourceClassification, {
+    sourceMode: sourceClassification ? undefined : 'live',
+  });
+  const classMeta = getSourceClassificationMeta(resolvedClass, language);
+  const isDiscoveryAllowed =
+    typeof discoveryEligible === 'boolean' ? discoveryEligible : classMeta.discoveryEligible;
 
   const isMoving = candidate.motion?.isMoving === true || candidate.status === 'Moving object candidate';
   const isArtifact = candidate.status === 'Possible artifact' || (candidate.artifactScore ?? 0) >= 0.5;
@@ -146,6 +162,13 @@ export const FindingCard: React.FC<FindingCardProps> = ({
         </div>
       </div>
 
+      {!isDiscoveryAllowed && (
+        <div className="mt-2.5 p-2 rounded-xl bg-amber-500/15 border border-amber-500/35 text-amber-200 text-[10px] font-mono flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span>{t.provenanceDiscoveryBlocked} · {classMeta.badgeLabel}</span>
+        </div>
+      )}
+
       {/* Plain Language Summary */}
       <p className="mt-2.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
         {getPlainSummary()}
@@ -236,7 +259,9 @@ export const FindingCard: React.FC<FindingCardProps> = ({
                 ? (isRtl ? 'أثر نقطي أو تشبع حساس (تم عزله لضمان دقة البحث العلمي).' : 'Detector glitch or cosmic-ray hit (flagged and isolated for scientific rigor).')
                 : gaiaMatch
                 ? (isRtl ? `تغير لمعان حقيقي لنجم مسجل في فهرس جايا (${gaiaMatch.identifier}).` : `Genuine stellar variability in catalog star ${gaiaMatch.identifier}.`)
-                : (isRtl ? 'تغير ضوئي في جرم تحت أحمر غير مفهرس، مؤهل كمرشح اكتشاف جديد.' : 'Uncataloged infrared transient candidate worthy of archival followup.')}
+                : isDiscoveryAllowed
+                ? (isRtl ? 'تغير ضوئي في جرم تحت أحمر غير مفهرس، مؤهل كمرشح اكتشاف جديد.' : 'Uncataloged infrared transient candidate worthy of archival followup.')
+                : (isRtl ? 'مصدر مرجعي محفوظ أو قديم — يحتاج استعلاماً حياً من IRSA قبل اعتباره اكتشافاً جديداً.' : 'From non-live / reference source — live IRSA verification required before archival claim.')}
             </span>
           </div>
         </div>
@@ -280,10 +305,22 @@ export const FindingCard: React.FC<FindingCardProps> = ({
                 onOpenPassport(candidate);
               }}
               className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-slate-100 dark:bg-white/[0.05] hover:bg-slate-200 dark:hover:bg-white/[0.1] text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
-              title="Open full discovery report passport"
+              title={
+                isDiscoveryAllowed
+                  ? 'Open full discovery report passport'
+                  : 'Inspect non-live audit report (Passport export blocked)'
+              }
             >
               <FileText className="w-3.5 h-3.5 text-amber-500" />
-              <span>{isRtl ? 'الجواز' : 'Passport'}</span>
+              <span>
+                {isDiscoveryAllowed
+                  ? isRtl
+                    ? 'الجواز'
+                    : 'Passport'
+                  : isRtl
+                  ? 'تدقيق'
+                  : 'Audit'}
+              </span>
             </button>
           )}
         </div>

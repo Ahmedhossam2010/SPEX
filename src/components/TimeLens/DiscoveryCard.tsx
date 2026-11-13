@@ -6,6 +6,11 @@ import { Meter } from '../../design/components/Meter';
 import { Button } from '../../design/components/Button';
 import { ScienceTooltip } from '../../design/components/ScienceTooltip';
 import { CandidateDetection } from '../../science/types';
+import {
+  SourceClassification,
+  normalizeSourceClassification,
+  getSourceClassificationMeta,
+} from '../../science/provenance';
 import { Language, translations } from '../../utils/translations';
 import { SPEX_HERO_IMAGE } from '../../spex/spexAssets';
 
@@ -13,6 +18,8 @@ export interface DiscoveryCardProps {
   candidate: CandidateDetection;
   viewMode: 'beginner' | 'explorer' | 'scientist';
   language: Language;
+  sourceClassification?: SourceClassification | string;
+  discoveryEligible?: boolean;
   onClose?: () => void;
   className?: string;
 }
@@ -21,12 +28,20 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
   candidate,
   viewMode,
   language,
+  sourceClassification,
+  discoveryEligible,
   onClose,
   className = '',
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
   const [showScientistDetails, setShowScientistDetails] = useState<boolean>(viewMode === 'scientist');
+  const resolvedClass = normalizeSourceClassification(sourceClassification, {
+    sourceMode: sourceClassification ? undefined : 'live',
+  });
+  const classMeta = getSourceClassificationMeta(resolvedClass, language);
+  const isDiscoveryAllowed =
+    typeof discoveryEligible === 'boolean' ? discoveryEligible : classMeta.discoveryEligible;
 
   // Convert significance sigma into 1-5 confidence level
   const sig = candidate.peakSignificance || 0;
@@ -71,11 +86,15 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
             <span className="font-mono text-[10px] text-[#FFB900] uppercase tracking-wider font-semibold">
-              SPEX VERDICT
+              {isDiscoveryAllowed ? 'SPEX VERDICT' : 'SPEX REFERENCE AUDIT'}
             </span>
-            <Badge variant="REAL" size="sm" />
+            <Badge
+              variant={resolvedClass}
+              customText={classMeta.shortTag}
+              size="sm"
+            />
           </div>
 
           <h4 className="text-sm sm:text-base font-serif font-bold text-[#F1F5F9] leading-snug mt-0.5">
@@ -83,6 +102,13 @@ export const DiscoveryCard: React.FC<DiscoveryCardProps> = ({
           </h4>
         </div>
       </div>
+
+      {!isDiscoveryAllowed && (
+        <div className="mb-3 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-[11px] font-mono flex items-start gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+          <span>{t.provenanceDiscoveryBlocked} ({classMeta.badgeLabel})</span>
+        </div>
+      )}
 
       {/* 1. What it could be */}
       <div className="p-3 rounded-xl bg-white/[0.04] border border-white/10 mb-3">

@@ -4,7 +4,8 @@ import {
   ExternalLink, Calendar, Compass, Sparkles, AlertCircle 
 } from 'lucide-react';
 import { InvestigationResult, CandidateDetection } from '../science/types';
-import { Language } from '../utils/translations';
+import { canClaimDiscovery, getSourceClassificationMeta } from '../science/provenance';
+import { Language, translations } from '../utils/translations';
 
 interface EvidenceExportModalProps {
   investigation: InvestigationResult | null;
@@ -20,9 +21,13 @@ export const EvidenceExportModal: React.FC<EvidenceExportModalProps> = ({
   onClose,
 }) => {
   const isAr = language === 'ar';
+  const t = translations[language];
   const [copied, setCopied] = useState(false);
 
   if (!investigation) return null;
+
+  const gate = canClaimDiscovery(investigation);
+  const classMeta = getSourceClassificationMeta(gate.sourceClassification, language);
 
   const ra = investigation.targetCoords?.ra ?? 276.2614;
   const dec = investigation.targetCoords?.dec ?? 64.8258;
@@ -34,10 +39,19 @@ export const EvidenceExportModal: React.FC<EvidenceExportModalProps> = ({
 
   const candidateCount = investigation.candidates?.length || 0;
   const topCandidate = selectedCandidate || (investigation.candidates?.[0] ?? null);
+  const checksumLines =
+    gate.fitsChecksums.length > 0
+      ? gate.fitsChecksums
+          .map((c) => `- \`${c.obsId}\` (${c.origin}, verified=${c.verified}): \`${c.sha256}\``)
+          .join('\n')
+      : `- Exposure 1 SHA-256: \`${investigation.provenance?.fitsChecksum1 || 'N/A'}\`\n- Exposure 2 SHA-256: \`${investigation.provenance?.fitsChecksum2 || 'N/A'}\``;
 
-  const markdownSummary = `# SPEX OBSERVATION & DISCOVERY DOSSIER
+  const markdownSummary = `# ${gate.allowed ? 'SPEX OBSERVATION & DISCOVERY DOSSIER' : 'SPEX REFERENCE AUDIT DOSSIER (NON-LIVE / NOT A DISCOVERY CLAIM)'}
 Mission: NASA SPHEREx (Spectro-Photometer for the History of the Universe)
 Generated: ${new Date().toISOString()}
+Source Classification: ${gate.sourceClassification}
+Discovery Eligible: ${gate.allowed ? 'YES' : 'NO'}
+Eligibility Detail: ${gate.reason}
 
 ## 1. TARGET COORDINATES & COVERAGE
 - Right Ascension (RA): ${ra.toFixed(5)}°
@@ -46,8 +60,8 @@ Generated: ${new Date().toISOString()}
 - Survey Region: Calibrated IRSA SPHEREx Field (s_region matched)
 
 ## 2. OBSERVATION PAIR & TEMPORAL BASELINE
-- Visit 1 (Earlier Epoch): ${investigation.epoch1?.metadata?.obs_id || '2025W18_1B_0001_1'} (${date1})
-- Visit 2 (Later Epoch):   ${investigation.epoch2?.metadata?.obs_id || '2025W18_1B_0001_2'} (${date2})
+- Visit 1 (Earlier Epoch): ${investigation.epoch1?.metadata?.obs_id || 'N/A'} (${date1})
+- Visit 2 (Later Epoch):   ${investigation.epoch2?.metadata?.obs_id || 'N/A'} (${date2})
 - Temporal Separation:     ${baselineSec} seconds (${(parseFloat(baselineSec) / 60).toFixed(2)} minutes)
 - Spectral Band:           SPHEREx Band 1 (0.75 - 1.11 µm, central λ = 0.93 µm)
 - Instrument Unit:         Surface Brightness (MJy/sr)
@@ -67,10 +81,13 @@ ${topCandidate ? `
 ` : '- No candidates above threshold (Photometrically stable calibration field)'}
 
 ## 4. SCIENTIFIC REPRODUCIBILITY & PROVENANCE
+- Source Classification:   ${gate.sourceClassification} (${classMeta.badgeLabel})
+- Discovery Eligible:      ${gate.allowed}
+- Observation IDs:         ${gate.observationIds.join(', ') || 'N/A'}
+- TAP Freshness:           ${investigation.tapFreshness || investigation.provenance?.tapFreshness || 'N/A'}
 - Source Archive:          NASA / IPAC Infrared Science Archive (IRSA)
-- Data Release:            SPHEREx Public Archive (DR1 / QR3 / QR2 Level-2B Calibrated FITS)
-- Astrometry:              TAN-SIP polynomial distortion model (order 2 forward/inverse)
-- Pipeline Status:         100% verified reproducible astronomical data product
+- Data Release:            ${investigation.provenance?.dataRelease || 'SPHEREx Public Archive'}
+${checksumLines}
 
 ## 5. SCIENTIFIC CAVEATS & LIMITATIONS
 - Detections represent statistical flux excess relative to baseline model.
@@ -136,9 +153,15 @@ ${topCandidate ? `
 
         {/* Footer Actions */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-white/[0.08]">
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-mono">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>{isAr ? 'بيانات FITS حقيقية موثقة برقم SHA-256' : 'NASA/IPAC FITS Provenance Verified'}</span>
+          <div className={`flex items-center gap-1.5 text-xs font-mono ${gate.allowed ? 'text-emerald-400' : 'text-amber-300'}`}>
+            {gate.allowed ? <ShieldCheck className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+            <span>
+              {gate.allowed
+                ? isAr
+                  ? 'بيانات FITS حقيقية موثقة برقم SHA-256'
+                  : 'NASA/IPAC FITS Provenance Verified'
+                : `${classMeta.shortTag} · ${t.provenanceDiscoveryBlocked}`}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">

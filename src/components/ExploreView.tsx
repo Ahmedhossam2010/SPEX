@@ -30,6 +30,10 @@ import {
   SPHERExObservation,
   ChallengeTarget,
 } from '../science/types';
+import {
+  normalizeSourceClassification,
+  getSourceClassificationMeta,
+} from '../science/provenance';
 import { parseCoordinateInput } from '../science/challengeTargets';
 import { ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { AstronomicalSkyViewport } from './Explore/AstronomicalSkyViewport';
@@ -579,11 +583,47 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="hidden sm:inline">{isRtl ? 'الجولة' : 'Tour'}</span>
               </button>
 
-              {/* Data Authenticity Indicator */}
-              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'NASA IRSA Archive'}</span>
-              </div>
+              {/* Data Authenticity Indicator (Dynamic Canonical Classification) */}
+              {(() => {
+                const activePayload: any =
+                  viewMode === 'flipbook' && latestTimeSeriesMeta
+                    ? latestTimeSeriesMeta
+                    : currentResult || latestTimeSeriesMeta;
+                const activeClass = normalizeSourceClassification(activePayload?.sourceClassification, {
+                  sourceMode: activePayload?.sourceMode,
+                  isSnapshot: Boolean(activePayload?.isSnapshot),
+                  isDemoCopy: Boolean(activePayload?.isDemoCopy),
+                  tapFreshness: activePayload?.tapFreshness,
+                  cacheIntegrityVerified: activePayload?.cacheIntegrityVerified,
+                  someCached: Boolean(activePayload?.cachedFrameCount && activePayload.cachedFrameCount > 0),
+                  status: activePayload?.status,
+                  state: activePayload?.state,
+                  availabilityStatus: activePayload?.availabilityStatus,
+                });
+                const meta = getSourceClassificationMeta(activeClass, language);
+                const pillStyle =
+                  meta.tone === 'emerald'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : meta.tone === 'cyan'
+                    ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                    : meta.tone === 'amber'
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                    : meta.tone === 'indigo'
+                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-300'
+                    : meta.tone === 'orange'
+                    ? 'bg-orange-500/15 border-orange-500/40 text-orange-300'
+                    : 'bg-rose-500/15 border-rose-500/40 text-rose-300';
+                return (
+                  <div
+                    data-testid="header-source-classification"
+                    title={meta.description}
+                    className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border font-mono text-[11px] ${pillStyle}`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                    <span className="font-semibold">{meta.shortTag}</span>
+                  </div>
+                );
+              })()}
             </>
           )}
 

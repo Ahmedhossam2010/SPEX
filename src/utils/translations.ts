@@ -383,6 +383,20 @@ export interface TranslationDictionary {
   gameTaskIdDesc: string;
   gameReviewTitle: string;
   gameReviewPrompt: string;
+
+  // Canonical Provenance & Discovery Gating
+  provenanceLiveArchive: string;
+  provenanceVerifiedCache: string;
+  provenanceStaleTap: string;
+  provenanceSavedBenchmark: string;
+  provenanceSyntheticDemo: string;
+  provenanceUnavailable: string;
+  provenanceDiscoveryEligible: string;
+  provenanceDiscoveryBlocked: string;
+  provenanceStaleBanner: string;
+  provenanceSnapshotBanner: string;
+  provenanceVerifiedCacheBanner: string;
+  provenanceBlockedPassportNotice: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -785,6 +799,24 @@ export const translations: Record<Language, TranslationDictionary> = {
     gameTaskIdDesc: 'Cross-match with Gaia DR3 and AllWISE. Unmatched sources could be new discoveries.',
     gameReviewTitle: 'False Alarm Review',
     gameReviewPrompt: 'One candidate is a false alarm. Inspect the evidence dossier, identify the glitch, and give the physical reason.',
+
+    // Canonical Provenance & Discovery Gating
+    provenanceLiveArchive: 'LIVE ARCHIVE DATA',
+    provenanceVerifiedCache: 'VERIFIED FITS CACHE',
+    provenanceStaleTap: 'STALE TAP CACHE (NOT LIVE)',
+    provenanceSavedBenchmark: 'SAVED BENCHMARK SNAPSHOT',
+    provenanceSyntheticDemo: 'SYNTHETIC / DEMO FIELD',
+    provenanceUnavailable: 'ARCHIVE UNAVAILABLE',
+    provenanceDiscoveryEligible: 'Eligible for Scientific Discovery',
+    provenanceDiscoveryBlocked: 'Not Eligible for Live Discovery Claims',
+    provenanceStaleBanner:
+      'IRSA TAP unreachable — showing expired TAP metadata cache. Not eligible for new discovery claims.',
+    provenanceSnapshotBanner:
+      'Showing saved benchmark snapshot — NOT a live NASA IRSA retrieval. Not eligible for live discovery claims.',
+    provenanceVerifiedCacheBanner:
+      'Using SHA-256 & header-verified local FITS cutouts paired with fresh IRSA TAP metadata.',
+    provenanceBlockedPassportNotice:
+      'Official Discovery Passport / Discovery Card export is blocked for non-live, stale, demo, or unverified data.',
   },
   ar: {
     // Brand & Top Navigation
@@ -1185,5 +1217,23 @@ export const translations: Record<Language, TranslationDictionary> = {
     gameTaskIdDesc: 'طابق الجرم مع كتالوجات Gaia DR3 وAllWISE. النجوم غير المطابقة قد تكون اكتشافات جديدة.',
     gameReviewTitle: 'مراجعة الإنذارات الكاذبة',
     gameReviewPrompt: 'أحد المرشحين إنذار كاذب. دقق في ملف الأدلة، وحدد الخطأ، واذكر السبب العلمي الفيزيائي.',
+
+    // Canonical Provenance & Discovery Gating
+    provenanceLiveArchive: 'بيانات أرشيف IRSA المباشرة',
+    provenanceVerifiedCache: 'ذاكرة FITS مؤقتة موثقة',
+    provenanceStaleTap: 'بيانات TAP منتهية الصلاحية (غير مباشرة)',
+    provenanceSavedBenchmark: 'لقطة مرجعية محفوظة (ليست مباشرة)',
+    provenanceSyntheticDemo: 'حقل تجريبي بديل / محاكاة',
+    provenanceUnavailable: 'الأرشيف غير متاح حالياً',
+    provenanceDiscoveryEligible: 'مؤهل للاكتشاف العلمي الموثق',
+    provenanceDiscoveryBlocked: 'غير مؤهل لإعلان اكتشاف علمي مباشر',
+    provenanceStaleBanner:
+      'تعذر الوصول إلى خادم IRSA TAP — تُعرض بيانات فهرسة منتهية الصلاحية ولا تصلح لإعلان اكتشافات جديدة.',
+    provenanceSnapshotBanner:
+      'تُعرض الآن لقطة مرجعية محفوظة وليست رصداً حياً من ناسا — غير صالحة لإعلان اكتشافات جديدة.',
+    provenanceVerifiedCacheBanner:
+      'استخدام ملفات FITS محلية موثقة بتجزئة SHA-256 وفحص الترويسة مع بيانات TAP حديثة.',
+    provenanceBlockedPassportNotice:
+      'تم حظر تصدير جواز أو بطاقة الاكتشاف الرسمية للبيانات المرجعية أو القديمة أو التجريبية أو غير الموثقة.',
   },
 };
