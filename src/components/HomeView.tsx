@@ -26,6 +26,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const isRtl = language === 'ar';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  // Collapsible SPEX guide card state (non-blocking)
+  const [spexMinimized, setSpexMinimized] = useState<boolean>(false);
+
   // Card 1 mini-blink state
   const [blinkEpoch, setBlinkEpoch] = useState<0 | 1>(0);
   useEffect(() => {
@@ -34,6 +37,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
     }, 900);
     return () => clearInterval(interval);
   }, []);
+
+  const homePresets = [
+    { caseId: 'case-barnards-star', label: "Barnard's Star", sub: '10.4″/yr' },
+    { caseId: 'case-epsilon-indi', label: 'Epsilon Indi', sub: 'T1+T6' },
+    { caseId: 'case-wise-0855', label: 'WISE 0855', sub: '8.15″/yr' },
+    { caseId: 'case-rw-aur', label: 'RW Aurigae', sub: 'YSO' },
+    { caseId: 'case-r-dra', label: 'R Draconis', sub: 'Mira' },
+  ];
 
   // Parallax Starfield Canvas with slow drifting camera
   useEffect(() => {
@@ -147,15 +158,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </p>
 
         {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mb-14">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mb-8">
           <Button
             variant="primary"
             size="lg"
             icon={<Compass className="w-5 h-5" />}
-            onClick={() => onStartExplore('case-nep-var-01')}
+            onClick={() => onStartExplore('case-wise-0855')}
             className="w-full sm:w-auto shadow-[0_0_30px_rgba(255,185,0,0.35)]"
           >
-            {t.homeBtnEnterSky}
+            {t.homeBtnOpenExplorer}
           </Button>
 
           {onPlayGame && (
@@ -171,7 +182,27 @@ export const HomeView: React.FC<HomeViewProps> = ({
           )}
         </div>
 
-        {/* SPEX Cat Guide Greeting Peek-in Card */}
+        {/* Compact Row of 5 Challenge Presets (One-Click Demo) */}
+        <div className="w-full max-w-3xl mx-auto mb-10">
+          <div className="text-[11px] font-mono uppercase tracking-wider text-[#94A3B8] mb-2.5">
+            {t.homePresetsHeading}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {homePresets.map((preset) => (
+              <button
+                key={preset.caseId}
+                type="button"
+                onClick={() => onStartExplore(preset.caseId)}
+                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-[#FFB900]/15 border border-white/10 hover:border-[#FFB900]/45 text-xs text-[#F1F5F9] hover:text-[#FFB900] transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="font-semibold">{preset.label}</span>
+                <span className="font-mono text-[10px] text-[#00D3F3]">{preset.sub}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* SPEX Cat Guide Greeting Peek-in Card (Collapsible & Non-blocking) */}
         <div className="w-full max-w-2xl mx-auto">
           <GlassPanel hasCropMarks glow className="p-4 sm:p-5 flex items-center gap-4 text-left">
             <div className="shrink-0 relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-amber-500/10 border border-[#FFB900]/30 overflow-hidden flex items-center justify-center shadow-[0_0_15px_rgba(255,185,0,0.2)]">
@@ -185,15 +216,27 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
 
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#FFB900]">
-                  SPEX AI COMPANION
-                </span>
-                <span className="text-[10px] text-[#94A3B8] font-mono">· ASTROPHYSICAL GUIDE</span>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#FFB900]">
+                    SPEX AI COMPANION
+                  </span>
+                  <span className="text-[10px] text-[#94A3B8] font-mono">· ASTROPHYSICAL GUIDE</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSpexMinimized((v) => !v)}
+                  aria-expanded={!spexMinimized}
+                  className="text-[10px] font-mono text-[#94A3B8] hover:text-white underline cursor-pointer"
+                >
+                  {spexMinimized ? (isRtl ? 'عرض' : 'Show') : (isRtl ? 'طي' : 'Collapse')}
+                </button>
               </div>
-              <p className="text-xs sm:text-sm text-[#F1F5F9] leading-relaxed font-sans">
-                {t.homeCatGreeting}
-              </p>
+              {!spexMinimized && (
+                <p className="text-xs sm:text-sm text-[#F1F5F9] leading-relaxed font-sans">
+                  {t.homeCatGreeting}
+                </p>
+              )}
             </div>
           </GlassPanel>
         </div>

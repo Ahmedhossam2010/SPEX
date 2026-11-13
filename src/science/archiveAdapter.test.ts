@@ -149,7 +149,7 @@ test('ArchiveAdapter: offline mode serves 3 real FITS records with REAL DATA, SA
     assert.equal(res.isSavedCopy, true);
     assert.equal(res.records.length, 3);
     for (const r of res.records) {
-      assert.equal(r.sourceLabel, 'REAL DATA, SAVED COPY (NOT LIVE)');
+      assert.equal(r.sourceLabel, 'REAL SPHEREx DATA - cached 2025-04-28 UTC');
     }
   } finally {
     process.env.SPHEREX_OFFLINE = origOffline;

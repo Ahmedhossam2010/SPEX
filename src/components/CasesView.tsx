@@ -30,13 +30,15 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
   const isRtl = language === 'ar';
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
-  const filteredCases = cases.filter((c) => {
-    if (filterCategory === 'all') return true;
-    if (filterCategory === 'variable') return c.category === 'Variable Candidate';
-    if (filterCategory === 'reference') return c.category === 'Stability Reference';
-    if (filterCategory === 'artifact') return c.category === 'Artifact Rejection';
-    return true;
-  });
+  const filteredCases = cases
+    .filter((c) => c.id !== 'case-band-mismatch-04' && !c.isSimulated)
+    .filter((c) => {
+      if (filterCategory === 'all') return true;
+      if (filterCategory === 'variable') return c.category === 'Variable Candidate';
+      if (filterCategory === 'reference') return c.category === 'Stability Reference';
+      if (filterCategory === 'artifact') return c.category === 'Artifact Rejection';
+      return true;
+    });
 
   return (
     <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12 select-none" dir={isRtl ? 'rtl' : 'ltr'}>
@@ -45,7 +47,7 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
         <div>
           <div className="flex items-center gap-2 text-xs font-mono tracking-widest text-obs-amber uppercase mb-2 font-bold">
             <Sparkles className="w-4 h-4" />
-            <span>NASA/IPAC IRSA SPHEREx QR2 & QR3</span>
+            <span>NASA/IPAC IRSA SPHEREx Archive</span>
             <span className="text-slate-600">·</span>
             <span>{isRtl ? 'ملفات قضايا المرصد' : 'Observatory Case Board'}</span>
           </div>
@@ -56,7 +58,7 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
         <p className="text-xs text-obs-text-dim max-w-md font-mono leading-relaxed">
           {isRtl
             ? 'تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل النجوم المتغيرة، نجم برنارد فائق الحركة، وقزم بني بارد، ومعايير الثبات وتصفية أعلام الجودة.'
-            : 'Authentic multi-epoch SPHEREx investigations across verified targets including Barnard’s Star, WISE 0855, North Ecliptic Pole deep surveys, and photometric calibration standards.'}
+            : 'Authentic multi-epoch SPHEREx investigations across verified targets including WISE 0855, Barnard’s Star, Epsilon Indi, RW Aurigae, R Draconis, and NEP deep field standards.'}
         </p>
       </div>
 
@@ -89,9 +91,8 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
 
       {/* Dossier Board Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {filteredCases.map((c, idx) => {
-          const isReal = !c.isSimulated;
-          const isUnverified = c.id.includes('epsilon-indi') || c.id.includes('r-draconis') || c.isUnverified;
+        {filteredCases.map((c) => {
+          const isReal = !c.isSimulated && !c.isUnverified;
 
           return (
             <GlassPanel
@@ -104,12 +105,10 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
                 {/* Header row: Status badges & Coordinates */}
                 <div className="flex items-center justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {isUnverified ? (
-                      <Badge variant="UNVERIFIED" size="sm" />
-                    ) : isReal ? (
+                    {isReal ? (
                       <Badge variant="REAL" size="sm" />
                     ) : (
-                      <Badge variant="TRAINING" size="sm" />
+                      <Badge variant="UNVERIFIED" size="sm" />
                     )}
                     <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-obs-cyan">
                       {c.category}

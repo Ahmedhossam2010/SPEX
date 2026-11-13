@@ -43,7 +43,7 @@ Generated: ${new Date().toISOString()}
 - Right Ascension (RA): ${ra.toFixed(5)}°
 - Declination (Dec): ${dec >= 0 ? '+' : ''}${dec.toFixed(5)}°
 - Field of View (FOV): ${investigation.sizePix || 64} pixels (~${investigation.fovArcmin || 6.6} arcmin)
-- Survey Region: North Ecliptic Pole (NEP) Deep Calibration Field (SPHEREx QR2)
+- Survey Region: Calibrated IRSA SPHEREx Field (s_region matched)
 
 ## 2. OBSERVATION PAIR & TEMPORAL BASELINE
 - Visit 1 (Earlier Epoch): ${investigation.epoch1?.metadata?.obs_id || '2025W18_1B_0001_1'} (${date1})
@@ -68,7 +68,7 @@ ${topCandidate ? `
 
 ## 4. SCIENTIFIC REPRODUCIBILITY & PROVENANCE
 - Source Archive:          NASA / IPAC Infrared Science Archive (IRSA)
-- Data Release:            SPHEREx Quick Release 2 (QR2) Level-2B Calibrated FITS
+- Data Release:            SPHEREx Public Archive (DR1 / QR3 / QR2 Level-2B Calibrated FITS)
 - Astrometry:              TAN-SIP polynomial distortion model (order 2 forward/inverse)
 - Pipeline Status:         100% verified reproducible astronomical data product
 

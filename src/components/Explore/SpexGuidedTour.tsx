@@ -44,100 +44,59 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
   const steps: TourStep[] = [
     {
-      id: 'step_viewport',
-      targetId: 'viewport_canvas',
-      titleEn: 'Astronomical Sky Viewport',
-      titleAr: 'نافذة الرصد الفلكي الرئيسية',
+      id: 'step_targets',
+      targetId: 'explore_targets',
+      titleEn: 'Target Search & 5 Benchmark Presets',
+      titleAr: 'البحث بالإحداثيات والأهداف الخمسة المرجعية',
       descEn:
-        'This is real, calibrated infrared data from NASA’s SPHEREx space telescope. You can pan, zoom, and inspect genuine cosmic sources in deep space.',
+        'Pick one of the 5 challenge presets (Barnard’s Star, Epsilon Indi, WISE 0855, RW Aurigae, R Draconis) or enter any RA/Dec in decimal or sexagesimal.',
       descAr:
-        'دي بيانات حقيقية ومعايرة بالأشعة تحت الحمراء من تلسكوب ناسا SPHEREx. تقدر تسحب وتكبر وتستكشف الأجرام الفلكية الحقيقية في أعماق الفضاء.',
+        'اختر أحد الأهداف الخمسة المرجعية أو أدخل أي إحداثيات RA/Dec لاستعراض السلسلة الزمنية الحقيقية من أرشيف IRSA.',
       mood: 'greeting',
     },
     {
-      id: 'step_time_lens',
-      targetId: 'lens_time',
-      titleEn: 'TIME Lens · Temporal Comparison',
-      titleAr: 'عدسة الزمن والتعاقب الفلكي',
+      id: 'step_viewport',
+      targetId: 'viewport_canvas',
+      titleEn: 'SPHEREx Multi-Epoch Flipbook Viewer',
+      titleAr: 'عارض التسلسل الزمني SPHEREx',
       descEn:
-        'Compare exposures taken ~2.1 minutes apart to spot fast astrophysical shifts, flickers, and motion across the sky.',
+        'Watch real calibrated infrared exposures play across epochs. Switch Detector (Auto / D1–D6) or toggle Normal / Show changes (Epoch 1 difference).',
       descAr:
-        'قارن بين لقطات تفصل بينها 2.1 دقيقة بس عشان تكتشف التغيرات والوميض والحركة الكونية السريعة في سماء SPHEREx.',
+        'شاهد لقطات الأشعة تحت الحمراء الحقيقية عبر الزمن. اختر الكاشف (Auto أو D1–D6) أو بدّل بين «عادي» و«إظهار التغيرات» لطرح اللقطة الأولى.',
       mood: 'explaining',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('time');
-      },
     },
     {
-      id: 'step_epoch_selector',
-      targetId: 'epoch_selector',
-      titleEn: 'Observation Epochs',
-      titleAr: 'لقطات التعاقب الزمني',
+      id: 'step_wiseview_bar',
+      targetId: 'wiseview_bar',
+      titleEn: 'WiseView Control Bar & Shortcuts',
+      titleAr: 'شريط التحكم السريع والاختصارات',
       descEn:
-        'Toggle between Visit 1, Visit 2, and the computed difference image to isolate exactly what changed between scans.',
+        'Use Step/Play (Space), Speed slider, Loop (L), Blink 1↔Last (B), Contrast & Stretch, Zoom +/-, and icon toggles for Crosshair, Trail, Catalogs, DQ flags, and Grid.',
       descAr:
-        'تنقل بين اللقطة الأولى والتانية وصورة الفارق المحسوبة عشان تعزل بالظبط إيه اللي اتغير بين المسحات.',
+        'استخدم التشغيل (Space)، والتخطي (←/→)، والتكرار (L)، والوميض 1↔الأخير (B)، ومنزلق التباين والتكبير، وأيقونات الطبقات والشبكة.',
       mood: 'thinking',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('time');
-      },
     },
     {
-      id: 'step_curtain',
-      targetId: 'curtain_divider',
-      titleEn: 'Comparison Curtain',
-      titleAr: 'ستارة المقارنة المباشرة',
+      id: 'step_advanced',
+      targetId: 'advanced_drawer',
+      titleEn: 'Advanced Drawer (Display, Overlays, Analysis, Export)',
+      titleAr: 'قائمة الإعدادات المتقدمة',
       descEn:
-        'Drag this divider handle left and right to wipe directly between the before and after observations in real time.',
+        'Expand Advanced anytime for Display percentiles, Overlays, Diff vs Median / Co-add Stack / Wavelength Window / Frame Count (10/20/40) / FOV, and PNG Export.',
       descAr:
-        'اسحب مقبض الستارة يمين وشمال عشان تقارن بالعين المجردة بين الصورتين قبل وبعد في نفس اللحظة.',
+        'افتح «إعدادات متقدمة» للتحكم في Display و Overlays و Analysis (مثل Co-add والنافذة الطيفية وعدد الإطارات 10/20/40 ومجال الرؤية) والتصدير.',
       mood: 'eureka',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('time');
-        if (onActivateCurtain) onActivateCurtain(true);
-      },
     },
     {
-      id: 'step_colors_lens',
-      targetId: 'lens_colors',
-      titleEn: 'HIDDEN COLORS Lens',
-      titleAr: 'عدسة الألوان الخفية',
+      id: 'step_slots',
+      targetId: 'collapsible_slots',
+      titleEn: 'Metadata, Centroid, Spectrum & Aladin Slots',
+      titleAr: 'الأقسام القابلة للطي: البيانات والمركز والطيف وعلاء الدين',
       descEn:
-        'Explore 102 infrared spectral channels from 0.75 to 5.0 µm, uncovering cool brown dwarfs, dust clouds, and cosmic ices.',
+        'Expand the collapsible slots below and beside the viewer for Frame Metadata, Subpixel Centroid vs Time, Measured Spectrum, and Aladin Sky Context.',
       descAr:
-        'استكشف 102 قناة طيفية للأشعة تحت الحمراء بتكشف الأقزام البنية الباردة وسحب الغبار والجليد الكوني المخفي.',
+        'افتح أو اطوِ أقسام شريط البيانات، ومنحنى إزاحة المركز مع الزمن، والطيف المقاس، وخريطة علاء الدين السماوية.',
       mood: 'discovery',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('colors');
-      },
-    },
-    {
-      id: 'step_doubt_lens',
-      targetId: 'lens_doubt',
-      titleEn: 'DOUBT Lens · Data Quality',
-      titleAr: 'عدسة الشك وفحص الجودة',
-      descEn:
-        'Inspect sensor saturation, cosmic rays, and edge artifacts to ensure your discovery is a real cosmic object, not a detector glitch.',
-      descAr:
-        'افحص تشبع الحساس والأشعة الكونية عشان تتأكد إن اللي بتشوفه جرم سماوي حقيقي مش عيب جهاز أو شوائب كاميرا.',
-      mood: 'investigator',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('doubt');
-      },
-    },
-    {
-      id: 'step_neighbors_lens',
-      targetId: 'lens_neighbors',
-      titleEn: 'NEIGHBORS Lens · Reference Catalogs',
-      titleAr: 'عدسة الجيران والكتالوجات',
-      descEn:
-        'Cross-match SPHEREx detections against Gaia DR3 and AllWISE to identify known stars, asteroids, and brown dwarfs.',
-      descAr:
-        'طابق رصدات SPHEREx مع كتالوجات غايا DR3 ووايز لمعرفة النجوم المسجلة سابقاً وحركتها الخاصة ومواقعها الموثقة.',
-      mood: 'explaining',
-      prepareAction: () => {
-        if (onActivateLens) onActivateLens('neighbors');
-      },
     },
     {
       id: 'step_spex_companion',
@@ -145,9 +104,9 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
       titleEn: 'SPEX Cat Companion',
       titleAr: 'مرافقك الفلكي سبيكس',
       descEn:
-        'I am always right here with you! Click me anytime to ask questions, understand anomalies, or get friendly explanations in plain language.',
+        'I am always right here with you—and collapsible anytime! Click me to ask questions or get clear explanations in plain language.',
       descAr:
-        'أنا دايماً جنبك هنا! اضغط عليا في أي وقت واسألني عن الصورة أو اطلب توضيح ومساعدة في أي تفصيلة فلكية.',
+        'أنا هنا دائماً معك ويمكن طيي في أي وقت! اضغط عليا لتطرح سؤالك أو تطلب شرحاً مبسطاً لأي عنصر في الشاشة.',
       mood: 'greeting',
     },
     {
@@ -156,9 +115,9 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
       titleEn: 'Discovery Postcard',
       titleAr: 'بطاقة الاكتشاف والمشاركة',
       descEn:
-        'Ready to share? Generate an authentic NASA-style discovery postcard with verified coordinates, real pixels, and your name!',
+        'Ready to share? Export a high-resolution PNG or generate an authentic Discovery Postcard with verified coordinates and provenance!',
       descAr:
-        'جاهز للمشاركة؟ اصنع كارت اكتشاف فلكي رسمي فيه الصورة الحقيقية والإحداثيات الموثقة وشاركه مع العالم!',
+        'جاهز للمشاركة؟ صدّر صورة PNG أو اصنع بطاقة اكتشاف موثقة بالإحداثيات ومصدر البيانات الحقيقي!',
       mood: 'proud',
     },
   ];

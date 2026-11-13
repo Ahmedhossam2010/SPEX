@@ -221,18 +221,13 @@ export class ScientificPipeline {
       };
     }
 
-    // Check data release version boundary (reject uncalibrated QR2 vs QR3 subtraction)
-    const rel1 = (obs1 as any).releaseId || fits1.header?.['RELEASE'];
-    const rel2 = (obs2 as any).releaseId || fits2.header?.['RELEASE'];
-    const isQr2_1 = rel1 ? String(rel1).toUpperCase().includes('QR2') : false;
-    const isQr3_1 = rel1 ? String(rel1).toUpperCase().includes('QR3') : false;
-    const isQr2_2 = rel2 ? String(rel2).toUpperCase().includes('QR2') : false;
-    const isQr3_2 = rel2 ? String(rel2).toUpperCase().includes('QR3') : false;
-
-    if ((isQr2_1 && isQr3_2) || (isQr3_1 && isQr2_2)) {
+    // Check data release / pipeline version boundary so different releases are never mixed silently
+    const rel1 = String((obs1 as any).releaseId || fits1.release || fits1.header?.['RELEASE'] || '').trim().toLowerCase();
+    const rel2 = String((obs2 as any).releaseId || fits2.release || fits2.header?.['RELEASE'] || '').trim().toLowerCase();
+    if (rel1 && rel2 && rel1 !== rel2) {
       return {
         isCompatible: false,
-        reason: `Cross-release comparison rejected: Exposure 1 is from '${rel1 || 'QR2'}' and Exposure 2 is from '${rel2 || 'QR3'}'. Direct flux differencing across IPAC Quick Releases is scientifically invalid without unified flux correction factors, background zero-point matching, and ePSF homogenization.`,
+        reason: `Cross-release comparison rejected: Exposure 1 is from '${rel1}' and Exposure 2 is from '${rel2}'. Direct flux differencing across distinct pipeline releases requires unified calibration.`,
         timeBaselineDays,
         wavelengthDiffUm,
         timeBaselineType,
@@ -892,9 +887,10 @@ export class ScientificPipeline {
   }
 
   /**
-   * Subpixel 2D Center-of-Mass / Intensity-Weighted Centroiding
-   * Computes subpixel centroid coordinates (cx, cy) and positional uncertainty
-   * within a local 5x5 window around the detected peak (peakX, peakY).
+   * Variance-Gated Subpixel 2D Center-of-Mass / Background-Subtracted Centroiding (B6)
+   * Estimates local background from the perimeter annulus, propagates per-pixel VARIANCE
+   * (skipping FLAGS nonFunc/overflow bits when supplied), requires S/N >= 3.0 before
+   * claiming a valid detection, and derives positional uncertainty from S/N.
    */
   public static computeSubpixelCentroid(
     diff: Float32Array,
@@ -902,39 +898,79 @@ export class ScientificPipeline {
     height: number,
     peakX: number,
     peakY: number,
-    radius = 2
-  ): { cx: number; cy: number; uncertaintyPix: number; valid: boolean } {
-    let sumWeight = 0;
-    let sumWx = 0;
-    let sumWy = 0;
+    radius = 2,
+    variance?: Float32Array | null,
+    flags?: Int32Array | null
+  ): { cx: number; cy: number; uncertaintyPix: number; snr: number; valid: boolean } {
+    if (!Number.isFinite(peakX) || !Number.isFinite(peakY) || peakX < 0 || peakX >= width || peakY < 0 || peakY >= height) {
+      return { cx: peakX, cy: peakY, uncertaintyPix: 1.0, snr: 0, valid: false };
+    }
+
     const peakIdx = peakY * width + peakX;
     const peakVal = diff[peakIdx];
-    const isPositive = peakVal >= 0;
+    const isPositive = Number.isFinite(peakVal) ? peakVal >= 0 : true;
 
-    // Estimate local background from outer perimeter of 5x5 box
-    let bgSum = 0;
-    let bgCount = 0;
+    const isBadFlag = (idx: number) => {
+      if (!flags || idx >= flags.length) return false;
+      const f = flags[idx];
+      return (f & 0x02) !== 0 || (f & 0x10) !== 0; // overflow or nonFunc
+    };
+
+    // Estimate local background from outer perimeter of box (median-like robust mean)
+    const bgVals: number[] = [];
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
           const nx = peakX + dx;
           const ny = peakY + dy;
           if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            bgSum += diff[ny * width + nx];
-            bgCount++;
+            const idx = ny * width + nx;
+            const v = diff[idx];
+            if (Number.isFinite(v) && !isBadFlag(idx)) {
+              bgVals.push(v);
+            }
           }
         }
       }
     }
-    const bg = bgCount > 0 ? bgSum / bgCount : 0;
+    bgVals.sort((a, b) => a - b);
+    const bg = bgVals.length > 0 ? bgVals[Math.floor(bgVals.length / 2)] : 0;
+
+    // Fallback noise sigma estimated from perimeter RMS when variance array is absent
+    let perimeterMad = 0;
+    if (bgVals.length > 2) {
+      const devs = bgVals.map((v) => Math.abs(v - bg)).sort((a, b) => a - b);
+      perimeterMad = 1.4826 * devs[Math.floor(devs.length / 2)];
+    }
+
+    let sumWeight = 0;
+    let sumWx = 0;
+    let sumWy = 0;
+    let netFluxSum = 0;
+    let varSum = 0;
+    let apertureCount = 0;
 
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         const nx = peakX + dx;
         const ny = peakY + dy;
         if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-          const val = diff[ny * width + nx];
+          const idx = ny * width + nx;
+          if (isBadFlag(idx)) continue;
+          const val = diff[idx];
+          if (!Number.isFinite(val)) continue;
           const net = isPositive ? val - bg : -(val - bg);
+          if (dx * dx + dy * dy <= radius * radius) {
+            netFluxSum += net;
+            const pixVar =
+              variance && idx < variance.length && Number.isFinite(variance[idx]) && variance[idx] > 1e-12
+                ? variance[idx]
+                : perimeterMad > 1e-6
+                ? perimeterMad * perimeterMad
+                : 0;
+            varSum += pixVar;
+            apertureCount++;
+          }
           if (net > 0) {
             sumWeight += net;
             sumWx += net * nx;
@@ -944,23 +980,37 @@ export class ScientificPipeline {
       }
     }
 
-    if (sumWeight > 0) {
+    const noiseSigma = varSum > 0 ? Math.sqrt(varSum) : 0;
+    const snr =
+      noiseSigma > 1e-12
+        ? Math.max(0, netFluxSum / noiseSigma)
+        : apertureCount > 0 && sumWeight > 0 && !variance
+        ? Math.max(0, Math.abs(peakVal - bg) / Math.max(1e-6, perimeterMad || 0.2))
+        : 0;
+
+    if (sumWeight > 0 && snr >= 3.0) {
       const cx = sumWx / sumWeight;
       const cy = sumWy / sumWeight;
-      // Positional deviation must be within physical radius of peak pixel
       if (Math.abs(cx - peakX) <= radius && Math.abs(cy - peakY) <= radius) {
-        const snr = Math.max(1, Math.abs(peakVal));
-        const uncertaintyPix = Math.max(0.05, Math.min(0.5, 1.0 / Math.sqrt(snr)));
+        // Positional uncertainty ~ FWHM / (2.35 * S/N) with SPHEREx PSF FWHM ~ 1.0 px (6.2")
+        const uncertaintyPix = Math.max(0.03, Math.min(0.8, 1.0 / (2.35 * snr)));
         return {
           cx: Number(cx.toFixed(3)),
           cy: Number(cy.toFixed(3)),
           uncertaintyPix: Number(uncertaintyPix.toFixed(3)),
+          snr: Number(snr.toFixed(2)),
           valid: true,
         };
       }
     }
 
-    return { cx: peakX, cy: peakY, uncertaintyPix: 0.5, valid: false };
+    return {
+      cx: peakX,
+      cy: peakY,
+      uncertaintyPix: 0.5,
+      snr: Number((Number.isFinite(snr) ? snr : 0).toFixed(2)),
+      valid: false,
+    };
   }
 
   /**

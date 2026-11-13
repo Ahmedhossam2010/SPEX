@@ -87,8 +87,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
       const timer = setTimeout(() => {
         setProactiveBubble({
           text: isRtl
-            ? 'أهلاً! أنا SPEX. هساعدك تستكشف سماء SPHEREx وتفهم إيه اللي اتغير فيها. تحب نعمل جولة سريعة؟'
-            : "Welcome! I'm SPEX. I'll help you explore the SPHEREx sky and uncover changes. Want a quick tour?",
+            ? 'أهلاً! أنا SPEX. استخدم Play (Space) أو Blink (B) أو بدّل بين عادي/إظهار التغيرات واختر الكاشف (D1–D6)، وافتح الإعدادات المتقدمة أو الأقسام القابلة للطي لمزيد من الأدوات!'
+            : "Hi! I'm SPEX. Press Space to Play, B to Blink 1↔Last, switch Normal / Show changes or D1–D6 Auto, and open Advanced or the collapsible Metadata/Centroid/Spectrum/Aladin slots anytime.",
           mood: 'greeting',
           actionLabel: isRtl ? 'ابدأ الجولة' : 'Start Tour',
           onAction: onOpenTour,
@@ -110,23 +110,23 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
 
     if (activeLens === 'time') {
       text = isRtl
-        ? 'عدسة الزمن بتعرض لقطات تفصل بينها 2.1 دقيقة! اسحب الستارة أو شغل المقارنة التلقائية.'
-        : 'The TIME lens shows exposures ~2.1 minutes apart! Try dragging the curtain or playing the blinker.';
+        ? 'جرب شريط WiseView أسفل العارض: تشغيل (Space)، خطوة (←/→)، تكرار (L)، وميض 1↔الأخير (B)، أو التبديل إلى «إظهار التغيرات» لطرح الإطار الأول.'
+        : 'Try the WiseView bar under the viewer: Play (Space), Step (←/→), Loop (L), Blink 1↔Last (B), or switch Normal ↔ Show changes to subtract Epoch 1.';
       mood = 'explaining';
     } else if (activeLens === 'colors') {
       text = isRtl
-        ? 'هنا بنشوف الكون بـ 102 طول موجي تحت حمراء بتخترق الغبار وتكشف الأجرام الباردة.'
-        : 'Here we view the sky across 102 infrared channels, penetrating dust and uncovering cool brown dwarfs.';
+        ? 'اختر مصفوفة الكاشف D1–D6 (أو Auto) وافتح قسم الطيف المقاس أسفل العارض لاستكشاف الأطوال الموجية الفعلية (0.75–5.0 ميكرون).'
+        : 'Pick detector D1–D6 (or Auto) and open the Measured Spectrum slot below the viewer to inspect per-exposure wavelengths (0.75–5.0 µm).';
       mood = 'discovery';
     } else if (activeLens === 'doubt') {
       text = isRtl
-        ? 'عدسة الشك بتفحص بكسلات الكاشف عشان نتأكد إن الإشارة مش شائبة أو أشعة كونية.'
-        : 'The DOUBT lens inspects detector flags to verify signals are genuine celestial objects rather than artifacts.';
+        ? 'فعّل طبقة علامات الجودة DQ من شريط التحكم أو من قسم الطبقات داخل «إعدادات متقدمة» للتحقق من بكسلات التشبع والأشعة الكونية.'
+        : 'Toggle the DQ flags icon in the viewer bar (or Overlays inside Advanced) to check saturation and cosmic-ray pixel masks.';
       mood = 'investigator';
     } else if (activeLens === 'neighbors') {
       text = isRtl
-        ? 'الدوائر دي بتمثل نجوم كتالوج غايا ووايز لمطابقة المواقع الفلكية وحركتها.'
-        : 'These circles overlay Gaia DR3 and AllWISE catalog sources to verify astrometry and proper motion.';
+        ? 'فعّل أيقونة الكتالوجات لمطابقة نجوم Gaia DR3 و AllWISE، وافتح لوحة خريطة علاء الدين (Aladin Context) لمشاهدة مجال السماء الواسع.'
+        : 'Toggle the Catalogs icon to overlay Gaia DR3 & AllWISE sources, and expand the Aladin Sky Context slot for wide-field imagery.';
       mood = 'explaining';
     }
 
@@ -248,8 +248,8 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
         id: `spx-${Date.now()}`,
         sender: 'spex',
         text: isRtl
-          ? 'البيانات الحقيقية لرصدات SPHEREx QR2 تفصل بينها 2.1 دقيقة بدقة قياس عالية للأشعة تحت الحمراء لتحديد التغيرات الحقيقية واستبعاد عيوب الأجهزة.'
-          : 'SPHEREx QR2 observations are separated by ~2.1 minutes in calibrated infrared, enabling precise proper motion tracking while ruling out detector saturation artifacts.',
+          ? 'يعرض المستكشف لقطات SPHEREx الحقيقية عبر الكواشف D1–D6. استخدم Normal / Show changes لرؤية الفروق، وأدوات WiseView (Space/←/→/L/B) أسفل العارض، وقائمة «إعدادات متقدمة» لعرض التباين والطبقات والتحليل والتصدير.'
+          : 'SPHEREx captures multi-epoch infrared exposures across detectors D1–D6. Use Normal / Show changes, the WiseView bar (Space/←/→/L/B), Advanced (Display, Overlays, Analysis, Export), and the collapsible Metadata, Centroid, Spectrum, and Aladin slots.',
         mood: 'explaining',
         timestamp: new Date(),
       };
@@ -475,11 +475,11 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
           {/* Quick Contextual Question Chips */}
           <div className="shrink-0 px-3 py-2 bg-black/40 border-t border-white/5 overflow-x-auto flex gap-1.5 no-scrollbar">
             {[
-              isRtl ? 'إزاي أقارن الصورتين؟' : 'How do I compare images?',
-              isRtl ? 'فين أشوف الألوان الخفية؟' : 'Where are hidden colors?',
-              isRtl ? 'يعني إيه عدسة الشك؟' : 'What is the DOUBT lens?',
-              isRtl ? 'مين الجيران في الكتالوج؟' : 'Who are the neighbors?',
-              isRtl ? 'إزاي أعمل كارت اكتشاف؟' : 'How do I make a postcard?',
+              isRtl ? 'إزاي أشغل الوميض والتغيير؟' : 'How do I use Show changes & Blink?',
+              isRtl ? 'إيه الموجود في إعدادات متقدمة؟' : 'What is inside Advanced?',
+              isRtl ? 'إزاي أختار الكاشف D1–D6؟' : 'How do D1–D6 detectors work?',
+              isRtl ? 'فين منحنى الحركة والطيف؟' : 'Where are Centroid & Spectrum slots?',
+              isRtl ? 'إزاي أعمل بطاقة اكتشاف؟' : 'How do I export a snapshot?',
             ].map((chip, idx) => (
               <button
                 key={idx}

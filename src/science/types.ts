@@ -62,6 +62,23 @@ export interface WCSParams {
   sip?: SIPParams;
 }
 
+export interface WcsWaveTable {
+  nx: number;
+  ny: number;
+  xGrid: number[];
+  yGrid: number[];
+  values: number[];
+  crpix1W: number;
+  crpix2W: number;
+  cdelt1W: number;
+  cdelt2W: number;
+  crval1W: number;
+  crval2W: number;
+  waveIndex: number; // 1-based PV1_3W (default 1)
+  bwIndex: number;   // 1-based PV2_3W (default 2)
+  detector?: string;
+}
+
 export interface HDUMetadata {
   index: number;
   name: string;
@@ -79,6 +96,8 @@ export interface FITSImageData {
   variance: Float32Array | null; // Variance in (BUNIT)^2
   flags: Int32Array | null; // Data quality bitmask
   bunit: string;
+  version?: string;
+  release?: string;
   header: Record<string, string | number | boolean>;
   wcs: WCSParams;
   stats: {
@@ -95,6 +114,12 @@ export interface FITSImageData {
     height: number;
     data?: Float32Array;
   };
+  epsfMetadata?: {
+    extname: string;
+    dimensions: number[];
+    is3DModel: boolean;
+    headerCards: Record<string, string | number | boolean>;
+  };
   psfMetadata?: {
     dimensions: number[];
     is3DModel: boolean;
@@ -103,6 +128,7 @@ export interface FITSImageData {
   wcsWaveMetadata?: {
     dimensions: number[];
     isTable: boolean;
+    table?: WcsWaveTable;
   };
 }
 

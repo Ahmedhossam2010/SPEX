@@ -301,6 +301,22 @@ export interface TranslationDictionary {
   modeBeginner: string;
   modeExplorer: string;
   modeScientist: string;
+  homeBtnOpenExplorer: string;
+  homePresetsHeading: string;
+  viewNormal: string;
+  viewShowChanges: string;
+  advancedControls: string;
+  sectionDisplay: string;
+  sectionOverlays: string;
+  sectionAnalysis: string;
+  sectionExport: string;
+  slotMetadata: string;
+  slotCentroid: string;
+  slotSpectrum: string;
+  slotAladin: string;
+  emptyCentroid: string;
+  emptySpectrum: string;
+  emptyAladin: string;
 
   // 2D Game Station
   gameStationTitle: string;
@@ -505,12 +521,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Coordinate Search Modal
     searchModalTitle: 'Investigate Sky Coordinates',
     searchModalClose: 'Close',
-    searchCoverageNoticeTitle: 'Available SPHEREx QR2 Coverage:',
+    searchCoverageNoticeTitle: 'Live IRSA SPHEREx Coverage:',
     searchCoverageNoticeText:
-      'The currently published NASA/IPAC SPHEREx QR2 release covers the North Ecliptic Pole (NEP) deep field (RA 275.5°–276.8°, Dec +64.5°–65.2°). Full all-sky coverage expands in future releases.',
-    searchLabelRa: 'Right Ascension (RA in degrees, ~275.5°–276.8°):',
-    searchLabelDec: 'Declination (Dec in degrees, ~+64.5°–65.2°):',
-    searchVerifiedTargetsTitle: 'Verified Targets within SPHEREx QR2 Footprint:',
+      'Queries check live NASA/IPAC IRSA SPHEREx footprints (spherex.artifact + spherex.plane across DR1 / QR3 / QR2). All 5 challenge targets and covered sky fields return calibrated Level-2B exposures.',
+    searchLabelRa: 'Right Ascension (RA in degrees, 0°–360°):',
+    searchLabelDec: 'Declination (Dec in degrees, -90°–+90°):',
+    searchVerifiedTargetsTitle: 'Verified Targets in SPHEREx Public Archive:',
     searchTargetNepVar: 'NEP Deep Variable',
     searchTargetNepCal: 'NEP Calibration Standard',
     searchTargetNepMotion: 'NEP Proper Motion Star',
@@ -521,17 +537,17 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Error & Notice Banner
     noticeSurveyCoverage: 'Survey Coverage Notice:',
     noticeGeneral: 'Notice:',
-    btnInspectNepBenchmark: 'Inspect Verified NEP Benchmark',
+    btnInspectNepBenchmark: 'Inspect Verified Benchmark',
     btnDismissNotice: 'Dismiss',
     referenceBenchmarkNotice:
-      "Your requested coordinates are outside the currently available QR2 benchmark coverage. You're viewing a separate reference field.",
+      "No exposures covered your requested coordinates at this search time. You're viewing a separate cached reference field.",
     referenceBenchmarkBadge: 'Separate Reference Field',
     referenceCandidatesNotice:
-      'Candidate detections shown below belong to the North Ecliptic Pole reference field, NOT your requested coordinates.',
+      'Candidate detections shown below belong to the reference field, NOT your requested coordinates.',
     btnReturnToSearch: 'Return to Search',
 
     // Homepage
-    homeMissionBadge: 'NASA SPHEREx Mission · All-Sky Infrared Survey QR2',
+    homeMissionBadge: 'NASA SPHEREx Mission · All-Sky Infrared Survey Archive',
     homeHeroTitlePrefix: 'THE SKY ',
     homeHeroTitleHighlight: 'CHANGES.',
     homeHeroSubtitle:
@@ -546,7 +562,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeBtnPlayGame: 'Play Cosmic Detective',
     homeBtnBrowseCases: 'Browse Benchmarks',
     homeBtnScientificAudit: 'Scientific Audit',
-    homeBenchmarksHeader: 'Verified Astronomical Benchmarks in SPHEREx QR2:',
+    homeBenchmarksHeader: 'Verified Astronomical Benchmarks in SPHEREx Archive:',
     homeBenchmark1: 'NEP Deep Variable (7.8σ Change)',
     homeBenchmark2: 'Stability Standard (Zero Change)',
     homeBenchmark3: 'DQ Mask (Rejects Saturation & Artifacts)',
@@ -558,7 +574,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       'Every pixel originates from calibrated FITS archives at NASA/IPAC IRSA, processed with zero synthetic imagery or mock placeholders.',
 
     // Cases View
-    casesHeaderBadge: 'NASA/IPAC IRSA SPHEREx QR2 · Ground Truth Investigations',
+    casesHeaderBadge: 'NASA/IPAC IRSA SPHEREx · Ground Truth Investigations',
     casesHeaderTitle: 'Verified Astronomical Case Files',
     casesHeaderDesc:
       'Four genuine multi-epoch SPHEREx investigations demonstrating verified variable stars, photometric null stability, and automated bitmask artifact rejection.',
@@ -637,6 +653,22 @@ export const translations: Record<Language, TranslationDictionary> = {
     modeBeginner: 'Beginner',
     modeExplorer: 'Explorer',
     modeScientist: 'Scientist',
+    homeBtnOpenExplorer: 'Open Explorer',
+    homePresetsHeading: '5 Official Benchmark Targets (One-Click Demo)',
+    viewNormal: 'Normal',
+    viewShowChanges: 'Show changes',
+    advancedControls: 'Advanced',
+    sectionDisplay: 'Display',
+    sectionOverlays: 'Overlays',
+    sectionAnalysis: 'Analysis',
+    sectionExport: 'Export',
+    slotMetadata: 'Frame Metadata Strip',
+    slotCentroid: 'Centroid vs Time Plot',
+    slotSpectrum: 'Measured Spectrum',
+    slotAladin: 'Aladin Sky Context',
+    emptyCentroid: 'Need at least 2 frames with measured centroids to plot motion vs time.',
+    emptySpectrum: 'No measured spectrum points available yet for this target.',
+    emptyAladin: 'Select a target or enter RA/Dec coordinates to load sky survey context.',
 
     // 2D Game Station
     gameStationTitle: 'SPHEREx Observatory Station',
@@ -839,12 +871,12 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Coordinate Search Modal
     searchModalTitle: 'فحص إحداثيات سماوية في SPHEREx',
     searchModalClose: 'إغلاق',
-    searchCoverageNoticeTitle: 'نطاق تغطية SPHEREx QR2 الحالي:',
+    searchCoverageNoticeTitle: 'تغطية أرشيف IRSA SPHEREx الحية:',
     searchCoverageNoticeText:
-      'يغطي إصدار QR2 المنشور حالياً من ناسا منطقة القطب الشمالي لمسار الشمس (NEP) بين RA 275.5°–276.8° و Dec +64.5°–65.2°. ستتوسع التغطية لتشمل كامل السماء في الإصدارات القادمة.',
-    searchLabelRa: 'المطلع المستقيم (RA بالدرجات، ~275.5°–276.8°):',
-    searchLabelDec: 'الميل السماوي (Dec بالدرجات، ~+64.5°–65.2°):',
-    searchVerifiedTargetsTitle: 'أهداف موثقة في نطاق SPHEREx QR2:',
+      'تفحص الاستعلامات تغطية مسح NASA/IPAC IRSA SPHEREx الحية عبر (spherex.artifact + spherex.plane لإصدارات DR1 / QR3 / QR2). تتوفر رصدات حقيقية لجميع أهداف التحدي الخمسة.',
+    searchLabelRa: 'المطلع المستقيم (RA بالدرجات، 0°–360°):',
+    searchLabelDec: 'الميل السماوي (Dec بالدرجات، -90°–+90°):',
+    searchVerifiedTargetsTitle: 'أهداف موثقة في أرشيف SPHEREx العام:',
     searchTargetNepVar: 'متغير NEP العميق',
     searchTargetNepCal: 'معيار المعايرة الضوئية',
     searchTargetNepMotion: 'نجم ذو حركة ذاتية',
@@ -855,17 +887,17 @@ export const translations: Record<Language, TranslationDictionary> = {
     // Error & Notice Banner
     noticeSurveyCoverage: 'تنبيه نطاق التغطية:',
     noticeGeneral: 'تنبيه:',
-    btnInspectNepBenchmark: 'معاينة رصدة NEP المعتمدة',
+    btnInspectNepBenchmark: 'معاينة الحالة المرجعية المعتمدة',
     btnDismissNotice: 'إغلاق التنبيه',
     referenceBenchmarkNotice:
-      'الإحداثيات المطلوبة تقع خارج نطاق تغطية معيار QR2 المتاح حالياً. أنت تعرض حقلاً مرجعياً منفصلاً.',
+      'لم يتم العثور على تعريضات تغطي الإحداثيات المطلوبة حالياً. أنت تعرض حقلاً مرجعياً مخزناً.',
     referenceBenchmarkBadge: 'حقل مرجعي منفصل',
     referenceCandidatesNotice:
-      'المرشحات المعروضة أدناه خاصة بحقل القطب الشمالي لمسار الشمس المرجعي وليست رصداً للإحداثيات المطلوبة.',
+      'المرشحات المعروضة أدناه خاصة بالحقل المرجعي وليست رصداً للإحداثيات المطلوبة.',
     btnReturnToSearch: 'العودة للبحث',
 
     // Homepage
-    homeMissionBadge: 'مهمة NASA SPHEREx · مسح السماء الشامل بالأشعة تحت الحمراء QR2',
+    homeMissionBadge: 'مهمة NASA SPHEREx · أرشيف مسح السماء بالأشعة تحت الحمراء',
     homeHeroTitlePrefix: 'السماء ',
     homeHeroTitleHighlight: 'تتغير.',
     homeHeroSubtitle:
@@ -880,7 +912,7 @@ export const translations: Record<Language, TranslationDictionary> = {
     homeBtnPlayGame: 'العب المحقق الكوني',
     homeBtnBrowseCases: 'تصفح الحالات الموثقة',
     homeBtnScientificAudit: 'سجل التدقيق العلمي',
-    homeBenchmarksHeader: 'حالات فلكية نموذجية موثقة في أرشيف SPHEREx QR2:',
+    homeBenchmarksHeader: 'حالات فلكية نموذجية موثقة في أرشيف SPHEREx:',
     homeBenchmark1: 'متغير NEP العميق (تغير بقوة 7.8σ)',
     homeBenchmark2: 'معيار الثبات الضوئي (تغير منعدم 0.0σ)',
     homeBenchmark3: 'قناع الجودة (استبعاد التشبع وعيوب الحساس)',
@@ -892,7 +924,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       'كل بكسل في المنصة مستخرج مباشرة من أرشيف FITS المعاير في NASA/IPAC IRSA، بدون أي صور تخيلية أو بيانات وهمية.',
 
     // Cases View
-    casesHeaderBadge: 'NASA/IPAC IRSA SPHEREx QR2 · تحقيقات علمية حقيقية',
+    casesHeaderBadge: 'NASA/IPAC IRSA SPHEREx · تحقيقات علمية حقيقية',
     casesHeaderTitle: 'ملفات الحالات الفلكية الموثقة',
     casesHeaderDesc:
       'أربعة تحقيقات مبنية على بيانات SPHEREx الحقيقية، تشمل قياس الفروق الضوئية ومعايير الثبات وتصفية أعلام الجودة (0x01/0x02/0x80000).',
@@ -971,6 +1003,22 @@ export const translations: Record<Language, TranslationDictionary> = {
     modeBeginner: 'مبتدئ',
     modeExplorer: 'مستكشف',
     modeScientist: 'عالم فلك',
+    homeBtnOpenExplorer: 'افتح المستكشف',
+    homePresetsHeading: 'أهداف التحدي الخمسة الرسمية (تشغيل بضغطة واحدة)',
+    viewNormal: 'عادي',
+    viewShowChanges: 'إظهار التغيرات',
+    advancedControls: 'إعدادات متقدمة',
+    sectionDisplay: 'العرض',
+    sectionOverlays: 'الطبقات',
+    sectionAnalysis: 'التحليل',
+    sectionExport: 'التصدير',
+    slotMetadata: 'شريط بيانات الإطار الزمني',
+    slotCentroid: 'منحنى إزاحة المركز مع الزمن',
+    slotSpectrum: 'الطيف المقاس عبر الأطوال الموجية',
+    slotAladin: 'خريطة علاء الدين السماوية المرجعية',
+    emptyCentroid: 'يلزم إطاران على الأقل بقياسات مركز صالحة لرسم الحركة مع الزمن.',
+    emptySpectrum: 'لا توجد نقاط طيفية مقاسة متاحة بعد لهذا الهدف.',
+    emptyAladin: 'اختر هدفاً أو أدخل إحداثيات السماء لتحميل الخريطة المرجعية.',
 
     // 2D Game Station
     gameStationTitle: 'محطة مرصد سفيركس الفضائي',

@@ -1,4 +1,4 @@
-import { FITSImageData, HDUMetadata, SIPParams, SIPTerm, WCSParams } from './types';
+import { FITSImageData, HDUMetadata, SIPParams, SIPTerm, WCSParams, WcsWaveTable } from './types';
 import { MAX_SIP_ORDER, WCS } from './wcs';
 
 export class FITSReader {
@@ -23,8 +23,17 @@ export class FITSReader {
 
     const hdus: HDUMetadata[] = [];
     let zodiData: Float32Array | null = null;
-    let psfMetadata: { dimensions: number[]; is3DModel: boolean; headerCards: Record<string, string | number | boolean> } | undefined;
-    let wcsWaveMetadata: { dimensions: number[]; isTable: boolean } | undefined;
+    let epsfMetadata: FITSImageData['epsfMetadata'];
+    let psfMetadata: FITSImageData['psfMetadata'];
+    let wcsWaveMetadata: FITSImageData['wcsWaveMetadata'];
+    let rawWcsWaveTable: {
+      xGrid: number[];
+      yGrid: number[];
+      values: number[];
+      nx: number;
+      ny: number;
+      detector?: string;
+    } | null = null;
 
     while (offset < uint8.length) {
       // Read 2880 byte blocks until END card
@@ -139,8 +148,8 @@ export class FITSReader {
           scienceData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
         }
       } else {
-        // Multi-extension HDU
-        if ((extname === 'IMAGE' || extname === 'SCI' || (!scienceData && naxis === 2)) && !scienceData) {
+        // Multi-extension HDU keyed strictly by EXTNAME
+        if ((extname === 'IMAGE' || extname === 'SCI' || (!extname && !scienceData && naxis === 2)) && !scienceData) {
           width = naxis1;
           height = naxis2;
           scienceHeader = { ...primaryHeader, ...headerCards };
@@ -158,19 +167,29 @@ export class FITSReader {
             zodiData = this.readFloat32Array(view, offset, naxis1 * naxis2, bitpix);
           }
           readStatus = 'INGESTED_METADATA_PRESERVED';
-        } else if (extname === 'PSF') {
+        } else if (extname === 'EPSF' || extname === 'PSF') {
+          epsfMetadata = {
+            extname,
+            dimensions: shape,
+            is3DModel: naxis >= 3 || String(headerCards['XTENSION'] || '').toUpperCase() === 'BINTABLE',
+            headerCards,
+          };
           psfMetadata = {
             dimensions: shape,
-            is3DModel: naxis >= 3,
+            is3DModel: epsfMetadata.is3DModel,
             headerCards,
           };
           readStatus = 'INGESTED_METADATA_PRESERVED';
         } else if (extname === 'WCS-WAVE') {
+          const parsedTable = this.parseWcsWaveBintable(view, offset, headerCards);
+          if (parsedTable) {
+            rawWcsWaveTable = parsedTable;
+          }
           wcsWaveMetadata = {
             dimensions: shape,
-            isTable: headerCards['XTENSION'] === 'BINTABLE' || extname === 'WCS-WAVE',
+            isTable: String(headerCards['XTENSION'] || '').toUpperCase() === 'BINTABLE' || extname === 'WCS-WAVE',
           };
-          readStatus = 'INGESTED_METADATA_PRESERVED';
+          readStatus = 'READ_AND_USED';
         }
       }
 
@@ -196,6 +215,19 @@ export class FITSReader {
     const wcs = this.parseWCS(mergedHeader, width, height);
     const stats = this.computeStatistics(scienceData, flagsData);
 
+    // Attach full WCS-WAVE -TAB spectral lookup parameters if WCS-WAVE + W alternate WCS are present
+    if (rawWcsWaveTable && wcsWaveMetadata) {
+      const table = this.buildWcsWaveTable(mergedHeader, rawWcsWaveTable);
+      if (table) {
+        wcsWaveMetadata.table = table;
+      }
+    }
+
+    const versionRaw = primaryHeader['VERSION'] ?? mergedHeader['VERSION'];
+    const version = versionRaw !== undefined ? String(versionRaw).trim() : undefined;
+    const releaseRaw = primaryHeader['RELEASE'] ?? mergedHeader['RELEASE'];
+    const release = releaseRaw !== undefined ? String(releaseRaw).trim() : undefined;
+
     return {
       width,
       height,
@@ -203,13 +235,199 @@ export class FITSReader {
       variance: varianceData,
       flags: flagsData,
       bunit,
+      version,
+      release,
       header: mergedHeader,
       wcs,
       stats,
       hdus,
       zodi: zodiData ? { width, height, data: zodiData } : undefined,
+      epsfMetadata,
       psfMetadata,
       wcsWaveMetadata,
+    };
+  }
+
+  private static parseWcsWaveBintable(
+    view: DataView,
+    dataOffset: number,
+    header: Record<string, string | number | boolean>
+  ): {
+    xGrid: number[];
+    yGrid: number[];
+    values: number[];
+    nx: number;
+    ny: number;
+    detector?: string;
+  } | null {
+    const tfields = Number(header['TFIELDS'] || 0);
+    const naxis2 = Number(header['NAXIS2'] || 0);
+    if (tfields < 3 || naxis2 < 1) return null;
+
+    let colOffset = 0;
+    const cols: Record<string, { offset: number; repeat: number; type: string; tdim?: string }> = {};
+
+    for (let i = 1; i <= tfields; i++) {
+      const ttype = String(header[`TTYPE${i}`] || '').trim().toUpperCase();
+      const tform = String(header[`TFORM${i}`] || '').trim().toUpperCase();
+      const tdim = header[`TDIM${i}`] ? String(header[`TDIM${i}`]).trim() : undefined;
+      const m = tform.match(/^(\d*)([A-Z])$/);
+      if (!m) return null;
+      const repeat = m[1] ? parseInt(m[1], 10) : 1;
+      const code = m[2];
+      const elemBytes =
+        code === 'J' || code === 'E' ? 4 :
+        code === 'D' || code === 'K' ? 8 :
+        code === 'I' ? 2 :
+        1;
+      if (ttype) {
+        cols[ttype] = { offset: colOffset, repeat, type: code, tdim };
+      }
+      colOffset += repeat * elemBytes;
+    }
+
+    const xCol = cols['X'];
+    const yCol = cols['Y'];
+    const valCol = cols['VALUES'];
+    if (!xCol || !yCol || !valCol) return null;
+
+    const readNumericCol = (col: { offset: number; repeat: number; type: string }): number[] => {
+      const out: number[] = [];
+      const base = dataOffset + col.offset;
+      const elemBytes = col.type === 'D' || col.type === 'K' ? 8 : col.type === 'J' || col.type === 'E' ? 4 : col.type === 'I' ? 2 : 1;
+      for (let k = 0; k < col.repeat; k++) {
+        const ptr = base + k * elemBytes;
+        if (ptr + elemBytes > view.byteLength) break;
+        if (col.type === 'J') out.push(view.getInt32(ptr, false));
+        else if (col.type === 'I') out.push(view.getInt16(ptr, false));
+        else if (col.type === 'K') out.push(Number(view.getBigInt64(ptr, false)));
+        else if (col.type === 'E') out.push(view.getFloat32(ptr, false));
+        else if (col.type === 'D') out.push(view.getFloat64(ptr, false));
+        else out.push(view.getUint8(ptr));
+      }
+      return out;
+    };
+
+    const xGrid = readNumericCol(xCol);
+    const yGrid = readNumericCol(yCol);
+    const values = readNumericCol(valCol);
+
+    let nx = xGrid.length;
+    let ny = yGrid.length;
+    if (valCol.tdim) {
+      const dm = valCol.tdim.match(/\((\d+)\s*,\s*(\d+)\s*,\s*(\d+)\)/);
+      if (dm) {
+        const d1 = parseInt(dm[2], 10);
+        const d2 = parseInt(dm[3], 10);
+        if (d1 > 0 && d2 > 0) {
+          nx = d1;
+          ny = d2;
+        }
+      }
+    }
+
+    if (nx < 1 || ny < 1 || values.length < 2 * nx * ny) return null;
+
+    const detectorRaw = header['DETECTOR'] !== undefined ? String(header['DETECTOR']).trim() : undefined;
+    return { xGrid, yGrid, values, nx, ny, detector: detectorRaw };
+  }
+
+  private static buildWcsWaveTable(
+    header: Record<string, string | number | boolean>,
+    raw: { xGrid: number[]; yGrid: number[]; values: number[]; nx: number; ny: number; detector?: string }
+  ): WcsWaveTable | undefined {
+    const num = (k: string, def: number): number => {
+      const v = header[k];
+      return typeof v === 'number' && Number.isFinite(v) ? v : def;
+    };
+    return {
+      nx: raw.nx,
+      ny: raw.ny,
+      xGrid: raw.xGrid,
+      yGrid: raw.yGrid,
+      values: raw.values,
+      crpix1W: num('CRPIX1W', 1),
+      crpix2W: num('CRPIX2W', 1),
+      cdelt1W: num('CDELT1W', 1),
+      cdelt2W: num('CDELT2W', 1),
+      crval1W: num('CRVAL1W', 1),
+      crval2W: num('CRVAL2W', 1),
+      waveIndex: num('PV1_3W', 1),
+      bwIndex: num('PV2_3W', 2),
+      detector: raw.detector,
+    };
+  }
+
+  /**
+   * Evaluate exact SPHEREx -TAB spectral WCS (WCS-WAVE + alternate WCS key 'W', ignoring SIP)
+   * for a 0-based cutout pixel coordinate (px0, py0).
+   */
+  public static evaluateWaveWcs(
+    table: WcsWaveTable | undefined,
+    px0: number,
+    py0: number
+  ): { wavelengthUm: number; bandwidthUm: number } | null {
+    if (!table || table.nx < 1 || table.ny < 1 || table.values.length < 2 * table.nx * table.ny) {
+      return null;
+    }
+
+    // FITS pixel coordinates are 1-based; convert linearly via alternate WCS 'W' (no SIP).
+    const p1 = px0 + 1;
+    const p2 = py0 + 1;
+    const detX = table.crval1W + table.cdelt1W * (p1 - table.crpix1W);
+    const detY = table.crval2W + table.cdelt2W * (p2 - table.crpix2W);
+
+    const findBracket = (grid: number[], val: number): { i0: number; i1: number; t: number } => {
+      const n = grid.length;
+      if (n === 1) return { i0: 0, i1: 0, t: 0 };
+      const asc = grid[n - 1] >= grid[0];
+      if ((asc && val <= grid[0]) || (!asc && val >= grid[0])) {
+        return { i0: 0, i1: 1, t: 0 };
+      }
+      if ((asc && val >= grid[n - 1]) || (!asc && val <= grid[n - 1])) {
+        return { i0: n - 2, i1: n - 1, t: 1 };
+      }
+      for (let i = 0; i < n - 1; i++) {
+        const a = grid[i];
+        const b = grid[i + 1];
+        if ((asc && val >= a && val <= b) || (!asc && val <= a && val >= b)) {
+          const span = b - a;
+          const t = Math.abs(span) > 1e-12 ? (val - a) / span : 0;
+          return { i0: i, i1: i + 1, t: Math.max(0, Math.min(1, t)) };
+        }
+      }
+      return { i0: 0, i1: Math.min(1, n - 1), t: 0 };
+    };
+
+    const bx = findBracket(table.xGrid, detX);
+    const by = findBracket(table.yGrid, detY);
+
+    const sampleComp = (compIdx: number): number => {
+      const idx00 = (by.i0 * table.nx + bx.i0) * 2 + compIdx;
+      const idx10 = (by.i0 * table.nx + bx.i1) * 2 + compIdx;
+      const idx01 = (by.i1 * table.nx + bx.i0) * 2 + compIdx;
+      const idx11 = (by.i1 * table.nx + bx.i1) * 2 + compIdx;
+
+      const v00 = table.values[idx00];
+      const v10 = table.values[idx10];
+      const v01 = table.values[idx01];
+      const v11 = table.values[idx11];
+
+      const v0 = v00 * (1 - bx.t) + v10 * bx.t;
+      const v1 = v01 * (1 - bx.t) + v11 * bx.t;
+      return v0 * (1 - by.t) + v1 * by.t;
+    };
+
+    const waveComp = Math.max(0, Math.min(1, (table.waveIndex || 1) - 1));
+    const bwComp = Math.max(0, Math.min(1, (table.bwIndex || 2) - 1));
+
+    const wavelengthUm = sampleComp(waveComp);
+    const bandwidthUm = sampleComp(bwComp);
+    if (!Number.isFinite(wavelengthUm) || wavelengthUm <= 0) return null;
+
+    return {
+      wavelengthUm: Number(wavelengthUm.toFixed(4)),
+      bandwidthUm: Number((Number.isFinite(bandwidthUm) ? Math.abs(bandwidthUm) : 0).toFixed(4)),
     };
   }
 

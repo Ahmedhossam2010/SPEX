@@ -15,18 +15,38 @@ import { FamousObject, getFamousObjectById } from './science/famousObjects';
 
 export type AppTab = 'home' | 'explore' | 'famous' | 'game' | 'cases' | 'about';
 
+function resolveCaseIdFromTargetSlug(slug?: string | null): string | null {
+  if (!slug) return null;
+  const s = slug.toLowerCase();
+  if (s.includes('wise-0855') || s.includes('0855')) return 'case-wise-0855';
+  if (s.includes('barnard')) return 'case-barnards-star';
+  if (s.includes('epsilon-indi') || s.includes('indi')) return 'case-epsilon-indi';
+  if (s.includes('rw-aur')) return 'case-rw-aur';
+  if (s.includes('r-dra')) return 'case-r-dra';
+  return null;
+}
+
 export function App() {
   const getInitialTab = (): AppTab => {
     if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
     const params = new URLSearchParams(window.location.search);
+    const hasDeepLink = Boolean(
+      params.get('target') ||
+        params.get('case') ||
+        params.get('coords') ||
+        (params.get('ra') && params.get('dec')) ||
+        params.get('band') ||
+        params.get('detector') ||
+        params.get('fov')
+    );
     const tabParam = params.get('tab');
-    if (tabParam === 'explore' || path === 'explore') return 'explore';
+    if (tabParam === 'explore' || path === 'explore' || hasDeepLink) return 'explore';
     if (tabParam === 'famous' || path === 'famous') return 'famous';
     if (tabParam === 'game' || path === 'game') return 'game';
     if (tabParam === 'cases' || path === 'cases') return 'cases';
     if (tabParam === 'about' || path === 'about') return 'about';
-    if (tabParam === 'home' || path === 'home' || path === '') return 'home';
+    if (tabParam === 'home' || path === 'home') return 'home';
     return 'home';
   };
 
@@ -67,12 +87,27 @@ export function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('mode') === 'scientist';
   });
-  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>(() => {
-    if (typeof window === 'undefined') return 'sky';
-    const params = new URLSearchParams(window.location.search);
-    return params.get('case') || params.get('ra') || params.get('target') || params.get('coords') ? 'hunt' : 'sky';
-  });
+  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>('hunt');
   const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget | null>(null);
+  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
+  const [activeDetector, setActiveDetector] = useState<string | undefined>(() => {
+    if (typeof window === 'undefined') return undefined;
+    const params = new URLSearchParams(window.location.search);
+    const raw = (params.get('band') || params.get('detector') || '').toUpperCase();
+    const m = raw.match(/D?([1-6])/);
+    return m ? `D${m[1]}` : undefined;
+  });
+  const [activeSizePix, setActiveSizePix] = useState<number>(() => {
+    if (typeof window === 'undefined') return 64;
+    const params = new URLSearchParams(window.location.search);
+    const fov = parseFloat(params.get('fov') || '');
+    if (Number.isFinite(fov) && fov > 0) {
+      const approx = Math.round((fov * 60) / 6.2);
+      const valid = [32, 64, 112, 160];
+      return valid.reduce((prev, curr) => (Math.abs(curr - approx) < Math.abs(prev - approx) ? curr : prev), 64);
+    }
+    return 64;
+  });
 
   const [failedQuery, setFailedQuery] = useState<{ caseId: string; customCoords?: { ra: number; dec: number } } | null>(null);
   const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
@@ -121,7 +156,16 @@ export function App() {
       const path = window.location.pathname.replace(/^\//, '').toLowerCase();
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab');
-      if (tabParam === 'explore' || path === 'explore') setActiveTabState('explore');
+      const hasDeepLink = Boolean(
+        params.get('target') ||
+          params.get('case') ||
+          params.get('coords') ||
+          (params.get('ra') && params.get('dec')) ||
+          params.get('band') ||
+          params.get('detector') ||
+          params.get('fov')
+      );
+      if (tabParam === 'explore' || path === 'explore' || (path === '' && hasDeepLink)) setActiveTabState('explore');
       else if (tabParam === 'famous' || path === 'famous') setActiveTabState('famous');
       else if (tabParam === 'game' || path === 'game') setActiveTabState('game');
       else if (tabParam === 'cases' || path === 'cases') setActiveTabState('cases');
@@ -154,20 +198,21 @@ export function App() {
     }
 
     let parsedCoords: { ra: number; dec: number } | null = null;
+    const targetCaseFromSlug = resolveCaseIdFromTargetSlug(targetParam);
     if (coordsParam) {
       const p = parseCoordinateInput(coordsParam);
       if (p) parsedCoords = { ra: p.ra, dec: p.dec };
     } else if (raParam && decParam) {
       const p = parseCoordinateInput(`${raParam}, ${decParam}`);
       if (p) parsedCoords = { ra: p.ra, dec: p.dec };
-    } else if (targetParam) {
+    } else if (targetParam && !targetCaseFromSlug) {
       const fam = getFamousObjectById(targetParam);
       if (fam) {
         parsedCoords = { ra: fam.ra, dec: fam.dec };
       }
     }
 
-    // Fetch curated real cases on startup
+    // Fetch curated real cases on startup and preload requested target or WISE 0855
     fetch('/api/spherex/cases')
       .then((r) => {
         if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) {
@@ -178,11 +223,14 @@ export function App() {
       .then((data) => {
         setCases(data);
         if (parsedCoords) {
-          loadCase(data[0]?.id || 'case-nep-var-01', parsedCoords, { sizePix: sizePixParam, epochPair });
+          loadCase(targetCaseFromSlug || data[0]?.id || 'case-wise-0855', parsedCoords, { sizePix: sizePixParam, epochPair });
         } else if (caseParam && data.some((c: any) => c.id === caseParam)) {
           loadCase(caseParam, undefined, { sizePix: sizePixParam, epochPair });
+        } else if (targetCaseFromSlug && data.some((c: any) => c.id === targetCaseFromSlug)) {
+          loadCase(targetCaseFromSlug, undefined, { sizePix: sizePixParam, epochPair });
         } else if (data && data.length > 0) {
-          loadCase(data[0].id, undefined, { sizePix: sizePixParam, epochPair });
+          const wiseDefault = data.find((c: any) => c.id === 'case-wise-0855')?.id || data[0].id;
+          loadCase(wiseDefault, undefined, { sizePix: sizePixParam, epochPair });
         }
       })
       .catch((err) => {
@@ -196,6 +244,8 @@ export function App() {
     customCoords?: { ra: number; dec: number },
     options?: { sizePix?: number; epochPair?: string; mode?: string; detector?: string }
   ) => {
+    if (!customCoords && caseId) setActiveCaseId(caseId);
+    else if (customCoords) setActiveCaseId(null);
     setIsLoading(true);
     setErrorMsg(null);
     setFailedQuery(null);
@@ -279,6 +329,7 @@ export function App() {
 
   const handleStartExplore = (caseId?: string) => {
     setFallbackQuery(null);
+    setExploreScreen('hunt');
     if (caseId) {
       loadCase(caseId);
     }
@@ -287,6 +338,8 @@ export function App() {
 
   const handleSelectCase = (caseId: string, options?: { sizePix?: number; epochPair?: string }) => {
     setFallbackQuery(null);
+    if (options?.sizePix) setActiveSizePix(options.sizePix);
+    setExploreScreen('hunt');
     loadCase(caseId, undefined, options);
     setActiveTab('explore');
   };
@@ -349,7 +402,17 @@ export function App() {
   };
 
   const handleSearchTarget = (ra: number, dec: number, sizePix?: number) => {
-    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec }, { sizePix });
+    if (sizePix) setActiveSizePix(sizePix);
+    loadCase('', { ra, dec }, { sizePix });
+  };
+
+  const handleDetectorChange = (det: string) => {
+    setActiveDetector(det);
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      params.set('band', det);
+      window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+    }
   };
 
   const handleToggleLanguage = () => {
@@ -484,6 +547,10 @@ export function App() {
             isScientistMode={isScientistMode}
             onToggleScientistMode={handleToggleScientistMode}
             selectedTarget={selectedTarget}
+            initialDetector={activeDetector}
+            onDetectorChange={handleDetectorChange}
+            activeSizePix={activeSizePix}
+            activeCaseId={activeCaseId}
           />
         )}
 
@@ -512,6 +579,10 @@ export function App() {
 
         {activeTab === 'about' && <AboutView language={language} />}
       </main>
+
+      <footer className="w-full border-t border-slate-200 dark:border-white/[0.08] bg-white/80 dark:bg-[#05070C] px-4 py-3 text-center text-[11px] font-mono text-slate-500 dark:text-slate-400">
+        Data: NASA/IPAC IRSA SPHEREx, ESA Gaia DR3, NASA AllWISE, CDS SIMBAD &amp; Aladin Lite. NASA does not endorse this project.
+      </footer>
 
       {/* Global SPEX Space Dictionary Modal */}
       <SpexSpaceDictionaryModal

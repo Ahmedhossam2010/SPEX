@@ -38,8 +38,15 @@ export async function runDataDropCheck(): Promise<{
   allPassed: boolean;
   results: TargetCheckResult[];
 }> {
+  const irsaHost = process.env.SPHEREX_IRSA_HOST || 'https://irsa.ipac.caltech.edu';
+  const artifactTable = process.env.SPHEREX_ARTIFACT_TABLE || 'spherex.artifact';
+  const planeTable = process.env.SPHEREX_PLANE_TABLE || 'spherex.plane';
+  const releasePref = process.env.SPHEREX_RELEASE_PREFERENCE || 'dr1,qr3,qr2';
+
   console.log('===========================================================');
-  console.log('  SPHEREx Official Data Drop Readiness Check (Nov 13 Drop)  ');
+  console.log('  SPHEREx Archive Data Drop Readiness Check (B12)         ');
+  console.log(`  IRSA: ${irsaHost} | ${artifactTable} JOIN ${planeTable}`);
+  console.log(`  Release preference: ${releasePref}`);
   console.log('===========================================================\n');
 
   const cacheDir = path.join(process.cwd(), 'data', 'spherex_cache');

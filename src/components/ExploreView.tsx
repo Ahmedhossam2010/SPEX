@@ -17,6 +17,12 @@ import {
   CheckCircle2,
   AlertTriangle,
   Info,
+  Search,
+  Film,
+  Play,
+  ChevronRight,
+  ChevronDown,
+  RotateCcw,
 } from 'lucide-react';
 import {
   CandidateDetection,
@@ -24,6 +30,7 @@ import {
   SPHERExObservation,
   ChallengeTarget,
 } from '../science/types';
+import { parseCoordinateInput } from '../science/challengeTargets';
 import { ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { AstronomicalSkyViewport } from './Explore/AstronomicalSkyViewport';
 import { FourLensesDock } from './Explore/FourLensesDock';
@@ -31,6 +38,9 @@ import { ScientistInvestigationPanel } from './Explore/ScientistInvestigationPan
 import { SpexCompanion } from './Explore/SpexCompanion';
 import { SpexGuidedTour } from './Explore/SpexGuidedTour';
 import { SpexUiHighlight } from './Explore/SpexUiHighlight';
+import { SpexPortrait } from '../spex/SpexPortrait';
+import { FramePlayer, PlayerRenderMode, TimeSeriesResponse } from './TimeLens/FramePlayer';
+import { AladinLitePanel } from './Explore/AladinLitePanel';
 import { PostcardModal } from './TimeLens/PostcardModal';
 import { ProvenanceModal } from './ProvenanceModal';
 import { DataReleaseModal } from './DataReleaseModal';
@@ -42,6 +52,54 @@ import { ObservationItem, ImageMathMode } from './Explore/ObservationTimelineSel
 import { LensMode } from '../design/components/LensButton';
 import { Language, translations } from '../utils/translations';
 import { BookOpen, Award } from 'lucide-react';
+
+const BENCHMARK_PRESETS = [
+  { caseId: 'case-wise-0855', targetParam: 'wise-0855', label: 'WISE 0855', sub: '8″/yr Y-Dwarf', ra: 133.81890825, dec: -7.247048 },
+  { caseId: 'case-barnards-star', targetParam: 'barnards-star', label: "Barnard's Star", sub: '10.4″/yr M4V', ra: 269.45207695, dec: 4.69336497 },
+  { caseId: 'case-epsilon-indi', targetParam: 'epsilon-indi', label: 'Epsilon Indi', sub: '4.7″/yr T1+T6', ra: 331.04414659, dec: -56.7828442 },
+  { caseId: 'case-rw-aur', targetParam: 'rw-aurigae', label: 'RW Aurigae', sub: 'YSO Accretion', ra: 76.95652603, dec: 30.40143817 },
+  { caseId: 'case-r-dra', targetParam: 'r-draconis', label: 'R Draconis', sub: 'Mira Giant', ra: 248.16761083, dec: 66.75497942 },
+] as const;
+
+const GUIDED_DEMO_STEPS: Array<{
+  title: string;
+  caption: string;
+  action: {
+    play?: boolean;
+    blinkFirstLast?: boolean;
+    renderMode?: PlayerRenderMode;
+    detector?: string;
+    zoom?: number;
+    showGrid?: boolean;
+    showMotionTrail?: boolean;
+  };
+}> = [
+  {
+    title: '1. Multi-Epoch Flipbook',
+    caption: 'Streaming real NASA IRSA SPHEREx exposures spanning multiple months for WISE 0855 (Y-dwarf brown dwarf, 8.15″/yr).',
+    action: { play: true, blinkFirstLast: false, renderMode: 'raw', zoom: 2, showMotionTrail: true, showGrid: false },
+  },
+  {
+    title: '2. Blink Ep 1 ↔ Last + Crosshair',
+    caption: 'Blinking between Epoch 1 and the latest pass at 4× zoom highlights sub-arcsec shift relative to the fixed Epoch-1 amber crosshair.',
+    action: { play: true, blinkFirstLast: true, renderMode: 'raw', zoom: 4, showMotionTrail: true },
+  },
+  {
+    title: '3. Subpixel Centroid & Trail',
+    caption: 'SPHEREx pixels are 6.2″ wide (~1.3 px/yr shift). The measured centroid plot tracks RA/Dec drift alongside the predicted Spitzer/HST PM curve.',
+    action: { play: false, blinkFirstLast: false, renderMode: 'raw', zoom: 4, showGrid: true, showMotionTrail: true },
+  },
+  {
+    title: '4. Difference Image (Diff vs Ep 1)',
+    caption: 'Subtracting Epoch 1 cancels stationary field stars and exposes subtle proper-motion dipoles and infrared brightness variations.',
+    action: { play: false, blinkFirstLast: false, renderMode: 'diff_ref', zoom: 2, showGrid: false },
+  },
+  {
+    title: '5. Detector Bands D1–D6 & SED',
+    caption: 'Switch across SPHEREx 0.75–5.0 µm detector arrays or open the 102-band Spectrum Explorer to inspect cold CH4/H2O absorption.',
+    action: { play: false, blinkFirstLast: false, renderMode: 'raw', detector: 'D3', zoom: 2 },
+  },
+];
 
 export interface ExploreViewProps {
   currentResult: InvestigationResult | null;
@@ -56,6 +114,10 @@ export interface ExploreViewProps {
   isScientistMode?: boolean;
   onToggleScientistMode?: () => void;
   selectedTarget?: ChallengeTarget | null;
+  initialDetector?: string;
+  onDetectorChange?: (detector: string) => void;
+  activeSizePix?: number;
+  activeCaseId?: string | null;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -71,9 +133,41 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   isScientistMode = false,
   onToggleScientistMode,
   selectedTarget,
+  initialDetector,
+  onDetectorChange,
+  activeSizePix,
+  activeCaseId,
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];
+
+  // Primary view mode: 'flipbook' (default WiseView-style P0 player + Aladin) vs 'curtain' (4-Lens Curtain Lab)
+  const [viewMode, setViewMode] = useState<'flipbook' | 'curtain'>('flipbook');
+  const [coordInput, setCoordInput] = useState<string>('');
+  const [coordError, setCoordError] = useState<string | null>(null);
+  const [guidedDemoStep, setGuidedDemoStep] = useState<number | null>(null);
+  const [showCompanion, setShowCompanion] = useState<boolean>(true);
+  const [aladinSlotOpen, setAladinSlotOpen] = useState<boolean>(true);
+  const [latestTimeSeriesMeta, setLatestTimeSeriesMeta] = useState<TimeSeriesResponse | null>(null);
+  const [pendingTarget, setPendingTarget] = useState<{ ra: number; dec: number; caseId?: string } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const p = new URLSearchParams(window.location.search);
+    const tSlug = (p.get('target') || p.get('case') || '').toLowerCase();
+    const matched = BENCHMARK_PRESETS.find(
+      (b) => b.caseId === tSlug || b.targetParam === tSlug || (tSlug && b.caseId.includes(tSlug))
+    );
+    if (matched) return { ra: matched.ra, dec: matched.dec, caseId: matched.caseId };
+    const raVal = parseFloat(p.get('ra') || '');
+    const decVal = parseFloat(p.get('dec') || '');
+    if (Number.isFinite(raVal) && Number.isFinite(decVal)) return { ra: raVal, dec: decVal };
+    return null;
+  });
+
+  useEffect(() => {
+    if (currentResult) {
+      setPendingTarget(null);
+    }
+  }, [currentResult]);
 
   // --- CANONICAL SHARED ASTRONOMICAL VIEWPORT STATE ---
   // Frame Selection: 0 = Epoch 1 (Visit 1), 1 = Epoch 2 (Visit 2), 2 = Difference Map
@@ -109,21 +203,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   // Canonical HTML5 Canvas Ref (captured for Postcard export and Curtain divider)
   const [canvasInstance, setCanvasInstance] = useState<HTMLCanvasElement | null>(null);
 
-  // Guided Onboarding Tour & UI Pointing Beacon State
+  // Guided Onboarding Tour & UI Pointing Beacon State (launched on demand only)
   const [showTour, setShowTour] = useState<boolean>(false);
   const [highlightedTargetId, setHighlightedTargetId] = useState<string | null>(null);
-
-  // Auto-launch guided tour for first-time visitors (Phase 6)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const tourDone = localStorage.getItem('spex_tour_completed');
-    if (!tourDone) {
-      const timer = setTimeout(() => {
-        setShowTour(true);
-      }, 700);
-      return () => clearTimeout(timer);
-    }
-  }, []);
 
   // Modals
   const [showPostcard, setShowPostcard] = useState<boolean>(false);
@@ -159,32 +241,47 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     };
   }, []);
 
-  // Fetch real timeseries observations for intelligent baseline comparison
-  useEffect(() => {
-    if (!currentResult?.targetCoords) return;
-    const { ra, dec } = currentResult.targetCoords;
-    const caseId = currentResult.provenance?.caseId || '';
-    const sizePix = currentResult.epoch1?.width || 64;
+  const handlePlayerDataLoaded = useCallback((tsData: TimeSeriesResponse) => {
+    setLatestTimeSeriesMeta(tsData);
+    if (tsData?.frames && Array.isArray(tsData.frames) && tsData.frames.length > 0) {
+      setTimeseriesFrames(tsData.frames);
+      setEpochAIdx(0);
+      setEpochBIdx(Math.min(1, tsData.frames.length - 1));
+    }
+    if (tsData?.detectorStacks && typeof tsData.detectorStacks === 'object') {
+      setDetectorStacks(tsData.detectorStacks as any);
+    }
+    if (tsData?.spectrumAtCenter && Array.isArray(tsData.spectrumAtCenter)) {
+      setExtractedSpectrum(tsData.spectrumAtCenter);
+    }
+  }, []);
 
-    fetch(`/api/spherex/timeseries?ra=${ra}&dec=${dec}&sizePix=${sizePix}&caseId=${caseId}`)
+  // Only fetch timeseries from ExploreView when Curtain mode is active and FramePlayer hasn't already loaded it
+  useEffect(() => {
+    if (viewMode !== 'curtain' || !currentResult?.targetCoords) return;
+    const reqRa = currentResult.targetCoordsCatalog?.ra ?? currentResult.targetCoords.ra;
+    const reqDec = currentResult.targetCoordsCatalog?.dec ?? currentResult.targetCoords.dec;
+    const caseId = currentResult.provenance?.caseId || '';
+    const sizePix = activeSizePix || currentResult.epoch1?.width || 64;
+
+    fetch(`/api/spherex/timeseries?ra=${reqRa}&dec=${reqDec}&sizePix=${sizePix}&caseId=${encodeURIComponent(caseId)}`)
       .then((r) => (r.ok && r.headers.get('content-type')?.includes('application/json') ? r.json() : null))
       .then((data) => {
-        if (data?.frames && Array.isArray(data.frames) && data.frames.length > 0) {
-          setTimeseriesFrames(data.frames);
-          setEpochAIdx(0);
-          setEpochBIdx(Math.min(1, data.frames.length - 1));
-        }
-        if (data?.detectorStacks && typeof data.detectorStacks === 'object') {
-          setDetectorStacks(data.detectorStacks);
-        }
-        if (data?.spectrum && Array.isArray(data.spectrum)) {
-          setExtractedSpectrum(data.spectrum);
-        }
+        if (data) handlePlayerDataLoaded(data);
       })
       .catch((err) => {
         console.warn('Timeseries fetch notice:', err);
       });
-  }, [currentResult?.targetCoords?.ra, currentResult?.targetCoords?.dec, currentResult?.provenance?.caseId]);
+  }, [
+    viewMode,
+    currentResult?.targetCoords?.ra,
+    currentResult?.targetCoords?.dec,
+    currentResult?.targetCoordsCatalog?.ra,
+    currentResult?.targetCoordsCatalog?.dec,
+    currentResult?.provenance?.caseId,
+    activeSizePix,
+    handlePlayerDataLoaded,
+  ]);
 
   // Auto-play interval for Time sequence blinker
   useEffect(() => {
@@ -329,17 +426,69 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     ];
   }, []);
 
+  const currentSizePix = activeSizePix || obs1?.width || 64;
+  const activePresetId = pendingTarget?.caseId ?? activeCaseId ?? currentResult?.provenance?.caseId ?? 'case-wise-0855';
+  const activePresetCoords = BENCHMARK_PRESETS.find((p) => p.caseId === activePresetId);
+  const queryRa =
+    pendingTarget?.ra ??
+    (activeCaseId && activeCaseId !== currentResult?.provenance?.caseId ? activePresetCoords?.ra : undefined) ??
+    currentResult?.targetCoordsCatalog?.ra ??
+    currentResult?.targetCoords?.ra ??
+    selectedTarget?.ra ??
+    activePresetCoords?.ra ??
+    133.795132;
+  const queryDec =
+    pendingTarget?.dec ??
+    (activeCaseId && activeCaseId !== currentResult?.provenance?.caseId ? activePresetCoords?.dec : undefined) ??
+    currentResult?.targetCoordsCatalog?.dec ??
+    currentResult?.targetCoords?.dec ??
+    selectedTarget?.dec ??
+    activePresetCoords?.dec ??
+    -7.245146;
+
+  const handleCoordinateSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseCoordinateInput(coordInput);
+    if (!parsed) {
+      setCoordError(isRtl ? 'صيغة غير صالحة (مثال: 133.795, -7.245 أو 08h55m10.8s -07d14m42.5s)' : 'Enter decimal (133.795, -7.245) or sexagesimal (08h55m10.8s -07d14m42.5s)');
+      return;
+    }
+    setCoordError(null);
+    setGuidedDemoStep(null);
+    setPendingTarget({ ra: parsed.ra, dec: parsed.dec });
+    onSearchTarget(parsed.ra, parsed.dec, currentSizePix);
+  };
+
+  const handleStartGuidedDemo = () => {
+    setViewMode('flipbook');
+    setGuidedDemoStep(0);
+    if (activePresetId !== 'case-wise-0855') {
+      const wise = BENCHMARK_PRESETS[0];
+      setPendingTarget({ ra: wise.ra, dec: wise.dec, caseId: wise.caseId });
+      onSelectCase('case-wise-0855', { sizePix: 64 });
+    }
+  };
+
+  const handleSelectFovSize = (sizePix: number) => {
+    const matchedPreset = BENCHMARK_PRESETS.find((p) => p.caseId === activePresetId);
+    if (matchedPreset) {
+      onSelectCase(matchedPreset.caseId, { sizePix });
+    } else if (currentResult?.targetCoords) {
+      onSearchTarget(queryRa, queryDec, sizePix);
+    }
+  };
+
   return (
     <div
-      className={`relative w-full h-[calc(100vh-64px)] flex flex-col bg-[#02040A] text-slate-100 overflow-hidden select-none ${
-        isRtl ? 'font-cairo' : 'font-sans'
-      }`}
+      className={`relative w-full min-h-[calc(100vh-64px)] flex flex-col bg-[#02040A] text-slate-100 select-none ${
+        viewMode === 'curtain' ? 'h-[calc(100vh-64px)] overflow-hidden' : ''
+      } ${isRtl ? 'font-cairo' : 'font-sans'}`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       {/* ==================================================================== */}
-      {/* PART 3.A: SMALL ELEGANT FLOATING TOP BAR */}
+      {/* PART 3.A: COMPACT OBSERVATORY HEADER & CONTROLS */}
       {/* ==================================================================== */}
-      <header className="relative z-30 shrink-0 h-13 sm:h-14 bg-[#0C0E14]/90 backdrop-blur-xl border-b border-white/10 px-3 sm:px-5 flex items-center justify-between gap-2 sm:gap-3 shadow-md">
+      <header className="relative z-30 shrink-0 min-h-13 bg-[#0C0E14]/95 backdrop-blur-xl border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3 shadow-md">
         {/* Left: Back to Sky & Target Name */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {onBackToSky && (
@@ -347,7 +496,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               type="button"
               onClick={onBackToSky}
               className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer text-xs font-mono"
-              title={isRtl ? 'العودة إلى القبة السماوية' : 'Return to Sky'}
+              title={isRtl ? 'العودة إلى القبة السماوية' : 'Return to Sky Sphere'}
             >
               <ArrowLeft className={`w-3.5 h-3.5 transition-transform ${isRtl ? 'rotate-180 group-hover:translate-x-0.5' : 'group-hover:-translate-x-0.5'}`} />
               <span className="hidden sm:inline font-medium">{isRtl ? 'القبة' : 'Sky'}</span>
@@ -360,40 +509,10 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </h1>
             {currentResult?.targetCoords && (
               <span className="hidden md:inline font-mono text-[11px] text-slate-400">
-                ({currentResult.targetCoords.ra.toFixed(4)}°, {currentResult.targetCoords.dec >= 0 ? '+' : ''}{currentResult.targetCoords.dec.toFixed(4)}°)
+                ({queryRa.toFixed(4)}°, {queryDec >= 0 ? '+' : ''}{queryDec.toFixed(4)}°)
               </span>
             )}
           </div>
-
-          {/* FOV Presets selector (Phase 1 & 4) */}
-          {currentResult?.targetCoords && (
-            <div className="hidden lg:flex items-center gap-1 px-1.5 py-0.5 rounded-xl bg-black/40 border border-white/10 text-xs font-mono ml-1">
-              <span className="text-[10px] text-slate-400 px-1 font-semibold uppercase">FOV</span>
-              {[
-                { label: "3.3'", sizePix: 32 },
-                { label: "6.6'", sizePix: 64 },
-                { label: "11.6'", sizePix: 112 },
-                { label: "16.5'", sizePix: 160 },
-              ].map((fov) => (
-                <button
-                  key={fov.sizePix}
-                  type="button"
-                  onClick={() => {
-                    if (currentResult?.targetCoords) {
-                      onSearchTarget(currentResult.targetCoords.ra, currentResult.targetCoords.dec, fov.sizePix);
-                    }
-                  }}
-                  className={`px-2 py-0.5 rounded-lg transition cursor-pointer text-xs ${
-                    (obs1?.width || 64) === fov.sizePix
-                      ? 'bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {fov.label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
@@ -437,7 +556,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           {/* Data Authenticity Indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'Authentic QR2'}</span>
+            <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'NASA IRSA Archive'}</span>
           </div>
 
           {/* Mode Switch: Explorer vs Scientist */}
@@ -468,6 +587,22 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </div>
           )}
 
+          {/* Collapse/expand SPEX AI Chat Companion on demand */}
+          <button
+            type="button"
+            onClick={() => setShowCompanion((prev) => !prev)}
+            aria-expanded={showCompanion}
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border transition cursor-pointer text-xs font-mono font-semibold ${
+              showCompanion
+                ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
+                : 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-300'
+            }`}
+            title={isRtl ? 'إظهار/إخفاء مساعد سبيكس' : 'Show/Collapse SPEX Companion'}
+          >
+            <SpexPortrait mood="greeting" size={18} />
+            <span className="hidden lg:inline">SPEX</span>
+          </button>
+
           {/* Discovery Postcard Share Action */}
           <button
             type="button"
@@ -483,99 +618,359 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </header>
 
       {/* ==================================================================== */}
-      {/* PART 3.B: MAIN SKY VIEWPORT AS TRUE FULL HERO & FLOATING CONTROLS */}
+      {/* BENCHMARK PRESET BAR & RA/DEC SEARCH */}
       {/* ==================================================================== */}
-      <div className="relative flex-1 w-full min-h-0 flex flex-col lg:flex-row overflow-hidden">
-        {/* Main Sky Telescope Viewport (Maximized to occupy full area) */}
-        <main className="relative flex-1 h-full min-h-0 w-full overflow-hidden flex flex-col bg-black">
-          <div className="relative flex-1 w-full h-full min-h-0 overflow-hidden">
-            <AstronomicalSkyViewport
-              data={currentPixelData}
-              width={obs1?.width || 64}
-              height={obs1?.height || 64}
-              isDifference={isCurrentDifference}
-              stretch={stretch}
-              colormap={effectiveColormap}
-              displayMode={displayMode}
-              contrastFactor={contrastFactor}
-              zoom={zoom}
-              pan={pan}
-              onZoomChange={setZoom}
-              onPanChange={setPan}
-              onCanvasReady={setCanvasInstance}
-              wcs={obs1?.wcs}
-              activeLens={activeLens}
-              isCurtainActive={isCurtainActive}
-              epoch1Data={obs1?.flux}
-              epoch2Data={obs2?.flux}
-              epoch1Label={isRtl ? 'الرصدة 1 (قبل)' : 'Visit 1 (Before)'}
-              epoch2Label={isRtl ? 'الرصدة 2 (بعد)' : 'Visit 2 (After)'}
-              dqFlags={obs1?.flags || obs2?.flags}
-              selectedFlagPixel={selectedFlagPixel}
-              onSelectFlagPixel={setSelectedFlagPixel}
-              candidates={currentResult?.candidates}
-              selectedCandidate={selectedCandidate}
-              onSelectCandidate={setSelectedCandidate}
-              tappedSpot={tappedSpot}
-              onTapSpot={setTappedSpot}
-              language={language}
-              isLoading={isLoading}
-              targetName={targetDisplayName}
-              fovArcmin={currentResult?.fovArcmin || 6.6}
-              sourceClassification={currentResult?.sourceClassification}
-              availabilityStatus={currentResult?.availabilityStatus}
-              targetCoords={currentResult?.targetCoords}
-              onSelectBenchmark={(caseId) => onSelectCase(caseId)}
-              className="w-full h-full"
-            />
+      <div
+        data-tour="explore_targets"
+        className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2"
+      >
+        {/* 5 Official Benchmark Target Presets */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 mr-1">
+            {isRtl ? 'الأهداف المرجعية:' : 'Targets:'}
+          </span>
+          {BENCHMARK_PRESETS.map((preset) => {
+            const isActive = activePresetId === preset.caseId;
+            return (
+              <button
+                key={preset.caseId}
+                type="button"
+                onClick={() => {
+                  setGuidedDemoStep(null);
+                  setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
+                  onSelectCase(preset.caseId, { sizePix: currentSizePix });
+                }}
+                className={`px-2.5 py-1 rounded-xl border text-left transition cursor-pointer flex items-center gap-1.5 ${
+                  isActive
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-xs'
+                    : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-white'
+                }`}
+              >
+                <span className="text-xs font-semibold">{preset.label}</span>
+                <span className="hidden xl:inline text-[10px] font-mono text-slate-400">{preset.sub}</span>
+              </button>
+            );
+          })}
+        </div>
 
-            {/* FLOATING 4-LENS DOCK & CONTEXTUAL DRAWER (Overlaid at bottom of telescope viewport) */}
-            <div className="absolute bottom-3 sm:bottom-4 inset-x-0 mx-auto z-20 pointer-events-none max-w-3xl px-2 sm:px-4">
-              <FourLensesDock
-                activeLens={activeLens}
-                onSelectLens={setActiveLens}
-                currentFrameIdx={currentFrameIdx}
-                totalFrames={3}
-                onSelectFrameIdx={setCurrentFrameIdx}
-                isPlaying={isPlaying}
-                onTogglePlay={() => setIsPlaying(!isPlaying)}
-                isCurtainActive={isCurtainActive}
-                onToggleCurtain={() => setIsCurtainActive(!isCurtainActive)}
-                epoch1Date={obs1?.metadata?.date_obs}
-                epoch2Date={obs2?.metadata?.date_obs}
-                cadenceSeconds={currentResult?.compatibility?.startToStartCadenceSec ?? 128.9}
-                observations={timelineObservations}
-                epochAIdx={epochAIdx}
-                epochBIdx={epochBIdx}
-                onSelectEpochA={(idx) => {
-                  setEpochAIdx(idx);
-                  setCurrentFrameIdx(0);
-                }}
-                onSelectEpochB={(idx) => {
-                  setEpochBIdx(idx);
-                  setCurrentFrameIdx(1);
-                }}
-                mathMode={mathMode}
-                onChangeMathMode={setMathMode}
-                targetName={targetDisplayName}
-                activeBandIdx={activeBandIdx}
-                onSelectBandIdx={setActiveBandIdx}
-                availableBands={availableBands}
-                onOpenSpectrumModal={() => setShowSpectralExplorer(true)}
-                onOpenDetectorStackModal={() => setShowDetectorStacking(true)}
-                isDoubtOverlayActive={isDoubtOverlayActive}
-                onToggleDoubtOverlay={() => setIsDoubtOverlayActive(!isDoubtOverlayActive)}
-                selectedFlagPixel={selectedFlagPixel}
-                onClearFlagPixel={() => setSelectedFlagPixel(null)}
-                isNeighborsOverlayActive={isNeighborsOverlayActive}
-                onToggleNeighborsOverlay={() => setIsNeighborsOverlayActive(!isNeighborsOverlayActive)}
-                selectedCandidate={selectedCandidate}
-                language={language}
-                className="pointer-events-auto"
+        {/* Right Controls: RA/Dec Search, Mode Tabs, 60s Guided Demo */}
+        <div className="flex flex-wrap items-center gap-2">
+          <form onSubmit={handleCoordinateSubmit} className="flex items-center gap-1">
+            <div className="relative flex items-center">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+              <input
+                type="text"
+                value={coordInput}
+                onChange={(e) => setCoordInput(e.target.value)}
+                placeholder="RA, Dec (e.g. 133.795, -7.245)"
+                aria-label="Enter sky coordinates RA and Dec"
+                className="w-48 sm:w-56 pl-8 pr-2 py-1 rounded-xl bg-black/60 border border-white/15 focus:border-cyan-400 outline-none text-xs font-mono text-slate-100 placeholder:text-slate-500"
               />
             </div>
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs transition cursor-pointer"
+            >
+              Go
+            </button>
+          </form>
+
+          {/* View Mode: Flipbook vs Curtain Lab */}
+          <div className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15 text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setViewMode('flipbook')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                viewMode === 'flipbook'
+                  ? 'bg-cyan-500 text-slate-950 font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Film className="w-3 h-3" />
+              <span>Flipbook</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('curtain')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+                viewMode === 'curtain'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Layers className="w-3 h-3" />
+              <span>Curtain Lab</span>
+            </button>
           </div>
-        </main>
+
+          {/* 60-Second Guided Demo Button */}
+          <button
+            type="button"
+            onClick={handleStartGuidedDemo}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-mono font-bold transition cursor-pointer"
+          >
+            <Play className="w-3 h-3 fill-current" />
+            <span>60s Demo</span>
+          </button>
+        </div>
+      </div>
+
+      {coordError && (
+        <div className="px-4 py-1.5 bg-rose-950/80 border-b border-rose-500/30 text-xs font-mono text-rose-200 flex items-center justify-between">
+          <span>{coordError}</span>
+          <button type="button" onClick={() => setCoordError(null)} className="underline cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Interactive 60s Guided Demo Stepper Banner */}
+      {guidedDemoStep !== null && (
+        <div className="px-3 sm:px-5 py-2.5 bg-emerald-950/60 border-b border-emerald-500/30 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-start sm:items-center gap-2.5 max-w-3xl">
+            <span className="px-2 py-0.5 rounded-md bg-emerald-500 text-slate-950 font-mono font-bold shrink-0">
+              {guidedDemoStep + 1}/{GUIDED_DEMO_STEPS.length}
+            </span>
+            <div>
+              <span className="font-bold text-emerald-300 mr-2">
+                {GUIDED_DEMO_STEPS[guidedDemoStep].title}:
+              </span>
+              <span className="text-slate-200">{GUIDED_DEMO_STEPS[guidedDemoStep].caption}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 font-mono shrink-0">
+            <button
+              type="button"
+              onClick={() => setGuidedDemoStep((s) => (s !== null ? Math.max(0, s - 1) : 0))}
+              disabled={guidedDemoStep === 0}
+              className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 text-slate-200 cursor-pointer"
+            >
+              Prev
+            </button>
+            {guidedDemoStep < GUIDED_DEMO_STEPS.length - 1 ? (
+              <button
+                type="button"
+                onClick={() => setGuidedDemoStep((s) => (s !== null ? s + 1 : 0))}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold cursor-pointer"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSpectralExplorer(true)}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
+              >
+                <span>Open 102-Band SED</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setGuidedDemoStep(null)}
+              className="px-2 py-1 rounded-lg text-slate-400 hover:text-white underline cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* PART 3.B: PRIMARY WORKSPACE (FLIPBOOK + ALADIN OR CURTAIN LAB) */}
+      {/* ==================================================================== */}
+      <div className={`relative flex-1 w-full flex flex-col lg:flex-row ${viewMode === 'curtain' ? 'min-h-0 overflow-hidden' : ''}`}>
+        {viewMode === 'flipbook' ? (
+          <main className="flex-1 w-full max-w-[1600px] mx-auto p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+            {/* Primary Time-Series Flipbook Player (8 cols on XL) */}
+            <div className="xl:col-span-8 min-w-0">
+              <FramePlayer
+                ra={queryRa}
+                dec={queryDec}
+                caseId={activePresetId || undefined}
+                sizePix={currentSizePix}
+                initialDetector={initialDetector}
+                language={language}
+                onDetectorChange={onDetectorChange}
+                onSelectFovSize={handleSelectFovSize}
+                onDataLoaded={handlePlayerDataLoaded}
+                onOpenSpectrum={() => setShowSpectralExplorer(true)}
+                onOpenPostcard={() => setShowPostcard(true)}
+                onOpenProvenance={currentResult?.provenance ? () => setShowProvenance(true) : undefined}
+                onOpenDetectorStacking={() => setShowDetectorStacking(true)}
+                guidedStepAction={guidedDemoStep !== null ? GUIDED_DEMO_STEPS[guidedDemoStep].action : null}
+              />
+            </div>
+
+            {/* Secondary Sky Context & Why This Matters Column (4 cols on XL) */}
+            <div className="xl:col-span-4 flex flex-col gap-4 min-w-0">
+              {/* Reserved Collapsible Slot: Aladin Sky Context */}
+              <div className="obs-glass rounded-2xl border border-white/10 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setAladinSlotOpen((v) => !v)}
+                  aria-expanded={aladinSlotOpen}
+                  className="w-full px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs font-mono font-bold text-slate-200 hover:bg-white/5 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    <Globe className="w-3.5 h-3.5 text-[#00D3F3]" />
+                    <span>{t.slotAladin}</span>
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-400 transition-transform ${aladinSlotOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {aladinSlotOpen && (
+                  <div className="border-t border-white/10">
+                    {Number.isFinite(queryRa) && Number.isFinite(queryDec) ? (
+                      <AladinLitePanel
+                        ra={queryRa}
+                        dec={queryDec}
+                        fovArcmin={latestTimeSeriesMeta?.fovArcmin || currentResult?.fovArcmin || 6.6}
+                        targetName={targetDisplayName}
+                        className="border-0 rounded-none"
+                      />
+                    ) : (
+                      <div className="p-4 text-xs font-mono text-slate-400">{t.emptyAladin}</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Compact "Why This Matters" Citizen-Science & Resolution Context */}
+              <div className="obs-glass rounded-2xl p-4 border border-white/10 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-mono font-bold text-amber-300 uppercase tracking-wider text-[11px]">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Why This Matters · SPHEREx Astrometry</span>
+                  </div>
+                  {currentResult?.provenance && (
+                    <button
+                      type="button"
+                      onClick={() => setShowProvenance(true)}
+                      className="text-[11px] font-mono text-cyan-400 hover:underline cursor-pointer"
+                    >
+                      Provenance
+                    </button>
+                  )}
+                </div>
+                <p className="text-slate-300 leading-relaxed">
+                  SPHEREx captures the entire infrared sky every 6 months at <span className="font-mono text-cyan-300">6.2″/pixel</span> across 102 spectral channels (0.75–5.0 µm). Extreme solar-neighborhood brown dwarfs like <span className="text-amber-300 font-semibold">WISE 0855</span> (~8.1″/yr) or <span className="text-amber-300 font-semibold">Barnard&apos;s Star</span> (~10.4″/yr) shift only <span className="font-mono">~1.3–1.7 px/yr</span>—sub-pixel between single passes.
+                </p>
+                <p className="text-slate-400 leading-relaxed">
+                  Our subpixel centroid tracker, Epoch-1 amber crosshair, blinking comparison, and difference mode reveal proper motion, YSO outbursts (RW Aur), and Mira pulsations (R Dra) directly from live NASA IRSA Level-2B FITS cutouts—bridging citizen science (Backyard Worlds) with spectro-photometric discovery.
+                </p>
+                <div className="pt-1 flex flex-wrap gap-2 font-mono text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => setShowDetectorStacking(true)}
+                    className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 cursor-pointer"
+                  >
+                    Detector Co-add Stacks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSpectralExplorer(true)}
+                    className="px-2.5 py-1 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 cursor-pointer"
+                  >
+                    102-Band SED
+                  </button>
+                </div>
+              </div>
+            </div>
+          </main>
+        ) : (
+          /* Curtain & 4-Lens Inspection Lab (preserved 100%) */
+          <main className="relative flex-1 h-full min-h-0 w-full overflow-hidden flex flex-col bg-black">
+            <div className="relative flex-1 w-full h-full min-h-0 overflow-hidden">
+              <AstronomicalSkyViewport
+                data={currentPixelData}
+                width={obs1?.width || 64}
+                height={obs1?.height || 64}
+                isDifference={isCurrentDifference}
+                stretch={stretch}
+                colormap={effectiveColormap}
+                displayMode={displayMode}
+                contrastFactor={contrastFactor}
+                zoom={zoom}
+                pan={pan}
+                onZoomChange={setZoom}
+                onPanChange={setPan}
+                onCanvasReady={setCanvasInstance}
+                wcs={obs1?.wcs}
+                activeLens={activeLens}
+                isCurtainActive={isCurtainActive}
+                epoch1Data={obs1?.flux}
+                epoch2Data={obs2?.flux}
+                epoch1Label={isRtl ? 'الرصدة 1 (قبل)' : 'Visit 1 (Before)'}
+                epoch2Label={isRtl ? 'الرصدة 2 (بعد)' : 'Visit 2 (After)'}
+                dqFlags={obs1?.flags || obs2?.flags}
+                selectedFlagPixel={selectedFlagPixel}
+                onSelectFlagPixel={setSelectedFlagPixel}
+                candidates={currentResult?.candidates}
+                selectedCandidate={selectedCandidate}
+                onSelectCandidate={setSelectedCandidate}
+                tappedSpot={tappedSpot}
+                onTapSpot={setTappedSpot}
+                language={language}
+                isLoading={isLoading}
+                targetName={targetDisplayName}
+                fovArcmin={currentResult?.fovArcmin || 6.6}
+                sourceClassification={currentResult?.sourceClassification}
+                availabilityStatus={currentResult?.availabilityStatus}
+                targetCoords={currentResult?.targetCoords}
+                onSelectBenchmark={(caseId) => onSelectCase(caseId)}
+                className="w-full h-full"
+              />
+
+              {/* FLOATING 4-LENS DOCK & CONTEXTUAL DRAWER */}
+              <div className="absolute bottom-3 sm:bottom-4 inset-x-0 mx-auto z-20 pointer-events-none max-w-3xl px-2 sm:px-4">
+                <FourLensesDock
+                  activeLens={activeLens}
+                  onSelectLens={setActiveLens}
+                  currentFrameIdx={currentFrameIdx}
+                  totalFrames={3}
+                  onSelectFrameIdx={setCurrentFrameIdx}
+                  isPlaying={isPlaying}
+                  onTogglePlay={() => setIsPlaying(!isPlaying)}
+                  isCurtainActive={isCurtainActive}
+                  onToggleCurtain={() => setIsCurtainActive(!isCurtainActive)}
+                  epoch1Date={obs1?.metadata?.date_obs}
+                  epoch2Date={obs2?.metadata?.date_obs}
+                  cadenceSeconds={currentResult?.compatibility?.startToStartCadenceSec ?? 128.9}
+                  observations={timelineObservations}
+                  epochAIdx={epochAIdx}
+                  epochBIdx={epochBIdx}
+                  onSelectEpochA={(idx) => {
+                    setEpochAIdx(idx);
+                    setCurrentFrameIdx(0);
+                  }}
+                  onSelectEpochB={(idx) => {
+                    setEpochBIdx(idx);
+                    setCurrentFrameIdx(1);
+                  }}
+                  mathMode={mathMode}
+                  onChangeMathMode={setMathMode}
+                  targetName={targetDisplayName}
+                  activeBandIdx={activeBandIdx}
+                  onSelectBandIdx={setActiveBandIdx}
+                  availableBands={availableBands}
+                  onOpenSpectrumModal={() => setShowSpectralExplorer(true)}
+                  onOpenDetectorStackModal={() => setShowDetectorStacking(true)}
+                  isDoubtOverlayActive={isDoubtOverlayActive}
+                  onToggleDoubtOverlay={() => setIsDoubtOverlayActive(!isDoubtOverlayActive)}
+                  selectedFlagPixel={selectedFlagPixel}
+                  onClearFlagPixel={() => setSelectedFlagPixel(null)}
+                  isNeighborsOverlayActive={isNeighborsOverlayActive}
+                  onToggleNeighborsOverlay={() => setIsNeighborsOverlayActive(!isNeighborsOverlayActive)}
+                  selectedCandidate={selectedCandidate}
+                  language={language}
+                  className="pointer-events-auto"
+                />
+              </div>
+            </div>
+          </main>
+        )}
 
         {/* ================================================================== */}
         {/* PART 6: STRUCTURED SCIENTIST INVESTIGATION WORKSPACE PANEL */}
@@ -604,39 +999,40 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* SPEX INTELLIGENT COMPANION & GUIDED TOUR SYSTEM */}
+      {/* SPEX INTELLIGENT COMPANION (Mounted on user demand so sky stays clean) */}
       {/* ==================================================================== */}
-      <SpexCompanion
-        currentResult={currentResult}
-        activeLens={activeLens}
-        currentFrameIdx={currentFrameIdx}
-        isCurtainActive={isCurtainActive}
-        selectedCandidate={selectedCandidate}
-        selectedFlagPixel={selectedFlagPixel}
-        language={language}
-        onOpenTour={() => setShowTour(true)}
-        onHighlightElement={(targetId) => {
-          setHighlightedTargetId(targetId);
-          // If action targets a specific lens, also activate that lens!
-          if (targetId === 'lens_time') setActiveLens('time');
-          else if (targetId === 'lens_colors') setActiveLens('colors');
-          else if (targetId === 'lens_doubt') setActiveLens('doubt');
-          else if (targetId === 'lens_neighbors') setActiveLens('neighbors');
-          else if (targetId === 'curtain_divider') {
-            setActiveLens('time');
-            setIsCurtainActive(true);
-          }
-        }}
-        onOpenScientistMode={() => {
-          if (!isScientistMode && onToggleScientistMode) {
-            onToggleScientistMode();
-          }
-        }}
-        onOpenDictionary={(termId) => {
-          if (termId) setDictionaryTermId(termId);
-          setShowDictionary(true);
-        }}
-      />
+      {showCompanion && (
+        <SpexCompanion
+          currentResult={currentResult}
+          activeLens={activeLens}
+          currentFrameIdx={currentFrameIdx}
+          isCurtainActive={isCurtainActive}
+          selectedCandidate={selectedCandidate}
+          selectedFlagPixel={selectedFlagPixel}
+          language={language}
+          onOpenTour={() => setShowTour(true)}
+          onHighlightElement={(targetId) => {
+            setHighlightedTargetId(targetId);
+            if (targetId === 'lens_time') setActiveLens('time');
+            else if (targetId === 'lens_colors') setActiveLens('colors');
+            else if (targetId === 'lens_doubt') setActiveLens('doubt');
+            else if (targetId === 'lens_neighbors') setActiveLens('neighbors');
+            else if (targetId === 'curtain_divider') {
+              setActiveLens('time');
+              setIsCurtainActive(true);
+            }
+          }}
+          onOpenScientistMode={() => {
+            if (!isScientistMode && onToggleScientistMode) {
+              onToggleScientistMode();
+            }
+          }}
+          onOpenDictionary={(termId) => {
+            if (termId) setDictionaryTermId(termId);
+            setShowDictionary(true);
+          }}
+        />
+      )}
 
       {/* Reusable Visual Pointing Beacon */}
       <SpexUiHighlight

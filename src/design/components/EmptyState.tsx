@@ -11,10 +11,10 @@ export interface EmptyStateProps {
 }
 
 export const EmptyState: React.FC<EmptyStateProps> = ({
-  title = 'No one has looked at this patch yet in this release',
-  description = 'NASA/IPAC SPHEREx QR2 covers the deep North Ecliptic Pole strip (~0.39 sq deg). The rest of the all-sky survey releases in subsequent batches.',
+  title = 'No SPHEREx exposures cover this patch yet',
+  description = 'Zero Level-2B exposures covering these coordinates were returned by the live NASA/IPAC IRSA SPHEREx TAP query.',
   onExploreBenchmarks,
-  actionText = 'Jump to Verified North Ecliptic Pole Field',
+  actionText = 'Jump to Verified Benchmark Field',
   className = '',
 }) => {
   return (

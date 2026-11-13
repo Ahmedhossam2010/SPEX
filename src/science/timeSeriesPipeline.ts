@@ -1,6 +1,6 @@
 import { FITSReader } from './fitsReader';
 import { WCS } from './wcs';
-import { FITSImageData, SPHERExObservation, WCSParams } from './types';
+import { FITSImageData, SPHERExObservation, WCSParams, WcsWaveTable } from './types';
 import { SPHEREX_DETECTOR_ARRAYS, SPHEREX_102_CHANNELS } from './spectralBands';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -19,6 +19,19 @@ export interface DecodedDQFlags {
   maskedFraction: number; // [0.0, 1.0]
 }
 
+export interface MeasuredCentroid {
+  x: number;
+  y: number;
+  ra?: number;
+  dec?: number;
+  dxArcsec: number;
+  dyArcsec: number;
+  uncertaintyArcsec: number;
+  snr?: number;
+  stacked?: boolean;
+  valid: boolean;
+}
+
 export interface TimeSeriesFrame {
   index: number;
   obsId: string;
@@ -29,6 +42,11 @@ export interface TimeSeriesFrame {
   dateEnd?: string;
   integrationDurationSec?: number;
   wavelengthUm: number;
+  bandwidthUm?: number;
+  version?: string;
+  release?: string;
+  cachedAt?: string;
+  wcsWave?: WcsWaveTable;
   width: number;
   height: number;
   flux: number[];
@@ -39,8 +57,16 @@ export interface TimeSeriesFrame {
   reprojectedFlux: number[]; // Aligned to reference WCS
   /** Where the propagated target lands in this frame, and its distance to the frame edge. */
   targetPixel?: { x: number; y: number; insideCutout: boolean; pxFromEdge: number };
+  /** Predicted target position projected onto the common reference WCS grid */
+  targetRefPixel?: { x: number; y: number };
+  /** Subpixel measured centroid on the reference WCS grid */
+  measuredCentroid?: MeasuredCentroid;
   fitsUrl: string;
   accessUrl: string;
+  isCached?: boolean;
+  isDemoCopy?: boolean;
+  trueCenter?: { ra: number; dec: number };
+  trueObsId?: string;
   isSimulated?: boolean;
   simulatedLabel?: string;
 }
@@ -84,6 +110,7 @@ export interface SpectrumPoint {
   mjd: number;
   date: string;
   wavelengthUm: number;
+  bandwidthUm?: number;
   fluxMjySr: number;
   uncertaintyMjySr: number;
   snr: number;
@@ -108,14 +135,52 @@ export interface CatalogOverlayItem {
   isStaticFixture?: boolean;
 }
 
+export interface AvailableDetectorSummary {
+  detector: string;
+  bandName: string;
+  wavelengthRangeUm: [number, number];
+  exposureCount: number;
+  minMjd: number;
+  maxMjd: number;
+  dateStart: string;
+  dateEnd: string;
+}
+
 export interface TimeSeriesResult {
+  status?: string;
+  state?: string;
+  sourceMode?: 'live' | 'saved_benchmark';
+  sourceLabel?:
+    | 'REAL SPHEREx DATA'
+    | `REAL SPHEREx DATA - cached ${string}`
+    | 'REAL DATA, SAVED COPY (NOT LIVE)'
+    | 'DEMO COPY (DIFFERENT FIELD)';
+  cachedAt?: string;
+  releaseBreakdown?: string[];
+  centroidStacked?: boolean;
+  partialFailures?: { failed: number; total: number; notice: string };
+  isDemoCopy?: boolean;
+  demoNotice?: string;
+  trueCenter?: { ra: number; dec: number };
   targetCoords: { ra: number; dec: number };
+  selectedDetector?: string;
+  availableDetectors?: AvailableDetectorSummary[];
   fovArcmin: number;
   sizePix: number;
   totalExposuresFound: number;
   framesReturned: number;
+  framesCount?: number;
   frames: TimeSeriesFrame[];
+  temporalPairs?: TemporalPairInfo[];
   pairs: TemporalPairInfo[];
+  cadenceSummary?: {
+    totalFrames: number;
+    totalPairs: number;
+    intraVisitPairs: number;
+    independentVisitPairs: number;
+    surveyEpochPairs: number;
+  };
+  dateRange?: { start: string; end: string; spanDays: number };
   detectorStacks: Record<string, DetectorStack>;
   spectrumAtCenter: SpectrumPoint[];
   referenceWcs: WCSParams;
@@ -136,14 +201,21 @@ export interface TimeSeriesResult {
 }
 
 /** How the final FITS URL was obtained. */
-export type FitsResolutionMethod = 'datalink' | 'fallback';
+export type FitsResolutionMethod = 'datalink_cutout_service' | 'datalink' | 'offline_fixture';
+
+export interface DataLinkCutoutService {
+  accessUrl: string;
+  path: string;
+  sizeParamUnit?: 'deg';
+}
 
 export interface ResolvedFitsUrl {
   url: string;
   resolvedBy: FitsResolutionMethod;
+  cutoutService?: DataLinkCutoutService;
 }
 
-// In-memory cache for resolved DataLink FITS URLs
+// In-memory cache for resolved DataLink descriptors
 const datalinkUrlCache = new Map<string, ResolvedFitsUrl>();
 
 /**
@@ -187,18 +259,132 @@ export async function verifyFitsUrl(url: string, forceCheck = false): Promise<vo
 }
 
 /**
- * Resolves an IRSA DataLink access_url to its authentic calibrated Level-2B FITS cutout URL.
- * Returns which method produced the URL ('datalink' from the DataLink document, 'fallback'
- * from the deterministic IBE builder), verifies the result with a real request, and logs a
- * warning whenever the fallback path is used.
+ * Parses an IRSA DataLink VOTable XML document to extract:
+ * 1. The `#cutout` adhoc:service accessURL + path column (`ibe-cutout`)
+ * 2. The `#this` science image FITS URL
+ */
+export function parseDataLinkXml(xml: string): ResolvedFitsUrl | null {
+  if (!xml || typeof xml !== 'string') return null;
+
+  // 1. Extract adhoc:service cutout endpoint (e.g. <RESOURCE ID="ibe-cutout" ...><PARAM name="accessURL" ... value="..."/>)
+  let cutoutServiceUrl = '';
+  const serviceBlocks = xml.match(/<RESOURCE[^>]*utype=["']adhoc:service["'][^>]*>[\s\S]*?<\/RESOURCE>/gi) || [];
+  for (const block of serviceBlocks) {
+    const accessParam =
+      block.match(/<PARAM[^>]*name=["']accessURL["'][^>]*value=["']([^"']+)["']/i) ||
+      block.match(/<PARAM[^>]*value=["']([^"']+)["'][^>]*name=["']accessURL["']/i);
+    if (accessParam && accessParam[1]) {
+      cutoutServiceUrl = accessParam[1].trim();
+      break;
+    }
+  }
+
+  // 2. Map FIELD names in <TABLE>
+  const fieldMatches = Array.from(xml.matchAll(/<FIELD[^>]*name=["']([^"']+)["'][^>]*>/gi));
+  const fieldNames = fieldMatches.map((m) => m[1].toLowerCase());
+  const idxUrl = fieldNames.indexOf('access_url');
+  const idxSemantics = fieldNames.indexOf('semantics');
+  const idxServiceDef = fieldNames.indexOf('service_def');
+  const idxPath = fieldNames.indexOf('path');
+  const idxContentType = fieldNames.indexOf('content_type');
+
+  let thisUrl = '';
+  let cutoutPath = '';
+
+  const trMatches = xml.match(/<TR>[\s\S]*?<\/TR>/gi) || [];
+  for (const tr of trMatches) {
+    const tds = Array.from(tr.matchAll(/<TD[^>]*>([\s\S]*?)<\/TD>/gi)).map((m) =>
+      m[1].replace(/&amp;/g, '&').trim()
+    );
+    if (tds.length === 0) continue;
+
+    const sem = idxSemantics >= 0 ? (tds[idxSemantics] || '') : '';
+    const acc = idxUrl >= 0 ? (tds[idxUrl] || '') : '';
+    const srv = idxServiceDef >= 0 ? (tds[idxServiceDef] || '') : '';
+    const pth = idxPath >= 0 ? (tds[idxPath] || '') : '';
+    const ctype = idxContentType >= 0 ? (tds[idxContentType] || '') : '';
+
+    if (sem === '#this' && acc && (ctype.includes('fits') || acc.endsWith('.fits')) && !thisUrl) {
+      thisUrl = acc;
+    }
+    if ((sem === '#cutout' || srv === 'ibe-cutout') && pth && !cutoutPath) {
+      cutoutPath = pth;
+    }
+  }
+
+  // Fallback regex for #this science Level-2 FITS URL if VOTable fields varied
+  if (!thisUrl) {
+    const absMatch = xml.match(/<TD[^>]*>\s*(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^\s<"]+level2[^\s<"]+\.fits)\s*<\/TD>/i);
+    if (absMatch) thisUrl = absMatch[1].trim();
+  }
+
+  if (cutoutServiceUrl && cutoutPath) {
+    return {
+      url: thisUrl || cutoutServiceUrl,
+      resolvedBy: 'datalink_cutout_service',
+      cutoutService: {
+        accessUrl: cutoutServiceUrl,
+        path: cutoutPath,
+        sizeParamUnit: 'deg',
+      },
+    };
+  }
+
+  if (thisUrl) {
+    return {
+      url: thisUrl,
+      resolvedBy: 'datalink',
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Constructs the live cutout download URL strictly from the DataLink-resolved service or #this FITS URL.
+ */
+export function buildCutoutRequestUrl(
+  resolved: ResolvedFitsUrl | string,
+  ra: number,
+  dec: number,
+  sizePix: number
+): string {
+  if (typeof resolved === 'string') {
+    if (resolved.includes('?')) return resolved;
+    return `${resolved}?center=${ra.toFixed(6)},${dec.toFixed(6)}&size=${sizePix}pix`;
+  }
+  if (resolved.cutoutService) {
+    // IRSA ibe-cutout expects cutout size in degrees (SPHEREx pixel scale is 6.2"/px)
+    const sizeDeg = Math.max(0.01, (sizePix * 6.2) / 3600);
+    const params = new URLSearchParams({
+      path: resolved.cutoutService.path,
+      ra: ra.toFixed(6),
+      dec: dec.toFixed(6),
+      size: sizeDeg.toFixed(5),
+    });
+    return `${resolved.cutoutService.accessUrl}?${params.toString()}`;
+  }
+  if (resolved.url.includes('?')) return resolved.url;
+  return `${resolved.url}?center=${ra.toFixed(6)},${dec.toFixed(6)}&size=${sizePix}pix`;
+}
+
+/**
+ * Resolves an IRSA DataLink access_url through its live DataLink VOTable document
+ * (3 retries with exponential backoff, 15s timeout). Never uses hand-built IBE paths in live mode.
  */
 export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector?: string): Promise<ResolvedFitsUrl> {
+  if (process.env.SPHEREX_OFFLINE === '1' || (process.env.NODE_ENV === 'test' && !accessUrl?.startsWith('http'))) {
+    const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
+    return { url: fallback, resolvedBy: 'offline_fixture' };
+  }
+
   if (!accessUrl) {
-    if (process.env.NODE_ENV === 'test' || process.env.SPHEREX_OFFLINE === '1') {
-      const fallback = buildFallbackFitsUrl(obsId, detector);
-      return { url: fallback, resolvedBy: 'fallback' };
-    }
-    throw new Error(`[resolveFitsUrl] No access_url provided for ${obsId ?? 'unknown obs'}`);
+    throw new Error(`[resolveFitsUrl] No DataLink access_url provided for ${obsId ?? 'unknown obs'}`);
+  }
+
+  // Direct FITS URL (non-DataLink)
+  if (accessUrl.startsWith('local://') || accessUrl.endsWith('.fits')) {
+    return { url: accessUrl, resolvedBy: accessUrl.startsWith('local://') ? 'offline_fixture' : 'datalink' };
   }
 
   const cached = datalinkUrlCache.get(accessUrl);
@@ -206,52 +392,47 @@ export async function resolveFitsUrl(accessUrl: string, obsId?: string, detector
     return cached;
   }
 
-  // Attempt resolving authentic science FITS URL from DataLink VOTable XML
-  try {
+  // Test environment shortcut for synthetic DataLink URLs in unit tests
+  if (process.env.NODE_ENV === 'test') {
+    const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
+    return { url: fallback, resolvedBy: 'offline_fixture' };
+  }
+
+  const MAX_RETRIES = 3;
+  let lastErr: any = null;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
-    const res = await fetch(accessUrl, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-    });
-    clearTimeout(timeout);
-    if (res.ok) {
-      const xml = await res.text();
-      // Match science Level-2B FITS URL or relative path inside DataLink VOTable
-      const absMatch = xml.match(/<TD[^>]*>\s*(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/[^\s<"]+level2[^\s<"]+\.fits)\s*<\/TD>/i);
-      let targetUrl = absMatch ? absMatch[1].trim() : '';
-      if (!targetUrl) {
-        const relMatch = xml.match(/<TD[^>]*>\s*(spherex\/[^\s<"]+level2[^\s<"]+\.fits)\s*<\/TD>/i) ||
-                         xml.match(/(https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/spherex\/[^\s"'<>]+level2[^\s"'<>]+\.fits)/i) ||
-                         xml.match(/(spherex\/qr2\/level2\/[^\s"'<>]+level2[^\s"'<>]+\.fits)/i);
-        if (relMatch) {
-          const rawRel = (relMatch[1] || relMatch[0]).trim();
-          targetUrl = rawRel.startsWith('http') ? rawRel : `https://irsa.ipac.caltech.edu/ibe/data/${rawRel}`;
-        }
+    try {
+      const res = await fetch(accessUrl, {
+        signal: controller.signal,
+        headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+      });
+      clearTimeout(timeout);
+      if (!res.ok) {
+        throw new Error(`DataLink HTTP ${res.status} ${res.statusText}`);
       }
-      if (targetUrl) {
-        const resolved: ResolvedFitsUrl = { url: targetUrl, resolvedBy: 'datalink' };
-        datalinkUrlCache.set(accessUrl, resolved);
-        return resolved;
+      const xml = await res.text();
+      const parsed = parseDataLinkXml(xml);
+      if (!parsed) {
+        throw new Error(`DataLink VOTable contained neither #cutout service nor #this science FITS for ${accessUrl}`);
+      }
+      datalinkUrlCache.set(accessUrl, parsed);
+      return parsed;
+    } catch (dlErr: any) {
+      clearTimeout(timeout);
+      lastErr = dlErr;
+      if (attempt < MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, 800 * Math.pow(2, attempt - 1)));
       }
     }
-  } catch (dlErr: any) {
-    console.warn(`[resolveFitsUrl] DataLink fetch error for ${accessUrl}: ${dlErr.message}`);
   }
 
-  // Test / offline fallback
-  if (process.env.NODE_ENV === 'test' || process.env.SPHEREX_OFFLINE === '1') {
-    const fallback = buildFallbackFitsUrl(obsId, detector, accessUrl);
-    const resolved: ResolvedFitsUrl = { url: fallback, resolvedBy: 'fallback' };
-    datalinkUrlCache.set(accessUrl, resolved);
-    return resolved;
-  }
-
-  throw new Error(`DataLink resolution failed: could not extract level2 science FITS from ${accessUrl}`);
+  throw new Error(`DataLink resolution failed for ${accessUrl}: ${lastErr?.message || 'unknown error'}`);
 }
 
 /**
- * Builds a deterministic IRSA IBE Level-2B FITS cutout URL based on obsId and detector.
+ * Offline/test-only FITS identifier helper. Never called during live archive queries.
  */
 export function buildFallbackFitsUrl(obsId?: string, detector?: string, accessUrl?: string): string {
   const det = (detector || (accessUrl ? accessUrl.match(/\/D([1-6])$/)?.[1] : null) || '1').replace(/^D/i, '');
@@ -428,14 +609,18 @@ export function extractApertureSpectrum(
     const height = f.height;
     if (width === 0 || height === 0) continue;
 
-    // LVF wavelength calculation across detector Y-axis
-    const detNum = parseInt(f.detector.replace(/\D/g, ''), 10) || 1;
-    const detArray = SPHEREX_DETECTOR_ARRAYS.find((d) => d.detectorNumber === detNum);
+    // Exact spectral wavelength from WCS-WAVE -TAB BINTABLE at target frame pixel,
+    // falling back to frame metadata evaluated at exposure target pixel.
     let wavelengthUm = f.wavelengthUm;
-    if (detArray) {
-      const yNorm = Math.min(Math.max(targetY / height, 0.0), 1.0);
-      const [wMin, wMax] = detArray.wavelengthRangeUm;
-      wavelengthUm = Number((wMin + yNorm * (wMax - wMin)).toFixed(3));
+    let bandwidthUm = f.bandwidthUm;
+    if (f.wcsWave) {
+      const fx = f.targetPixel?.x ?? targetX;
+      const fy = f.targetPixel?.y ?? targetY;
+      const evaluated = FITSReader.evaluateWaveWcs(f.wcsWave, fx, fy);
+      if (evaluated && Number.isFinite(evaluated.wavelengthUm)) {
+        wavelengthUm = Number(evaluated.wavelengthUm.toFixed(4));
+        bandwidthUm = Number(evaluated.bandwidthUm.toFixed(4));
+      }
     }
 
     const r2 = apertureRadiusPix * apertureRadiusPix;
@@ -475,6 +660,7 @@ export function extractApertureSpectrum(
         mjd: f.mjd,
         date: f.dateObs,
         wavelengthUm,
+        bandwidthUm,
         fluxMjySr: Number(meanFlux.toFixed(4)),
         uncertaintyMjySr: Number(uncertainty.toFixed(4)),
         snr: Number(snr.toFixed(2)),

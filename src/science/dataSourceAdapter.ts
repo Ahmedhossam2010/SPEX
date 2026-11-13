@@ -93,9 +93,10 @@ export type DataSourceResult =
  */
 export function getArchiveEnv() {
   return {
-    releaseName: process.env.SPHEREX_RELEASE_NAME || 'SPHEREx Quick Release 2 (QR2, Level 2B)',
+    releaseName: process.env.SPHEREX_RELEASE_NAME || 'SPHEREx Public Archive (DR1 / QR3 / QR2 Level 2B)',
     baseUrl: process.env.SPHEREX_RELEASE_BASE_URL || 'https://irsa.ipac.caltech.edu',
-    tapTable: process.env.SPHEREX_TAP_TABLE || 'spherex.obscore',
+    tapTable: process.env.SPHEREX_PLANE_TABLE || process.env.SPHEREX_TAP_TABLE || 'spherex.plane',
+    artifactTable: process.env.SPHEREX_ARTIFACT_TABLE || 'spherex.artifact',
     isOffline: process.env.SPHEREX_OFFLINE === '1',
   };
 }
@@ -322,7 +323,7 @@ export async function queryArchiveTap(
   fetchFn: typeof fetch = fetch,
   customMapping?: Partial<ColumnMapping>
 ): Promise<DataSourceResult> {
-  const { baseUrl, tapTable, releaseName, isOffline } = getArchiveEnv();
+  const { baseUrl, tapTable, artifactTable, releaseName, isOffline } = getArchiveEnv();
 
   // If in OFFLINE mode, return fixture or throw network offline error
   if (isOffline) {
@@ -368,11 +369,14 @@ export async function queryArchiveTap(
     };
   }
 
-  const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, dataproduct_type FROM ${tapTable} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radiusDeg}))=1 ORDER BY t_min ASC`;
+  const tapQuery =
+    tapTable === 'spherex.plane'
+      ? `SELECT p.obsid AS obs_id, ${ra} AS s_ra, ${dec} AS s_dec, p.energy_bandpassname AS instrument_name, p.time_bounds_lower AS t_min, p.time_bounds_upper AS t_max, p.energy_bounds_lower AS em_min, p.energy_bounds_upper AS em_max, a.uri AS access_url, p.poly AS s_region, 'image' AS dataproduct_type FROM ${artifactTable} a JOIN ${tapTable} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1 ORDER BY p.time_bounds_lower ASC`
+      : `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, dataproduct_type FROM ${tapTable} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radiusDeg}))=1 ORDER BY t_min ASC`;
   const queryUrl = `${baseUrl}/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 12000);
+  const timeoutId = setTimeout(() => controller.abort(), 75000);
 
   try {
     const resp = await fetchFn(queryUrl, {

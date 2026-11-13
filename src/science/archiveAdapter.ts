@@ -57,7 +57,11 @@ export interface ArchiveObservationRecord {
   date: string;
   visitKey: string;
   dataRelease: string;
-  sourceLabel: 'REAL SPHEREx DATA' | 'REAL DATA, SAVED COPY (NOT LIVE)' | 'TRAINING DATA';
+  sourceLabel:
+    | 'REAL SPHEREx DATA'
+    | `REAL SPHEREx DATA - cached ${string}`
+    | 'REAL DATA, SAVED COPY (NOT LIVE)'
+    | 'TRAINING DATA';
 }
 
 export type ArchiveQueryState = 'OK' | 'ARCHIVE_ZERO_ROWS' | 'NETWORK_ERROR' | 'HTTP_ERROR';
@@ -76,15 +80,19 @@ export interface ArchiveQueryResult {
 
 export class ArchiveAdapter {
   public static get dataRelease(): string {
-    return process.env.SPHEREX_DATA_RELEASE || 'SPHEREx QR2 (Level 2B Processed Science Frames)';
+    return process.env.SPHEREX_DATA_RELEASE || 'SPHEREx Public Archive (DR1 / QR3 / QR2 Level 2B)';
   }
 
   public static get baseUrl(): string {
-    return process.env.SPHEREX_BASE_URL || 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2';
+    return process.env.SPHEREX_BASE_URL || 'https://irsa.ipac.caltech.edu';
   }
 
   public static get tapTable(): string {
-    return process.env.SPHEREX_TAP_TABLE || 'spherex.obscore';
+    return process.env.SPHEREX_PLANE_TABLE || process.env.SPHEREX_TAP_TABLE || 'spherex.plane';
+  }
+
+  public static get artifactTable(): string {
+    return process.env.SPHEREX_ARTIFACT_TABLE || 'spherex.artifact';
   }
 
   public static get isOffline(): boolean {
@@ -174,7 +182,9 @@ export class ArchiveAdapter {
       date,
       visitKey,
       dataRelease: options.dataRelease || ArchiveAdapter.dataRelease,
-      sourceLabel: options.sourceLabel || (ArchiveAdapter.isOffline ? 'REAL DATA, SAVED COPY (NOT LIVE)' : 'REAL SPHEREx DATA'),
+      sourceLabel:
+        options.sourceLabel ||
+        (ArchiveAdapter.isOffline ? 'REAL SPHEREx DATA - cached 2025-04-28 UTC' : 'REAL SPHEREx DATA'),
     };
   }
 
@@ -190,7 +200,7 @@ export class ArchiveAdapter {
         wavelength_um: 0.93,
         band: 'Band 1 (0.75 - 1.11 µm)',
         detector: 'D1',
-        access_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_1D1_spx_l2b-v20-2025-241.fits',
+        access_url: 'local://data/spherex_cache/b6a1e605728059ea6b7def1e9683adb2.fits',
         fits_url: 'data/spherex_cache/b6a1e605728059ea6b7def1e9683adb2.fits',
         s_ra: 276.2614,
         s_dec: 64.8258,
@@ -201,7 +211,7 @@ export class ArchiveAdapter {
         date: '2025-04-28T13:00:15.755Z',
         visitKey: '2025W18_1B_0001',
         dataRelease: ArchiveAdapter.dataRelease,
-        sourceLabel: 'REAL DATA, SAVED COPY (NOT LIVE)',
+        sourceLabel: 'REAL SPHEREx DATA - cached 2025-04-28 UTC',
       },
       {
         obs_id: '2025W18_1B_0001_2',
@@ -210,7 +220,7 @@ export class ArchiveAdapter {
         wavelength_um: 0.93,
         band: 'Band 1 (0.75 - 1.11 µm)',
         detector: 'D1',
-        access_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_2D1_spx_l2b-v20-2025-241.fits',
+        access_url: 'local://data/spherex_cache/569dafa911ec60ff30abb1807d719fef.fits',
         fits_url: 'data/spherex_cache/569dafa911ec60ff30abb1807d719fef.fits',
         s_ra: 276.2614,
         s_dec: 64.8258,
@@ -221,7 +231,7 @@ export class ArchiveAdapter {
         date: '2025-04-28T13:02:24.686Z',
         visitKey: '2025W18_1B_0001',
         dataRelease: ArchiveAdapter.dataRelease,
-        sourceLabel: 'REAL DATA, SAVED COPY (NOT LIVE)',
+        sourceLabel: 'REAL SPHEREx DATA - cached 2025-04-28 UTC',
       },
       {
         obs_id: '2025W18_1B_0001_3',
@@ -230,7 +240,7 @@ export class ArchiveAdapter {
         wavelength_um: 0.93,
         band: 'Band 1 (0.75 - 1.11 µm)',
         detector: 'D1',
-        access_url: 'https://irsa.ipac.caltech.edu/ibe/data/spherex/qr2/level2/2025W18_1B/l2b-v20-2025-241/1/level2_2025W18_1B_0001_3D1_spx_l2b-v20-2025-241.fits',
+        access_url: 'local://data/spherex_cache/75b2c2369c175060576bec8d2e5333c0.fits',
         fits_url: 'data/spherex_cache/75b2c2369c175060576bec8d2e5333c0.fits',
         s_ra: 276.2614,
         s_dec: 64.8258,
@@ -241,7 +251,7 @@ export class ArchiveAdapter {
         date: '2025-04-28T13:04:33.616Z',
         visitKey: '2025W18_1B_0001',
         dataRelease: ArchiveAdapter.dataRelease,
-        sourceLabel: 'REAL DATA, SAVED COPY (NOT LIVE)',
+        sourceLabel: 'REAL SPHEREx DATA - cached 2025-04-28 UTC',
       },
     ];
   }
@@ -277,15 +287,23 @@ export class ArchiveAdapter {
       };
     }
 
-    const tapQuery = `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, s_region, dataproduct_type FROM ${ArchiveAdapter.tapTable} WHERE CONTAINS(POINT('ICRS',s_ra,s_dec),CIRCLE('ICRS',${ra},${dec},${radiusDeg}))=1 ORDER BY t_min ASC`;
-    const tapUrl = `https://irsa.ipac.caltech.edu/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
+    const tapQuery =
+      ArchiveAdapter.tapTable === 'spherex.plane'
+        ? `SELECT p.obsid AS obs_id, ${ra} AS s_ra, ${dec} AS s_dec, p.energy_bandpassname AS instrument_name, p.time_bounds_lower AS t_min, p.time_bounds_upper AS t_max, p.energy_bounds_lower AS em_min, p.energy_bounds_upper AS em_max, a.uri AS access_url, p.poly AS s_region, 'image' AS dataproduct_type FROM ${ArchiveAdapter.artifactTable} a JOIN ${ArchiveAdapter.tapTable} p ON a.planeid = p.planeid WHERE CONTAINS(POINT('ICRS',${ra},${dec}),p.poly)=1 ORDER BY p.time_bounds_lower ASC`
+        : `SELECT obs_id, s_ra, s_dec, instrument_name, t_min, t_max, em_min, em_max, access_url, s_region, dataproduct_type FROM ${ArchiveAdapter.tapTable} WHERE CONTAINS(POINT('ICRS',${ra},${dec}),s_region)=1 ORDER BY t_min ASC`;
+    const tapUrl = `${ArchiveAdapter.baseUrl}/TAP/sync?QUERY=${encodeURIComponent(tapQuery)}&FORMAT=json`;
 
     let resp: Response;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 75000);
     try {
       resp = await fetchFn(tapUrl, {
+        signal: controller.signal,
         headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
       });
+      clearTimeout(timer);
     } catch (networkErr: any) {
+      clearTimeout(timer);
       return {
         ...baseResult,
         state: 'NETWORK_ERROR',

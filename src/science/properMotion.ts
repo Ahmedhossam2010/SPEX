@@ -2,15 +2,10 @@
  * Proper-motion propagation for challenge targets.
  *
  * Convention (Gaia DR3 / SIMBAD):
- * - pmRaMasYr is mu_alpha* in mas/yr, i.e. the RA proper motion ALREADY
- *   multiplied by cos(dec). RA is therefore advanced by pmRa*t directly and
- *   must NOT be divided by cos(dec) again.
+ * - pmRaMasYr is mu_alpha* = mu_alpha * cos(dec) in mas/yr.
+ *   Coordinate RA advance is therefore dRA = (mu_alpha* * dt) / cos(dec).
  * - pmDecMasYr is mu_delta in mas/yr.
  * - Coordinate epochs are Julian years (J2000.0 = 2000.0).
- *
- * NOTE: CatalogMatcher.propagateProperMotion divides by cos(dec) and is only
- * correct if its pmRa inputs are raw mu_alpha. All values stored on
- * ChallengeTarget / CuratedCase follow THIS module's mu_alpha* convention.
  *
  * Positions are propagated linearly (parallax-free). For the targets used here
  * (|pm| up to ~10.4"/yr over <= 26 yr) the linear model is accurate to well
@@ -49,8 +44,9 @@ export function propagatePosition(
     return { ra: raDeg, dec: decDeg, deltaYears: 0, separationArcsec: 0 };
   }
 
-  // pmRaMasYr is mu_alpha* (already includes cos(dec)) -> advance RA directly.
-  const deltaRaDeg = (pmRaMasYr * deltaYears) / 3.6e6;
+  // pmRaMasYr is mu_alpha* = dRA/dt * cos(dec); coordinate RA delta is (mu_alpha* * dt) / cos(dec).
+  const cosDec = Math.max(1e-6, Math.cos((decDeg * Math.PI) / 180));
+  const deltaRaDeg = (pmRaMasYr * deltaYears) / (3.6e6 * cosDec);
   const deltaDecDeg = (pmDecMasYr * deltaYears) / 3.6e6;
 
   let ra = raDeg + deltaRaDeg;

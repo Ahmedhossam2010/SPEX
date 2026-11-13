@@ -49,14 +49,14 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
                 <h2 className="text-lg sm:text-xl font-bold font-['Outfit'] text-slate-900 dark:text-slate-100">
                   {isRtl ? 'مستكشف التغطية السماوية وأهداف التحدي' : 'Sky Coverage & Official Challenge Targets'}
                 </h2>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-600 dark:text-amber-400 font-semibold">
-                  SPHEREx QR2
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  SPHEREx All-Sky TAP
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {isRtl
-                  ? 'رسم بياني يوضح موقع حقل القطب الشمالي لمسار الشمس والأجرام الخمسة الرسمية'
-                  : 'Interactive map of SPHEREx QR2 North Ecliptic Pole footprint & 5 challenge targets'}
+                  ? 'خريطة تغطية مسح SPHEREx والأهداف الفلكية الخمسة الموثقة في أرشيف IRSA'
+                  : 'All-sky SPHEREx survey coverage & 5 challenge targets (IRSA TAP)'}
               </p>
             </div>
           </div>
@@ -74,12 +74,12 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
           <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
           <div className="space-y-1">
             <span className="font-bold text-amber-700 dark:text-amber-300">
-              {isRtl ? 'حقيقة التغطية الفلكية للإصدار QR2:' : 'Astronomical Survey Footprint Reality:'}
+              {isRtl ? 'تغطية مسح SPHEREx عبر أرشيف NASA/IPAC IRSA:' : 'NASA/IPAC IRSA SPHEREx Survey Coverage:'}
             </span>
             <p className="leading-relaxed">
               {isRtl
-                ? 'يغطي إصدار QR2 المنشور حالياً من ناسا منطقة القطب الشمالي لمسار الشمس (NEP) بين RA 275.5°–276.8° و Dec +64.5°–65.2°. الأجرام الخمسة المذكورة في نص التحدي (مثل نجم برنارد) تقع خارج هذا النطاق، وسيوفر التطبيق بديلاً موثقاً داخل التغطية بدلاً من اختلاق بيانات وهمية.'
-                : 'The currently published NASA/IPAC SPHEREx QR2 release is restricted to the North Ecliptic Pole (NEP) deep verification strip (RA 275.5°–276.8°, Dec +64.5°–65.2°). The 5 challenge targets lie outside this narrow footprint. To ensure scientific integrity, we explain their celestial separation and offer verified benchmarks instead of fabricated synthetic data.'}
+                ? 'تتوفر الرصدات المعايرة لجميع الأهداف الخمسة الرسمية (نجم برنارد، إبسيلون إندي، WISE 0855، RW Aurigae، R Draconis) عبر استعلامات IRSA TAP الحية (spherex.artifact + spherex.plane) مع تفضيل أحدث إصدار متاح (DR1 / QR3 / QR2).'
+                : 'Live calibrated SPHEREx exposures for all 5 challenge targets (Barnard\'s Star, Epsilon Indi, WISE 0855, RW Aurigae, R Draconis) and arbitrary sky coordinates are queried directly via IRSA TAP (spherex.artifact + spherex.plane) with newest-release selection (DR1 / QR3 / QR2).'}
             </p>
           </div>
         </div>
@@ -117,12 +117,11 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
             />
             <text x="630" y="100" fill="rgba(56,189,248,0.6)" fontSize="9" fontFamily="monospace">Ecliptic Plane</text>
 
-            {/* QR2 NEP Deep Footprint Highlight */}
-            {/* RA 276.1 -> x = (276.1 / 360) * 720 = 552.2; Dec +64.8 -> y = 140 - (64.8 / 90) * 120 = 53.6 */}
+            {/* NEP High-Cadence Calibration Region */}
             <circle cx="552" cy="54" r="16" fill="rgba(245,158,11,0.2)" stroke="#F59E0B" strokeWidth="1.8" />
             <circle cx="552" cy="54" r="4" fill="#F59E0B" />
             <text x="565" y="52" fill="#FBBF24" fontSize="10" fontWeight="bold" fontFamily="monospace">
-              SPHEREx QR2 NEP
+              SPHEREx NEP Deep Field
             </text>
 
             {/* Plot the 5 official challenge targets */}
@@ -254,7 +253,7 @@ export const SkyCoverageModal: React.FC<SkyCoverageModalProps> = ({
               >
                 <ShieldCheck className="w-4 h-4" />
                 <span>
-                  {isRtl ? 'فحص الحالة النموذجية الموثقة في QR2' : 'Inspect Verified NEP Analogue Benchmark'}
+                  {isRtl ? 'استكشاف الحالة المرجعية المعتمدة' : 'Inspect Verified Benchmark Case'}
                 </span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>

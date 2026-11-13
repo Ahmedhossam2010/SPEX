@@ -59,12 +59,12 @@ export const Header: React.FC<HeaderProps> = ({
   }
 
   const navItems: NavItem[] = [
-    { id: 'home', label: t.navHome, icon: Home },
     { id: 'explore', label: t.navExplore, icon: Sparkles, highlight: true },
     { id: 'famous', label: t.navFamous, icon: Star },
-    { id: 'game', label: t.navGame, icon: Telescope, badge: '3D' },
     { id: 'cases', label: t.navCases, icon: Layers },
     { id: 'about', label: t.navAbout, icon: BookOpen },
+    { id: 'home', label: t.navHome, icon: Home },
+    { id: 'game', label: t.navGame, icon: Telescope, badge: '3D' },
   ];
 
   const handleSelectTab = (tab: AppTab) => {

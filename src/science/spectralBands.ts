@@ -113,7 +113,7 @@ export function generate102SpectralChannels(): SpectralBandInfo[] {
       const resolvingPower = det.detectorNumber >= 5 ? 130 : (det.detectorNumber === 4 ? 35 : 41);
 
       let features = 'Stellar continuum';
-      if (wCenter >= 0.90 && wCenter <= 0.95) features = 'SPHEREx QR2 Band 1 primary calibration channel';
+      if (wCenter >= 0.90 && wCenter <= 0.95) features = 'SPHEREx Band 1 calibration channel';
       else if (wCenter >= 1.55 && wCenter <= 1.65) features = '1.6 µm H- opacity peak / cold dwarf SED maximum';
       else if (wCenter >= 2.00 && wCenter <= 2.05) features = '2.02 µm solid H2O ice absorption wing';
       else if (wCenter >= 2.28 && wCenter <= 2.35) features = '2.3 µm 12CO absorption bandhead in red giants';
@@ -159,7 +159,7 @@ export function generateCandidateSED(candidate: {
   points.push({
     wavelengthUm: 0.93,
     fluxMjy: Number(spherexFluxMjy.toFixed(3)),
-    source: 'SPHEREx QR2',
+    source: 'SPHEREx',
     label: `SPHEREx B1 (${Math.abs(candidate.deltaFlux).toFixed(2)} MJy/sr)`,
     isModel: false,
     measurementType: 'SPHEREx Differential Flux',
@@ -182,26 +182,14 @@ export function generateCandidateSED(candidate: {
         measurementType: 'Catalog Photometry',
       });
     }
-  } else {
-    // If no catalog optical counterpart exists, provide clearly labeled synthetic stellar photosphere model
-    points.push({
-      wavelengthUm: 0.67,
-      fluxMjy: Number((spherexFluxMjy * 0.85).toFixed(3)),
-      source: 'Theoretical Model',
-      label: 'Stellar Model Reference (0.67 µm)',
-      isModel: true,
-      measurementType: 'Model Passband Spec',
-    });
   }
 
   // 3. AllWISE infrared counterparts: W1 (3.4 µm) and W2 (4.6 µm)
   const wiseMatch = candidate.catalogMatches?.find((m) => m.catalog === 'AllWISE');
-  let hasWiseObs = false;
   if (wiseMatch?.photometry) {
-    const w1m = wiseMatch.photometry.match(/W1=\s*([\d.]+)/);
-    const w2m = wiseMatch.photometry.match(/W2=\s*([\d.]+)/);
+    const w1m = wiseMatch.photometry.match(/W1\s*=\s*([\d.]+)/);
+    const w2m = wiseMatch.photometry.match(/W2\s*=\s*([\d.]+)/);
     if (w1m) {
-      hasWiseObs = true;
       const w1Flux = 309540 * Math.pow(10, -0.4 * parseFloat(w1m[1]));
       points.push({
         wavelengthUm: 3.4,
@@ -213,7 +201,6 @@ export function generateCandidateSED(candidate: {
       });
     }
     if (w2m) {
-      hasWiseObs = true;
       const w2Flux = 171787 * Math.pow(10, -0.4 * parseFloat(w2m[1]));
       points.push({
         wavelengthUm: 4.6,
@@ -224,26 +211,6 @@ export function generateCandidateSED(candidate: {
         measurementType: 'Catalog Photometry',
       });
     }
-  }
-
-  if (!hasWiseObs) {
-    // Clearly flag instrument passband specification models instead of fabricating unobserved fluxes
-    points.push({
-      wavelengthUm: 3.4,
-      fluxMjy: Number((spherexFluxMjy * 0.45).toFixed(3)),
-      source: 'Theoretical Model',
-      label: 'AllWISE W1 Bandpass Spec (3.4 µm)',
-      isModel: true,
-      measurementType: 'Model Passband Spec',
-    });
-    points.push({
-      wavelengthUm: 4.6,
-      fluxMjy: Number((spherexFluxMjy * 0.35).toFixed(3)),
-      source: 'Theoretical Model',
-      label: 'AllWISE W2 Bandpass Spec (4.6 µm)',
-      isModel: true,
-      measurementType: 'Model Passband Spec',
-    });
   }
 
   return points.sort((a, b) => a.wavelengthUm - b.wavelengthUm);

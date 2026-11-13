@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { getFamousObjectById, FAMOUS_OBJECTS } from './famousObjects';
 import { OFFICIAL_CHALLENGE_TARGETS } from './challengeTargets';
-import { SPHEREX_DETECTOR_ARRAYS, SPHEREX_102_CHANNELS, generate102SpectralChannels } from './spectralBands';
+import { SPHEREX_DETECTOR_ARRAYS, SPHEREX_102_CHANNELS, generate102SpectralChannels, generateCandidateSED } from './spectralBands';
 
 describe('SPEX Final Acceptance Audit — Scientific, Functional & UX Verification', () => {
   describe('Journey A: Famous Object Tracking & Honest Release Footprint', () => {
@@ -125,6 +125,13 @@ describe('SPEX Final Acceptance Audit — Scientific, Functional & UX Verificati
 
       const coIce = channels.find((ch) => Math.abs(ch.wavelengthUm - 4.67) < 0.15);
       assert.ok(coIce, 'CO ice absorption at 4.67 µm must be present in channels');
+    });
+
+    it('produces zero synthetic isModel=true SED points when catalogMatches is empty', () => {
+      const sed = generateCandidateSED({ deltaFlux: 2.5, catalogMatches: [] });
+      assert.strictEqual(sed.length, 1);
+      assert.strictEqual(sed[0].source, 'SPHEREx');
+      assert.strictEqual(sed.some((p) => p.isModel === true), false);
     });
   });
 

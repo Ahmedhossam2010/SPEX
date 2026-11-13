@@ -59,39 +59,39 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     objectType: 'Field Star / Optical Counterpart',
   },
   {
-    ra: 269.45208,
-    dec: 4.69339,
+    ra: 269.45207696,
+    dec: 4.69336497,
     identifier: 'Gaia DR3 4472832130942585856 (GJ 699)',
     gMag: 9.51,
-    pmRaMasYr: -802.8,
-    pmDecMasYr: 10362.5,
+    pmRaMasYr: -801.551,
+    pmDecMasYr: 10362.394,
     objectType: 'Barnard Star (Ultra-High Proper Motion M4V)',
   },
   {
-    ra: 330.84042,
-    dec: -56.78601,
-    identifier: 'Gaia DR3 6413247949313880448 (Eps Indi)',
-    gMag: 4.69,
-    pmRaMasYr: 3961.4,
-    pmDecMasYr: -2538.3,
-    objectType: 'Epsilon Indi System',
+    ra: 331.04414659,
+    dec: -56.78284420,
+    identifier: 'Gaia DR3 6412595907405944960 (Eps Indi Ba/Bb)',
+    gMag: 12.3,
+    pmRaMasYr: 3981.977,
+    pmDecMasYr: -2466.832,
+    objectType: 'Epsilon Indi Ba/Bb Binary Brown Dwarf',
   },
   {
-    ra: 77.45833,
-    dec: 30.40142,
-    identifier: 'Gaia DR3 162985331610427392 (RW Aur)',
+    ra: 76.95652603,
+    dec: 30.40143817,
+    identifier: 'Gaia DR3 156430822114424576 (RW Aur)',
     gMag: 10.42,
-    pmRaMasYr: 1.2,
-    pmDecMasYr: -18.4,
+    pmRaMasYr: 7.23,
+    pmDecMasYr: -20.33,
     objectType: 'RW Aurigae T Tauri Binary',
   },
   {
-    ra: 248.33004,
-    dec: 66.70281,
+    ra: 248.16761083,
+    dec: 66.75497942,
     identifier: 'Gaia DR3 1644781424687729280 (R Dra)',
     gMag: 7.62,
-    pmRaMasYr: 15.6,
-    pmDecMasYr: -1.2,
+    pmRaMasYr: -20.643,
+    pmDecMasYr: 6.149,
     objectType: 'R Draconis Mira Variable',
   },
 ];
@@ -145,9 +145,9 @@ const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
     objectType: 'Mid-Infrared Counterpart (GJ 699)',
   },
   {
-    ra: 133.79513,
-    dec: -7.24515,
-    identifier: 'AllWISE J085510.83-071442.5 (WISE 0855)',
+    ra: 133.81890825,
+    dec: -7.24704800,
+    identifier: 'WISEA J085510.74-071442.5 (Spitzer/HST, absent from Gaia)',
     w1Mag: 18.2,
     w2Mag: 13.98,
     objectType: 'Sub-Brown Dwarf (Y-Dwarf ~250 K)',
@@ -396,9 +396,9 @@ export class CatalogMatcher {
       return { ra, dec };
     }
 
-    const cosDec = Math.cos((dec * Math.PI) / 180);
-    // pmRaMasYr is mu_alpha* (cos(dec) already included) -> advance RA directly.
-  const deltaRaDeg = (pmRaMasYr * deltaYears) / 3.6e6;
+    const cosDec = Math.max(1e-6, Math.cos((dec * Math.PI) / 180));
+    // pmRaMasYr is mu_alpha* = dRA/dt * cos(dec) -> coordinate RA delta = (mu_alpha* * dt) / cos(dec).
+    const deltaRaDeg = (pmRaMasYr * deltaYears) / (3.6e6 * cosDec);
     const deltaDecDeg = (pmDecMasYr * deltaYears) / 3.6e6;
 
     const propRa = ((ra + deltaRaDeg) % 360 + 360) % 360;
@@ -412,7 +412,9 @@ export class CatalogMatcher {
 
   /**
    * Fetch astronomical sources in field for interactive canvas overlays,
-   * propagating high-proper-motion Gaia positions to the SPHEREx observation date.
+   * querying live CDS VizieR TAP (Gaia DR3 + AllWISE) and propagating Gaia DR3
+   * positions from 2016.0 to the SPHEREx observation date.
+   * Falls back to static fixtures only when offline / in test mode / if VizieR fails.
    */
   public static async getOverlaySources(
     ra: number,
@@ -422,8 +424,160 @@ export class CatalogMatcher {
     wcs?: WCSParams
   ): Promise<CatalogOverlayItem[]> {
     const overlays: CatalogOverlayItem[] = [];
+    const radiusDeg = Math.max(0.01, Math.min(0.5, radiusArcsec / 3600));
+    const useLiveCatalogs =
+      process.env.SPHEREX_OFFLINE !== '1' && process.env.NODE_ENV !== 'test';
 
-    // Query Gaia sources in field
+    if (useLiveCatalogs) {
+      const fetchEsaGaia = async (): Promise<string[][]> => {
+        const gaiaAdql = `SELECT TOP 25 source_id, ra, dec, pmra, pmdec, phot_g_mean_mag FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',${ra.toFixed(6)},${dec.toFixed(6)},${radiusDeg.toFixed(5)})) AND phot_g_mean_mag < 19 ORDER BY phot_g_mean_mag ASC`;
+        const url = `https://gea.esac.esa.int/tap-server/tap/sync?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=${encodeURIComponent(gaiaAdql)}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+          const res = await fetch(url, {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+          });
+          clearTimeout(timeout);
+          if (!res.ok) return [];
+          const csv = await res.text();
+          if (csv.trim().startsWith('<')) return [];
+          return csv
+            .trim()
+            .split('\n')
+            .slice(1)
+            .filter(Boolean)
+            .map((line) => line.split(',').map((c) => c.trim().replace(/^"|"$/g, '')));
+        } catch {
+          clearTimeout(timeout);
+          return [];
+        }
+      };
+
+      const fetchCfaWise = async (): Promise<string[][]> => {
+        const rsArcsec = Math.max(30, Math.min(1800, Math.round(radiusArcsec)));
+        const url = `https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=II/328/allwise&-c=${ra.toFixed(6)}+${dec >= 0 ? '+' : ''}${dec.toFixed(6)}&-c.rs=${rsArcsec}&-out.max=25&-out=AllWISE,RAJ2000,DEJ2000,W1mag,W2mag`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        try {
+          const res = await fetch(url, {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+          });
+          clearTimeout(timeout);
+          if (!res.ok) return [];
+          const tsv = await res.text();
+          const dataLines = tsv
+            .split('\n')
+            .map((l) => l.trimEnd())
+            .filter((l) => l.length > 0 && !l.startsWith('#'));
+          // Skip header, units, and dashed separator lines (first 3 non-comment lines)
+          if (dataLines.length <= 3) return [];
+          return dataLines.slice(3).map((l) => l.split('\t').map((c) => c.trim()));
+        } catch {
+          clearTimeout(timeout);
+          return [];
+        }
+      };
+
+      const [gaiaRows, wiseRows] = await Promise.all([
+        fetchEsaGaia(),
+        fetchCfaWise(),
+      ]);
+
+      for (const cols of gaiaRows) {
+        if (cols.length < 6) continue;
+        const sourceId = cols[0];
+        const srcRa = parseFloat(cols[1]);
+        const srcDec = parseFloat(cols[2]);
+        const pmra = parseFloat(cols[3]);
+        const pmdec = parseFloat(cols[4]);
+        const gMag = parseFloat(cols[5]);
+        if (!sourceId || !Number.isFinite(srcRa) || !Number.isFinite(srcDec)) continue;
+
+        const prop = this.propagateProperMotion(
+          srcRa,
+          srcDec,
+          Number.isFinite(pmra) ? pmra : 0,
+          Number.isFinite(pmdec) ? pmdec : 0,
+          2016.0,
+          observationEpochYear
+        );
+
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(prop.ra, prop.dec, wcs);
+            x = Number(pix.x.toFixed(2));
+            y = Number(pix.y.toFixed(2));
+          } catch {}
+        }
+
+        overlays.push({
+          catalog: 'Gaia DR3',
+          identifier: `Gaia DR3 ${sourceId}`,
+          raRaw: srcRa,
+          decRaw: srcDec,
+          raPropagated: prop.ra,
+          decPropagated: prop.dec,
+          x,
+          y,
+          mag: Number.isFinite(gMag) ? gMag : undefined,
+          magLabel: Number.isFinite(gMag) ? `G = ${gMag.toFixed(2)}` : undefined,
+          pmRaMasYr: Number.isFinite(pmra) ? pmra : undefined,
+          pmDecMasYr: Number.isFinite(pmdec) ? pmdec : undefined,
+          sourceType: 'Gaia DR3 Live Source',
+          isStaticFixture: false,
+        });
+      }
+
+      for (const cols of wiseRows) {
+        if (cols.length < 5) continue;
+        const wiseId = cols[0];
+        const srcRa = parseFloat(cols[1]);
+        const srcDec = parseFloat(cols[2]);
+        const w1 = parseFloat(cols[3]);
+        const w2 = parseFloat(cols[4]);
+        if (!wiseId || !Number.isFinite(srcRa) || !Number.isFinite(srcDec)) continue;
+
+        let x = 32;
+        let y = 32;
+        if (wcs) {
+          try {
+            const pix = WCS.skyToPix(srcRa, srcDec, wcs);
+            x = Number(pix.x.toFixed(2));
+            y = Number(pix.y.toFixed(2));
+          } catch {}
+        }
+
+        const magParts: string[] = [];
+        if (Number.isFinite(w1)) magParts.push(`W1=${w1.toFixed(2)}`);
+        if (Number.isFinite(w2)) magParts.push(`W2=${w2.toFixed(2)}`);
+
+        overlays.push({
+          catalog: 'AllWISE',
+          identifier: wiseId.startsWith('J') ? `AllWISE ${wiseId}` : wiseId,
+          raRaw: srcRa,
+          decRaw: srcDec,
+          raPropagated: srcRa,
+          decPropagated: srcDec,
+          x,
+          y,
+          mag: Number.isFinite(w1) ? w1 : undefined,
+          magLabel: magParts.length > 0 ? magParts.join(', ') : undefined,
+          sourceType: 'AllWISE Mid-IR Live Source',
+          isStaticFixture: false,
+        });
+      }
+
+      if (overlays.length > 0) {
+        return overlays;
+      }
+    }
+
+    // Fallback: static benchmark fixtures (labeled isStaticFixture: true)
     for (const src of KNOWN_BENCHMARK_GAIA_SOURCES) {
       const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
       if (sep <= radiusArcsec) {
@@ -460,13 +614,11 @@ export class CatalogMatcher {
           pmRaMasYr: src.pmRaMasYr,
           pmDecMasYr: src.pmDecMasYr,
           sourceType: src.objectType,
-          // Static benchmark fixture: UI must label these as "Saved local catalog, not live".
           isStaticFixture: true,
         });
       }
     }
 
-    // Query AllWISE sources in field
     for (const src of KNOWN_BENCHMARK_WISE_SOURCES) {
       const sep = WCS.angularSeparationArcsec(ra, dec, src.ra, src.dec);
       if (sep <= radiusArcsec) {
@@ -492,7 +644,6 @@ export class CatalogMatcher {
           mag: src.w1Mag,
           magLabel: `W1=${src.w1Mag.toFixed(1)}, W2=${src.w2Mag.toFixed(1)}`,
           sourceType: src.objectType,
-          // Static benchmark fixture: UI must label these as "Saved local catalog, not live".
           isStaticFixture: true,
         });
       }

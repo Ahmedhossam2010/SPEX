@@ -401,7 +401,7 @@ export const DiscoveryReportModal: React.FC<DiscoveryReportModalProps> = ({
         {/* Footer Actions */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 dark:border-white/[0.08]">
           <div className="text-[11px] text-slate-500 font-mono">
-            <span>NASA/IPAC SPHEREx QR2 Provenance Checksum: </span>
+            <span>NASA/IPAC SPHEREx Provenance Checksum: </span>
             <span className="font-bold text-slate-700 dark:text-slate-300">
               {investigation.provenance.fitsChecksum1.slice(0, 10)}...
             </span>

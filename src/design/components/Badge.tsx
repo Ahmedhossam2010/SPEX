@@ -27,7 +27,7 @@ export const Badge: React.FC<BadgeProps> = ({
       glow: 'shadow-[0_0_12px_rgba(0,211,243,0.15)]',
     },
     SAVED: {
-      label: 'REAL DATA, SAVED COPY (NOT LIVE)',
+      label: 'REAL SPHEREx DATA - cached',
       bg: 'bg-[#FFB900]/10',
       text: 'text-[#FFB900]',
       border: 'border-[#FFB900]/30',
