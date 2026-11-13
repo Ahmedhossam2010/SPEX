@@ -56,3 +56,29 @@
 - `scripts/build_snapshot.ts` & `data/snapshots/*.json`: Preserved `astrometrySummary`, `recommendedDetector`, and `largestDiffGroupKey` in refreshed compact (<3 MB) archive snapshots.
 - `src/science/science.test.ts`: Added unit tests covering differential Gaia DR3 alignment, `< 3` reference-star low confidence, `0x02` DQ saturation masking, non-isolated peak rejection, and stationary-control astrometric floor gating (93/93 passing).
 - `README.md`, `PROGRESS.md`, `CHANGES.md`: Documented differential astrometry, empirical error floor limitation, and verified benchmark results.
+
+## Phase E — Final Close-Out (Error Budget, Live 5-Target Verification, Snapshots & Docs)
+- `.env.example`: Added `GEMINI_API_KEY=` placeholder for server-side Gemini integration.
+- `server.ts`: Restricted stationary-control floor updates to unsaturated frames (`unsatValidFrames.length >= 2`), normalized detector screening scores by `framesReturned`, and ordered `R Draconis` `D2` first.
+- `src/components/TimeLens/FramePlayer.tsx`: Removed `× floor` / `Floor ratio` wording, added `annualMotion` and `errorBudgetLabel` fields/display, and aligned the wing-fit badge with `errorBudgetLabel`.
+- `src/components/ExploreView.tsx`: Updated 60s demo step 3 caption to describe `WISE 0855` honestly as tracked at the predicted position with measured vs predicted shown (`6.11″ ± 4.41″`, `1.39σ`).
+- `scripts/build_snapshot.ts`: Raised total snapshot cap to `3.35 MB` (`< 3.5 MB`) and per-preset fetch timeout to `240s`.
+- `data/snapshots/control-floor.json`: Purged wing-fit `R Draconis` entries so only unsaturated `RW Aurigae` (`D1`) calibrates the stationary-control floor.
+- `data/snapshots/{barnards-star,epsilon-indi,wise-0855,rw-aur,r-dra}.json`: Rebuilt compact (`3.23 MB` total) live snapshots containing `astrometrySummary`, per-detector floor, and `lightCurve`.
+- `data/catalog_cache.json`: Persisted Gaia DR3 + AllWISE reference-star overlays and `15″` neighbor lists across all 5 presets.
+- `README.md`: Documented two-pass weighted linear error budget, per-detector floors, wing-fit/`< 3σ` caveats, verified 5-row table, 60-second demo script, and 3-sentence pitch.
+- `PROGRESS.md`: Marked Final Close-Out items complete and recorded the final 5-row live verification table.
+- `CHANGES.md`: Recorded all Phase E Final Close-Out file changes.
+
+## Phase F — UI + AI Guide Pass (Explorer Mode, Grounded SPEX Guide, 3 Missions & Beginner Language)
+- `src/App.tsx`: Changed default exploration mode to `Explorer` (`isScientistMode` false by default for new visitors), persisted toggle selection in `localStorage` (`spherex_explore_mode`), and kept `?mode=scientist|explorer` query parameter support.
+- `src/science/targetFacts.ts`: Added curated verified facts-only knowledge base (`TARGET_FACTS_BY_CASE`, `SPHEREX_MISSION_FACTS`, `matchTargetFacts`, `BEGINNER_TERMS_MAP`) in English and Arabic for grounded AI explanations.
+- `src/science/spexExplain.ts`: Added `POST /api/spex/explain` request/response contracts, plain-word DQ flag decoder (`decodeFlagsPlainWords`), strict system prompt builder (`buildSpexSystemInstruction`), canvas highlight clamping, and deterministic `"SPEX offline mode"` template generator (`buildOfflineSpexExplain`).
+- `server.ts`: Added `POST /api/spex/explain` calling Gemini server-side via `GEMINI_MODEL` with strict JSON schema output, 12s timeout, 20 req/min per-IP rate limiting, SHA-256 context cache, and automatic `"SPEX offline mode"` fallback when no API key is configured or on error.
+- `src/components/Explore/SpexGuidePanel.tsx`: Created responsive AI Guide panel (bottom sheet on mobile, side drawer on desktop) with Kid/Beginner/Scientist level selector, quick chips, clickable `ScienceTerm` chips, follow-up buttons, `"SPEX offline mode"` badge, and `"AI explanation. The data panel is the source of truth."` notice.
+- `src/components/Explore/ExplorerMissions.tsx`: Created 3 interactive hands-on missions (`Catch a moving star`, `Meet a freezing brown dwarf`, `Moving or just noise?`) with reactive step checkmarks triggered by real user actions, 3-bullet `"What you learned"` completion cards, Discovery Postcard CTA, and `localStorage` sync with `SpaceExplorerLogModal`.
+- `src/components/Explore/SpaceExplorerLogModal.tsx`: Synced milestone updates from `spex-missions-updated` events and surfaced completed hands-on Explorer mission count in the modal header.
+- `src/components/TimeLens/FramePlayer.tsx`: Implemented clean `Explorer` UI (3 big buttons, plain sentence, friendly `Live from NASA` / `Saved copy from <date>` badge, plain-word honesty card, `"Learn the words"` & `"More tools"` links), canvas pixel tap-to-sky inspection, `"Explain this spot"` button, animated `"SPEX points here"` canvas highlights, and `onCanvasReady` export support while keeping all Scientist controls intact.
+- `src/components/ExploreView.tsx`: Added 5 friendly target preset cards in Explorer mode, wired `FramePlayer` <-> `SpexGuidePanel` <-> `ExplorerMissions` state and callbacks, and preserved Scientist mode workspace unchanged.
+- `src/utils/scientificGlossary.ts` & `src/utils/translations.ts`: Added beginner-friendly EN/AR terms (`epoch`, `centroid`, `wing_fit`, `saturated`, plus updated `image_subtraction`, `proper_motion`, `sigma`, `dq_flags`) and full EN/AR translation parity for Explorer UI, SPEX Guide, and Missions.
+- `scripts/e2e_smoke.mjs`, `.env.example`, `README.md`, `PROGRESS.md`, `CHANGES.md`: Extended Playwright E2E smoke test (Explorer default, 3 buttons, canvas tap explain, Mission completion, Scientist controls, EN/AR toggle, `360px` zero-overflow check), documented `GEMINI_MODEL`, and updated docs.

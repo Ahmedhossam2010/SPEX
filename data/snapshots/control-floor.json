@@ -1,26 +1,21 @@
 {
-  "updatedAt": "2026-11-13T09:29:51.133Z",
+  "updatedAt": "2026-11-13T13:14:03.436Z",
   "reports": [
     {
       "targetId": "target-rw-aurigae",
-      "validFrames": 12,
+      "validFrames": 6,
       "totalFrames": 16,
-      "residualScatterArcsec": 0.437,
-      "meanOffsetArcsec": 0.318,
+      "residualScatterArcsec": 0.685,
+      "meanOffsetArcsec": 0.615,
       "perFrameResidualsArcsec": [
         0,
-        0,
-        0.0001,
-        0.0001,
-        0.7662,
-        0.7662,
-        0.0922,
-        0.0922,
-        0.5249,
-        0.5249,
-        0.5249,
-        0.5249
-      ]
+        0.8259,
+        0.596,
+        0.642,
+        0.9686,
+        0.6556
+      ],
+      "detector": "D1"
     }
   ]
 }

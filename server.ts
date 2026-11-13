@@ -5,7 +5,14 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
+import {
+  SpexExplainRequest,
+  SpexExplainResponse,
+  buildSpexSystemInstruction,
+  buildOfflineSpexExplain,
+  clampHighlights,
+} from './src/science/spexExplain';
 import { FITSReader } from './src/science/fitsReader';
 import { ScientificPipeline } from './src/science/pipeline';
 import { CatalogMatcher } from './src/science/catalogMatcher';
@@ -153,9 +160,9 @@ function getRecommendedDetectorsForTarget(
   if (tid.includes('wise-0855') || tid.includes('0855')) {
     return ['D5', 'D6', 'D4', 'D3', 'D2', 'D1'];
   }
-  // Barnard's Star (M4V, H=4.83 mag): D2 core saturates; D3/D1/D5 give unsaturated frames across ~400d.
+  // Barnard's Star (M4V, H=4.83 mag): D5 delivers the highest SNR wing-fit astrometry (4.00σ) across ~400d; D2/D3/D1 saturate in core.
   if (tid.includes('barnard')) {
-    return ['D3', 'D1', 'D5', 'D6', 'D4', 'D2'];
+    return ['D5', 'D3', 'D1', 'D6', 'D4', 'D2'];
   }
   // Epsilon Indi Ba/Bb (T1+T6, J=11.9, K=11.2): bright & clean in D3/D2 without saturation.
   if (tid.includes('epsilon-indi')) {
@@ -165,9 +172,9 @@ function getRecommendedDetectorsForTarget(
   if (tid.includes('rw-aur')) {
     return ['D1', 'D3', 'D4', 'D2', 'D5', 'D6'];
   }
-  // R Draconis (bright Mira giant): shorter bands saturate heavily; try D6/D5 first, then D1.
+  // R Draconis (bright Mira giant): D2 gives the cleanest wing-fit yield (14/16) and 6 Gaia ref stars.
   if (tid.includes('r-dra')) {
-    return ['D6', 'D5', 'D1', 'D3', 'D4', 'D2'];
+    return ['D2', 'D6', 'D5', 'D1', 'D3', 'D4'];
   }
   return ['D3', 'D2', 'D4', 'D1', 'D5', 'D6'];
 }
@@ -230,7 +237,7 @@ process.on('uncaughtException', (err) => {
 });
 const CACHE_DIR = path.join('/tmp', 'spherex_cache');
 
-// Concurrency limit for IRSA cutout downloads (max 6 parallel)
+// Concurrency limit for IRSA cutout downloads (max 3 parallel to prevent IRSA 503 burst throttling)
 class Semaphore {
   private running = 0;
   private queue: (() => void)[] = [];
@@ -253,7 +260,7 @@ class Semaphore {
     if (next) next();
   }
 }
-const cutoutSemaphore = new Semaphore(6);
+const cutoutSemaphore = new Semaphore(3);
 
 // Configurable Data Release Paths via Environment Variables (B1, B12)
 const SPHEREX_IRSA_HOST = (process.env.SPHEREX_IRSA_HOST || 'https://irsa.ipac.caltech.edu').replace(/\/+$/, '');
@@ -542,7 +549,12 @@ async function queryIrsaTapObs(
         clearTimeout(timeout);
         lastErr = err;
         const status = err?.statusCode;
-        console.warn(`[TAP] Attempt ${attempt}/${MAX_RETRIES} failed for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
+        const willRetry = !(status && status >= 400 && status < 500) && attempt < MAX_RETRIES;
+        if (willRetry) {
+          console.log(`[TAP] Attempt ${attempt}/${MAX_RETRIES} retrying for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
+        } else {
+          console.warn(`[TAP] Attempt ${attempt}/${MAX_RETRIES} failed for RA ${ra}, Dec ${dec} (${detectorFilter || 'ALL'}): ${err.message}`);
+        }
         if (status && status >= 400 && status < 500) break;
         if (attempt < MAX_RETRIES) {
           const backoff = Math.min(8000, 1500 * Math.pow(2, attempt - 1));
@@ -924,15 +936,18 @@ function buildDirectCutoutUrl(
   return buildCutoutRequestUrl(fitsSource, ra, dec, sizePix);
 }
 
-// Helper: Download or read cached FITS cutout from IRSA with sha256(cutoutUrl) cache, in-flight dedup, 60s timeout & Semaphore(6)
+// Helper: Download or read cached FITS cutout from IRSA with sha256(cutoutUrl) cache, in-flight dedup, 30s timeout & Semaphore(3)
 async function getFITSCutout(
   fitsSource: ResolvedFitsUrl | string,
   ra: number,
   dec: number,
   sizePix = 64,
   obsId?: string,
-  options?: { allowDemoFallback?: boolean }
+  options?: { allowDemoFallback?: boolean; signal?: AbortSignal }
 ): Promise<CutoutFetchResult> {
+  if (options?.signal?.aborted) {
+    throw Object.assign(new Error('IRSA Cutout aborted'), { name: 'AbortError' });
+  }
   const cutoutUrl = buildDirectCutoutUrl(fitsSource, ra, dec, sizePix);
 
   // Handle local file URLs (only for explicit NEP local fixtures)
@@ -1001,7 +1016,22 @@ async function getFITSCutout(
   // Deduplicate concurrent requests for the exact same cutout URL
   const existingInflight = cutoutInflightMap.get(cutoutUrl);
   if (existingInflight) {
-    return existingInflight;
+    if (!options?.signal) return existingInflight;
+    return await new Promise<CutoutFetchResult>((resolve, reject) => {
+      const onAbort = () => reject(Object.assign(new Error('IRSA Cutout aborted'), { name: 'AbortError' }));
+      if (options.signal!.aborted) return onAbort();
+      options.signal!.addEventListener('abort', onAbort, { once: true });
+      existingInflight.then(
+        (v) => {
+          options.signal!.removeEventListener('abort', onAbort);
+          resolve(v);
+        },
+        (e) => {
+          options.signal!.removeEventListener('abort', onAbort);
+          reject(e);
+        }
+      );
+    });
   }
 
   const downloadPromise = (async (): Promise<CutoutFetchResult> => {
@@ -1010,9 +1040,20 @@ async function getFITSCutout(
     const MAX_RETRIES = 3;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      if (options?.signal?.aborted) {
+        throw Object.assign(new Error('IRSA Cutout aborted'), { name: 'AbortError' });
+      }
       const release = await cutoutSemaphore.acquire();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
+      const onExternalAbort = () => controller.abort();
+      if (options?.signal) {
+        if (options.signal.aborted) {
+          release();
+          throw Object.assign(new Error('IRSA Cutout aborted'), { name: 'AbortError' });
+        }
+        options.signal.addEventListener('abort', onExternalAbort, { once: true });
+      }
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
       try {
         const res = await fetch(cutoutUrl, {
@@ -1029,7 +1070,9 @@ async function getFITSCutout(
               `IRSA Cutout: Celestial coordinates (RA ${ra.toFixed(4)}°, Dec ${dec.toFixed(4)}°) do not overlap with this observation's detector coverage.`
             );
           }
-          throw new Error(`IRSA Cutout HTTP ${res.status}: ${res.statusText}`);
+          throw Object.assign(new Error(`IRSA Cutout HTTP ${res.status}: ${res.statusText}`), {
+            statusCode: res.status,
+          });
         }
 
         const arrayBuf = await res.arrayBuffer();
@@ -1048,14 +1091,43 @@ async function getFITSCutout(
       } catch (err: any) {
         clearTimeout(timeout);
         lastError = err;
+        if (options?.signal?.aborted || err?.name === 'AbortError') {
+          if (options?.signal?.aborted) {
+            throw Object.assign(new Error('IRSA Cutout aborted'), { name: 'AbortError' });
+          }
+        }
         if (err.message?.includes('overlap') || err.message?.includes('422')) {
           throw err;
         }
-        console.warn(`[IRSA Cutout] Attempt ${attempt}/${MAX_RETRIES} failed (${obsId || cutoutUrl}): ${err.message}`);
         if (attempt < MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
+          console.log(`[IRSA Cutout] Transient retry ${attempt}/${MAX_RETRIES} (${obsId || cutoutUrl}): ${err.message}`);
+          const isBusy =
+            err?.statusCode === 503 ||
+            err?.statusCode === 429 ||
+            /503|429|Service Unavailable|Too Many Requests/i.test(err?.message || '');
+          const waitMs = (isBusy ? 2000 : 1000) * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 400);
+          await new Promise<void>((resolve) => {
+            if (!options?.signal) {
+              setTimeout(resolve, waitMs);
+              return;
+            }
+            const timer = setTimeout(() => {
+              options.signal?.removeEventListener('abort', onAbortSleep);
+              resolve();
+            }, waitMs);
+            const onAbortSleep = () => {
+              clearTimeout(timer);
+              resolve();
+            };
+            options.signal.addEventListener('abort', onAbortSleep, { once: true });
+          });
+        } else {
+          console.warn(`[IRSA Cutout] Attempt ${attempt}/${MAX_RETRIES} failed (${obsId || cutoutUrl}): ${err.message}`);
         }
       } finally {
+        if (options?.signal) {
+          options.signal.removeEventListener('abort', onExternalAbort);
+        }
         release();
       }
     }
@@ -2120,6 +2192,13 @@ app.all('/api/spherex/process', async (req: Request, res: Response) => {
   }
 });
 
+const timeseriesResponseCache = new Map<string, { ts: number; body: Record<string, any> }>();
+const timeseriesInflightMap = new Map<
+  string,
+  { promise: Promise<{ statusCode: number; body: Record<string, any> }>; abortController: AbortController; waiters: number }
+>();
+const TIMESERIES_CACHE_TTL_MS = 15 * 60 * 1000;
+
 // API: Real Multi-Epoch Time Series & Blink Video Engine (Phase B: Artifact+Plane TAP, WCS-WAVE, Variance-gated Centroids)
 app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
   const isStreamNdjson = req.query.stream === 'ndjson' || req.body?.stream === 'ndjson';
@@ -2240,12 +2319,28 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     };
 
     const liveOnly = req.query.liveOnly === '1' || req.body?.liveOnly === true;
+    const frameModeParam = String((req.query.frameMode ?? req.query.frame ?? req.body?.frameMode ?? req.body?.frame) ?? '').toLowerCase();
+    const frameModeKey: 'sky' | 'target' = frameModeParam === 'target' ? 'target' : 'sky';
+    const tsBaseCacheKey = `${targetDef?.id || caseId || `${ra.toFixed(5)}_${dec.toFixed(5)}`}::${cleanDet || 'AUTO'}::${wlWindowRaw || 'ALL'}::${sizePix}::${maxFrames}::${sameReleaseOnly ? 'sameRel' : 'allRel'}::${frameModeKey}`;
+
+    const cachedTs = timeseriesResponseCache.get(tsBaseCacheKey);
+    if (
+      cachedTs &&
+      Date.now() - cachedTs.ts < TIMESERIES_CACHE_TTL_MS &&
+      !(liveOnly && cachedTs.body?.isSnapshot)
+    ) {
+      return sendJsonOrStream(200, cachedTs.body);
+    }
+
     const snapshotAvailable = !liveOnly && !cleanDet ? loadSnapshotResponse() : null;
     if (process.env.SPHEREX_OFFLINE === '1' && snapshotAvailable) {
       return sendJsonOrStream(200, snapshotAvailable);
     }
 
-    const runLivePipeline = async (): Promise<{ statusCode: number; body: Record<string, any> }> => {
+    const runLivePipeline = async (
+      pipelineSignal?: AbortSignal,
+      pipelineDeadlineMs?: number
+    ): Promise<{ statusCode: number; body: Record<string, any> }> => {
     const recommendedDetOrder = getRecommendedDetectorsForTarget(targetDef, wlMinFilter, wlMaxFilter);
     const candidateDetectors = cleanDet ? [cleanDet] : recommendedDetOrder;
 
@@ -2484,6 +2579,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
 
       const framePromises = selectedExposures.map(async (exp, idx) => {
         try {
+          if (pipelineSignal?.aborted) return null;
           const expEpochYear = julianYearFromMjd(exp.mjd);
           const propExp =
             matchedTargetTs &&
@@ -2503,7 +2599,10 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           const targetDec = propExp ? propExp.dec : dec;
           const cutoutCenterRa = frameMode === 'sky' && refPropTs ? refPropTs.ra : targetRa;
           const cutoutCenterDec = frameMode === 'sky' && refPropTs ? refPropTs.dec : targetDec;
-          const cutout = await getFITSCutout(exp.resolvedFits, cutoutCenterRa, cutoutCenterDec, sizePix, exp.obsId, { allowDemoFallback });
+          const cutout = await getFITSCutout(exp.resolvedFits, cutoutCenterRa, cutoutCenterDec, sizePix, exp.obsId, {
+            allowDemoFallback,
+            signal: pipelineSignal,
+          });
           const parsed = FITSReader.parse(cutout.buffer);
           const pix = WCS.skyToPix(targetRa, targetDec, parsed.wcs);
           const pxFromEdge = Math.min(pix.x, pix.y, parsed.width - 1 - pix.x, parsed.height - 1 - pix.y);
@@ -2576,6 +2675,9 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
             _nativeFlags: parsed.flags,
           } as LoadedFrameInternal;
         } catch (frameErr: any) {
+          if (pipelineSignal?.aborted || frameErr?.name === 'AbortError') {
+            return null;
+          }
           completedCount++;
           emitProgress({
             type: 'progress',
@@ -2989,8 +3091,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
           ? Number((unsatValidFrames[unsatValidFrames.length - 1].mjd - unsatValidFrames[0].mjd).toFixed(4))
           : 0;
 
-      if (isControlTarget && loadedFrames.length >= 2) {
-        const useUnsatOnlyForControl = unsatValidFrames.length >= 2;
+      if (isControlTarget && unsatValidFrames.length >= 2) {
         const controlInputs = activeRaw.map((fr, idx) => {
           const cent = loadedFrames[idx].measuredCentroid;
           const pRa = wrapDeltaRaDeg(fr._targetSky.ra, anchorSky0.ra) * cosAnchorDec * 3600;
@@ -3000,7 +3101,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
             dyArcsec: cent?.dyArcsec ?? 0,
             predDxArcsec: pRa,
             predDyArcsec: pDec,
-            valid: Boolean(cent?.valid) && (!useUnsatOnlyForControl || !cent?.wingFit),
+            valid: Boolean(cent?.valid) && !cent?.wingFit,
           };
         });
         const report = measureControlResidualScatter(targetDef?.id || caseId, controlInputs);
@@ -3363,9 +3464,19 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       let probedOkDetectors = 0;
 
       for (let i = 0; i < maxAttempts; i++) {
+        if (pipelineSignal?.aborted) break;
+        if (
+          pipelineDeadlineMs &&
+          i > 0 &&
+          bestResult?.body?.status === 'OK' &&
+          Date.now() >= pipelineDeadlineMs - 4500
+        ) {
+          break;
+        }
         const det = candidateDetectors[i];
         const sampleCap = i === 0 || cleanDet ? maxFrames : Math.min(6, maxFrames);
         const resDet = await buildResponseForDetector(det, undefined, sampleCap);
+        if (pipelineSignal?.aborted) break;
         if (resDet.body.status === 'OK') {
           probedOkDetectors++;
           if (!resDet.allSaturated && resDet.validDetections > 0) {
@@ -3377,17 +3488,19 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         }
         const bestHasOptA = bestResult ? bestResult.unsaturatedCoreCount >= 4 && bestResult.unsatSpanDays >= 180 : false;
         const curHasOptA = resDet.unsaturatedCoreCount >= 4 && resDet.unsatSpanDays >= 180;
+        const bestN = Math.max(1, bestResult?.body?.framesReturned || 1);
+        const curN = Math.max(1, resDet.body?.framesReturned || 1);
         const bestScore = bestResult
           ? (bestHasOptA ? 10000 : 0) +
-            bestResult.unsaturatedCoreCount * 100 +
-            bestResult.validDetections * 10 -
-            bestResult.wingFitCount * 2
+            (bestResult.unsaturatedCoreCount / bestN) * 100 +
+            (bestResult.validDetections / bestN) * 10 -
+            (bestResult.wingFitCount / bestN) * 2
           : -1;
         const curScore =
           (curHasOptA ? 10000 : 0) +
-          resDet.unsaturatedCoreCount * 100 +
-          resDet.validDetections * 10 -
-          resDet.wingFitCount * 2;
+          (resDet.unsaturatedCoreCount / curN) * 100 +
+          (resDet.validDetections / curN) * 10 -
+          (resDet.wingFitCount / curN) * 2;
         if (
           !bestResult ||
           (bestResult.body.status !== 'OK' && resDet.body.status === 'OK') ||
@@ -3396,11 +3509,15 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
         ) {
           bestResult = resDet;
         }
-        // Stop early ONLY when first/current detector already gives clean >=4 unsaturated cores spanning >=180d
+        // Stop early when first/current detector already gives clean >=4 unsaturated cores spanning >=180d,
+        // or when serving an interactive preset request whose verified optimal detector succeeded live.
         if (
           resDet.body.status === 'OK' &&
-          resDet.unsaturatedCoreCount >= 4 &&
-          resDet.unsatSpanDays >= 180
+          ((resDet.unsaturatedCoreCount >= 4 && resDet.unsatSpanDays >= 180) ||
+            (!liveOnly &&
+              snapshotAvailable &&
+              resDet.validDetections >= 8 &&
+              resDet.body.selectedDetector === snapshotAvailable.selectedDetector))
         ) {
           break;
         }
@@ -3408,6 +3525,8 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
 
       // If winning detector was screened at 6 frames and more TAP exposures exist, upgrade it to full maxFrames
       if (
+        !pipelineSignal?.aborted &&
+        (!pipelineDeadlineMs || Date.now() < pipelineDeadlineMs - 6000) &&
         bestResult &&
         bestResult.body.status === 'OK' &&
         (bestResult.body.framesReturned || 0) < maxFrames &&
@@ -3462,25 +3581,82 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
     }
     }; // end runLivePipeline
 
+    const inflightKey = `${tsBaseCacheKey}::${liveOnly ? 'liveOnly' : 'default'}`;
+    const startOrJoinLivePipeline = (deadlineMs?: number) => {
+      let entry = timeseriesInflightMap.get(inflightKey);
+      if (!entry) {
+        const abortController = new AbortController();
+        const promise = runLivePipeline(abortController.signal, deadlineMs)
+          .then((result) => {
+            if (result.statusCode === 200 && result.body?.state === 'OK' && !result.body?.isSnapshot) {
+              timeseriesResponseCache.set(tsBaseCacheKey, { ts: Date.now(), body: result.body });
+            }
+            return result;
+          })
+          .finally(() => {
+            timeseriesInflightMap.delete(inflightKey);
+          });
+        entry = { promise, abortController, waiters: 0 };
+        timeseriesInflightMap.set(inflightKey, entry);
+      }
+      entry.waiters++;
+      return entry;
+    };
+
     if (snapshotAvailable) {
       let liveResult: { statusCode: number; body: Record<string, any> } | null = null;
+      const entry = startOrJoinLivePipeline(Date.now() + 25000);
+      let releasedWaiter = false;
+      const releaseWaiter = (abortIfEmpty: boolean) => {
+        if (releasedWaiter) return;
+        releasedWaiter = true;
+        entry.waiters = Math.max(0, entry.waiters - 1);
+        if (abortIfEmpty && entry.waiters === 0) {
+          entry.abortController.abort();
+        }
+      };
+      const onResClose = () => {
+        if (!res.writableEnded) releaseWaiter(true);
+      };
+      res.on('close', onResClose);
       try {
         liveResult = await Promise.race([
-          runLivePipeline(),
+          entry.promise,
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
         ]);
       } catch {
         liveResult = null;
+      } finally {
+        res.off('close', onResClose);
+        releaseWaiter(!(liveResult && liveResult.statusCode === 200 && liveResult.body?.state === 'OK'));
       }
       if (liveResult && liveResult.statusCode === 200 && liveResult.body?.state === 'OK') {
         return sendJsonOrStream(200, liveResult.body);
       }
-      console.warn(`[Snapshot] Live query slow (>25s) or failed for ${caseId || `${ra},${dec}`}; serving archive snapshot.`);
+      console.log(`[Snapshot] Serving verified archive snapshot for ${caseId || `${ra},${dec}`} (live query exceeded 25s or unavailable).`);
       return sendJsonOrStream(200, snapshotAvailable);
     }
 
-    const liveResult = await runLivePipeline();
-    return sendJsonOrStream(liveResult.statusCode, liveResult.body);
+    const entry = startOrJoinLivePipeline();
+    let releasedWaiter = false;
+    const releaseWaiter = (abortIfEmpty: boolean) => {
+      if (releasedWaiter) return;
+      releasedWaiter = true;
+      entry.waiters = Math.max(0, entry.waiters - 1);
+      if (abortIfEmpty && entry.waiters === 0) entry.abortController.abort();
+    };
+    const onResClose = () => {
+      if (!res.writableEnded) releaseWaiter(true);
+    };
+    res.on('close', onResClose);
+    try {
+      const liveResult = await entry.promise;
+      if (res.writableEnded) return;
+      return sendJsonOrStream(liveResult.statusCode, liveResult.body);
+    } finally {
+      res.off('close', onResClose);
+      releaseWaiter(false);
+    }
   } catch (tsErr: any) {
     console.error('Time series pipeline error:', tsErr);
     return sendJsonOrStream(500, { error: 'Failed to process time series: ' + tsErr.message });
@@ -3823,6 +3999,174 @@ Answer in 1-2 concise sentences with mood tag and optional action tag.`;
   }
 });
 
+// In-memory cache and per-IP 20/min rate limiter for POST /api/spex/explain
+const spexExplainCache = new Map<string, { payload: SpexExplainResponse; ts: number }>();
+const SPEX_EXPLAIN_CACHE_TTL_MS = 15 * 60 * 1000;
+const spexExplainRateMap = new Map<string, number[]>();
+const SPEX_EXPLAIN_MAX_PER_MIN = 20;
+
+function checkSpexExplainRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const history = (spexExplainRateMap.get(ip) || []).filter((t) => t > windowStart);
+  if (history.length >= SPEX_EXPLAIN_MAX_PER_MIN) {
+    spexExplainRateMap.set(ip, history);
+    return false;
+  }
+  history.push(now);
+  spexExplainRateMap.set(ip, history);
+  return true;
+}
+
+const SPEX_EXPLAIN_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    answer: { type: Type.STRING },
+    highlights: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          x: { type: Type.NUMBER },
+          y: { type: Type.NUMBER },
+          r: { type: Type.NUMBER },
+          label: { type: Type.STRING },
+        },
+        required: ['x', 'y', 'r', 'label'],
+      },
+    },
+    followUps: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+    },
+    terms: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+    },
+  },
+  required: ['answer', 'highlights', 'followUps', 'terms'],
+};
+
+app.post('/api/spex/explain', async (req: Request, res: Response) => {
+  const body: SpexExplainRequest = req.body && typeof req.body === 'object' ? req.body : {};
+  const language: 'en' | 'ar' = body.language === 'ar' ? 'ar' : 'en';
+  const level =
+    body.level === 'kid' || body.level === 'scientist' ? body.level : 'beginner';
+  const question = typeof body.question === 'string' ? body.question.trim().slice(0, 500) : '';
+  const selection = body.selection ?? null;
+  const context = body.context ?? null;
+
+  const clientIp =
+    (typeof req.headers['x-forwarded-for'] === 'string'
+      ? req.headers['x-forwarded-for'].split(',')[0].trim()
+      : req.ip) || 'unknown';
+
+  const normalizedReq: SpexExplainRequest = {
+    language,
+    level,
+    question,
+    selection,
+    context,
+  };
+
+  try {
+    const cacheKey = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(normalizedReq))
+      .digest('hex');
+
+    const cached = spexExplainCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < SPEX_EXPLAIN_CACHE_TTL_MS) {
+      return res.json({
+        ...cached.payload,
+        engine: cached.payload.offlineMode ? 'offline_fallback' : 'cache',
+      });
+    }
+
+    if (!checkSpexExplainRateLimit(clientIp)) {
+      const offline = buildOfflineSpexExplain(normalizedReq);
+      return res.json(offline);
+    }
+
+    const ai = getGenAIClient();
+    if (ai) {
+      const modelName = process.env.GEMINI_MODEL || 'gemini-4-hydrogen';
+      const systemInstruction = buildSpexSystemInstruction(language, level, context);
+      const userPrompt = JSON.stringify({
+        language,
+        level,
+        question: question || (language === 'ar' ? 'ما هذا الموضع؟' : 'What is this spot?'),
+        selection,
+        context,
+      });
+
+      try {
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('SPEX explain timed out after 12000ms')), 12_000)
+        );
+        const generatePromise = ai.models.generateContent({
+          model: modelName,
+          contents: userPrompt,
+          config: {
+            systemInstruction,
+            responseMimeType: 'application/json',
+            responseSchema: SPEX_EXPLAIN_SCHEMA,
+          },
+        });
+
+        const response: any = await Promise.race([generatePromise, timeoutPromise]);
+        const rawText = typeof response?.text === 'string' ? response.text.trim() : '';
+        if (rawText) {
+          const parsed = JSON.parse(rawText);
+          if (parsed && typeof parsed.answer === 'string' && parsed.answer.trim()) {
+            const w = context?.frameWidth || 64;
+            const h = context?.frameHeight || 64;
+            const defaultLabel = language === 'ar' ? 'سبيكس يشير هنا' : 'SPEX points here';
+            const cleanPayload: SpexExplainResponse = {
+              answer: parsed.answer.trim(),
+              highlights: clampHighlights(parsed.highlights, w, h, defaultLabel),
+              followUps: Array.isArray(parsed.followUps)
+                ? parsed.followUps
+                    .filter((f: unknown) => typeof f === 'string' && f.trim())
+                    .map((f: string) => f.trim())
+                    .slice(0, 3)
+                : [],
+              terms: Array.isArray(parsed.terms)
+                ? parsed.terms
+                    .filter((t: unknown) => typeof t === 'string' && t.trim())
+                    .map((t: string) => t.trim())
+                    .slice(0, 5)
+                : [],
+              offlineMode: false,
+              engine: 'gemini',
+            };
+
+            if (spexExplainCache.size >= 500) {
+              const firstKey = spexExplainCache.keys().next().value;
+              if (firstKey) spexExplainCache.delete(firstKey);
+            }
+            spexExplainCache.set(cacheKey, { payload: cleanPayload, ts: Date.now() });
+            return res.json(cleanPayload);
+          }
+        }
+      } catch (geminiErr: any) {
+        console.warn('[SPEX Explain] Gemini unavailable, using offline fallback:', geminiErr?.message || geminiErr);
+      }
+    }
+
+    const offline = buildOfflineSpexExplain(normalizedReq);
+    if (spexExplainCache.size >= 500) {
+      const firstKey = spexExplainCache.keys().next().value;
+      if (firstKey) spexExplainCache.delete(firstKey);
+    }
+    spexExplainCache.set(cacheKey, { payload: offline, ts: Date.now() });
+    return res.json(offline);
+  } catch (err) {
+    console.warn('[SPEX Explain] Safe fallback due to error:', err);
+    return res.json(buildOfflineSpexExplain(normalizedReq));
+  }
+});
+
 // Serve public assets explicitly with correct image MIME types
 app.use('/assets', express.static(path.join(process.cwd(), 'public', 'assets'), {
   setHeaders: (res, filePath) => {
@@ -3865,8 +4209,9 @@ async function warmPresetCache(port: number) {
         { signal: AbortSignal.timeout(120000) }
       );
       console.log(`[WarmCache] ${cid}: HTTP ${resp.status}`);
+      await new Promise((r) => setTimeout(r, 500));
     } catch (err: any) {
-      console.warn(`[WarmCache] ${cid} skipped:`, err?.message || err);
+      console.log(`[WarmCache] ${cid} skipped:`, err?.message || err);
     }
   }
 }

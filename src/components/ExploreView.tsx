@@ -36,9 +36,11 @@ import { AstronomicalSkyViewport } from './Explore/AstronomicalSkyViewport';
 import { FourLensesDock } from './Explore/FourLensesDock';
 import { ScientistInvestigationPanel } from './Explore/ScientistInvestigationPanel';
 import { SpexCompanion } from './Explore/SpexCompanion';
+import { SpexGuidePanel } from './Explore/SpexGuidePanel';
 import { SpexGuidedTour } from './Explore/SpexGuidedTour';
 import { SpexUiHighlight } from './Explore/SpexUiHighlight';
 import { SpexPortrait } from '../spex/SpexPortrait';
+import { SpexExplainContext, SpexHighlight, SpexSpotSelection } from '../science/spexExplain';
 import { FramePlayer, PlayerRenderMode, TimeSeriesResponse } from './TimeLens/FramePlayer';
 import { AladinLitePanel } from './Explore/AladinLitePanel';
 import { PostcardModal } from './TimeLens/PostcardModal';
@@ -46,6 +48,7 @@ import { ProvenanceModal } from './ProvenanceModal';
 import { DataReleaseModal } from './DataReleaseModal';
 import { SpexSpaceDictionaryModal } from './SpexSpaceDictionaryModal';
 import { SpaceExplorerLogModal } from './Explore/SpaceExplorerLogModal';
+import { ExplorerMissions, TargetActionProgress } from './Explore/ExplorerMissions';
 import { DetectorStackingModal } from './Explore/DetectorStackingModal';
 import { SpectralExplorerModal } from './SpectralExplorerModal';
 import { ObservationItem, ImageMathMode } from './Explore/ObservationTimelineSelector';
@@ -86,7 +89,7 @@ const GUIDED_DEMO_STEPS: Array<{
   },
   {
     title: '3. Subpixel Centroid & Trail',
-    caption: 'SPHEREx pixels are 6.2″ wide (~1.3 px/yr shift). The measured centroid plot tracks RA/Dec drift alongside the predicted Spitzer/HST PM curve.',
+    caption: 'SPHEREx pixels are 6.2″ wide (~1.3 px/yr shift). WISE 0855 is tracked at the predicted position with measured vs predicted shown alongside the Spitzer/HST curve (6.11″ ± 4.41″, 1.39σ).',
     action: { play: false, blinkFirstLast: false, renderMode: 'raw', zoom: 4, showGrid: true, showMotionTrail: true },
   },
   {
@@ -146,9 +149,41 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [coordInput, setCoordInput] = useState<string>('');
   const [coordError, setCoordError] = useState<string | null>(null);
   const [guidedDemoStep, setGuidedDemoStep] = useState<number | null>(null);
-  const [showCompanion, setShowCompanion] = useState<boolean>(true);
+  const [showCompanion, setShowCompanion] = useState<boolean>(isScientistMode);
+  const [spexGuideOpen, setSpexGuideOpen] = useState<boolean>(false);
+  const [spexSpotSelection, setSpexSpotSelection] = useState<SpexSpotSelection | null>(null);
+  const [spexExplainContext, setSpexExplainContext] = useState<SpexExplainContext | null>(null);
+  const [spexHighlights, setSpexHighlights] = useState<SpexHighlight[]>([]);
+  const [spexAutoAskToken, setSpexAutoAskToken] = useState<number>(0);
   const [aladinSlotOpen, setAladinSlotOpen] = useState<boolean>(true);
   const [latestTimeSeriesMeta, setLatestTimeSeriesMeta] = useState<TimeSeriesResponse | null>(null);
+  const [missionProgressByCase, setMissionProgressByCase] = useState<Record<string, TargetActionProgress>>({});
+
+  const markTargetAction = useCallback((caseKey: string, field: keyof TargetActionProgress) => {
+    if (!caseKey) return;
+    setMissionProgressByCase((prev) => {
+      const cur = prev[caseKey] || { played: false, diffShown: false, spotOrSpex: false };
+      if (cur[field]) return prev;
+      return {
+        ...prev,
+        [caseKey]: {
+          ...cur,
+          [field]: true,
+        },
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isScientistMode && viewMode === 'curtain') {
+      setViewMode('flipbook');
+    }
+  }, [isScientistMode, viewMode]);
+
+  useEffect(() => {
+    setSpexHighlights([]);
+    setSpexSpotSelection(null);
+  }, [activeCaseId, currentResult?.targetCoords?.ra, currentResult?.targetCoords?.dec]);
   const [pendingTarget, setPendingTarget] = useState<{ ra: number; dec: number; caseId?: string } | null>(() => {
     if (typeof window === 'undefined') return null;
     const p = new URLSearchParams(window.location.search);
@@ -516,20 +551,41 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
 
         {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* SPEX Space Dictionary Trigger */}
-          <button
-            type="button"
-            onClick={() => {
-              setDictionaryTermId(null);
-              setShowDictionary(true);
-            }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
-            title={isRtl ? 'قاموس سبيكس الفلكي' : 'SPEX Space Dictionary'}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span className="hidden xl:inline">{isRtl ? 'القاموس الفلكي' : 'Space Dictionary'}</span>
-          </button>
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+          {isScientistMode && (
+            <>
+              {/* SPEX Space Dictionary Trigger */}
+              <button
+                type="button"
+                onClick={() => {
+                  setDictionaryTermId(null);
+                  setShowDictionary(true);
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+                title={isRtl ? 'قاموس سبيكس الفلكي' : 'SPEX Space Dictionary'}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span className="hidden xl:inline">{isRtl ? 'القاموس الفلكي' : 'Space Dictionary'}</span>
+              </button>
+
+              {/* Guided Tour Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setShowTour(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#00D3F3]/40 bg-[#00D3F3]/10 hover:bg-[#00D3F3]/20 text-[#00D3F3] transition cursor-pointer text-xs font-mono font-semibold"
+                title={isRtl ? 'بدء جولة سبيكس التوضيحية' : 'Start SPEX Tour'}
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{isRtl ? 'الجولة' : 'Tour'}</span>
+              </button>
+
+              {/* Data Authenticity Indicator */}
+              <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'NASA IRSA Archive'}</span>
+              </div>
+            </>
+          )}
 
           {/* Space Explorer's Log Trigger */}
           <button
@@ -542,84 +598,121 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <span className="hidden xl:inline">{isRtl ? 'سجل المستكشف' : "Explorer's Log"}</span>
           </button>
 
-          {/* Guided Tour Trigger Button */}
-          <button
-            type="button"
-            onClick={() => setShowTour(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-[#00D3F3]/40 bg-[#00D3F3]/10 hover:bg-[#00D3F3]/20 text-[#00D3F3] transition cursor-pointer text-xs font-mono font-semibold"
-            title={isRtl ? 'بدء جولة سبيكس التوضيحية' : 'Start SPEX Tour'}
-          >
-            <Compass className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isRtl ? 'الجولة' : 'Tour'}</span>
-          </button>
-
-          {/* Data Authenticity Indicator */}
-          <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-mono text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-semibold">{isRtl ? 'بيانات SPHEREx حقيقية' : 'NASA IRSA Archive'}</span>
-          </div>
-
           {/* Mode Switch: Explorer vs Scientist */}
           {onToggleScientistMode && (
             <div data-tour="scientist_toggle" className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15">
               <button
                 type="button"
+                data-testid="mode-explorer-btn"
                 onClick={() => isScientistMode && onToggleScientistMode()}
+                aria-pressed={!isScientistMode}
                 className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
                   !isScientistMode
                     ? 'bg-[#FFB900] text-slate-950 shadow-sm font-bold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {isRtl ? 'المستكشف' : 'Explorer'}
+                {t.modeExplorer}
               </button>
               <button
                 type="button"
+                data-testid="mode-scientist-btn"
                 onClick={() => !isScientistMode && onToggleScientistMode()}
+                aria-pressed={isScientistMode}
                 className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
                   isScientistMode
                     ? 'bg-[#00D3F3] text-slate-950 shadow-sm font-bold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                {isRtl ? 'العلماء' : 'Scientist'}
+                {t.modeScientist}
               </button>
             </div>
           )}
 
-          {/* Collapse/expand SPEX AI Chat Companion on demand */}
-          <button
-            type="button"
-            onClick={() => setShowCompanion((prev) => !prev)}
-            aria-expanded={showCompanion}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border transition cursor-pointer text-xs font-mono font-semibold ${
-              showCompanion
-                ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
-                : 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-300'
-            }`}
-            title={isRtl ? 'إظهار/إخفاء مساعد سبيكس' : 'Show/Collapse SPEX Companion'}
-          >
-            <SpexPortrait mood="greeting" size={18} />
-            <span className="hidden lg:inline">SPEX</span>
-          </button>
+          {isScientistMode && (
+            <>
+              {/* Collapse/expand SPEX AI Chat Companion on demand */}
+              <button
+                type="button"
+                onClick={() => setShowCompanion((prev) => !prev)}
+                aria-expanded={showCompanion}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border transition cursor-pointer text-xs font-mono font-semibold ${
+                  showCompanion
+                    ? 'border-cyan-400 bg-cyan-500/20 text-cyan-300'
+                    : 'border-white/15 bg-white/5 hover:bg-white/10 text-slate-300'
+                }`}
+                title={isRtl ? 'إظهار/إخفاء مساعد سبيكس' : 'Show/Collapse SPEX Companion'}
+              >
+                <SpexPortrait mood="greeting" size={18} />
+                <span className="hidden lg:inline">SPEX</span>
+              </button>
 
-          {/* Discovery Postcard Share Action */}
-          <button
-            type="button"
-            data-tour="postcard_button"
-            onClick={() => setShowPostcard(true)}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-[#FFB900]/40 bg-[#FFB900]/10 hover:bg-[#FFB900]/20 text-[#FFB900] transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
-            title={isRtl ? 'مشاركة بطاقة الاكتشاف' : 'Discovery Postcard'}
-          >
-            <Share2 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{isRtl ? 'بطاقة الاكتشاف' : 'Postcard'}</span>
-          </button>
+              {/* Discovery Postcard Share Action */}
+              <button
+                type="button"
+                data-tour="postcard_button"
+                onClick={() => setShowPostcard(true)}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-[#FFB900]/40 bg-[#FFB900]/10 hover:bg-[#FFB900]/20 text-[#FFB900] transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+                title={isRtl ? 'مشاركة بطاقة الاكتشاف' : 'Discovery Postcard'}
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{isRtl ? 'بطاقة الاكتشاف' : 'Postcard'}</span>
+              </button>
+            </>
+          )}
         </div>
       </header>
 
       {/* ==================================================================== */}
-      {/* BENCHMARK PRESET BAR & RA/DEC SEARCH */}
+      {/* TARGET SELECTOR: FRIENDLY CARDS (EXPLORER) vs BENCHMARK BAR (SCIENTIST) */}
       {/* ==================================================================== */}
+      {!isScientistMode ? (
+        <section
+          data-tour="explore_targets"
+          aria-label={t.explorerTargetsTitle}
+          className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-3"
+        >
+          <div className="max-w-[1200px] mx-auto">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+              {t.explorerTargetsTitle}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+              {[
+                { preset: BENCHMARK_PRESETS[1], hook: t.explorerHookBarnard },
+                { preset: BENCHMARK_PRESETS[0], hook: t.explorerHookWise0855 },
+                { preset: BENCHMARK_PRESETS[2], hook: t.explorerHookEpsilonIndi },
+                { preset: BENCHMARK_PRESETS[3], hook: t.explorerHookRwAur },
+                { preset: BENCHMARK_PRESETS[4], hook: t.explorerHookRDra },
+              ].map(({ preset, hook }) => {
+                const isActive = activePresetId === preset.caseId;
+                return (
+                  <button
+                    key={preset.caseId}
+                    type="button"
+                    data-testid={`explorer-card-${preset.targetParam}`}
+                    onClick={() => {
+                      setGuidedDemoStep(null);
+                      setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
+                      onSelectCase(preset.caseId, { sizePix: currentSizePix });
+                    }}
+                    className={`w-full px-3 py-2.5 rounded-xl border text-start transition cursor-pointer flex flex-col gap-0.5 ${
+                      isActive
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-100 shadow-sm'
+                        : 'bg-white/[0.03] border-white/10 text-slate-200 hover:bg-white/[0.08] hover:border-white/25'
+                    }`}
+                  >
+                    <span className="text-sm font-bold leading-tight">{preset.label}</span>
+                    <span className={`text-xs leading-snug ${isActive ? 'text-amber-200/90' : 'text-slate-400'}`}>
+                      {hook}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      ) : (
       <div
         data-tour="explore_targets"
         className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2"
@@ -714,6 +807,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {coordError && (
         <div className="px-4 py-1.5 bg-rose-950/80 border-b border-rose-500/30 text-xs font-mono text-rose-200 flex items-center justify-between">
@@ -781,9 +875,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       {/* ==================================================================== */}
       <div className={`relative flex-1 w-full flex flex-col lg:flex-row ${viewMode === 'curtain' ? 'min-h-0 overflow-hidden' : ''}`}>
         {viewMode === 'flipbook' ? (
-          <main className="flex-1 w-full max-w-[1600px] mx-auto p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
-            {/* Primary Time-Series Flipbook Player (8 cols on XL) */}
-            <div className="xl:col-span-8 min-w-0">
+          <main
+            className={`flex-1 w-full ${
+              isScientistMode ? 'max-w-[1600px] xl:grid-cols-12' : 'max-w-[1000px]'
+            } mx-auto p-3 sm:p-4 grid grid-cols-1 gap-4 items-start`}
+          >
+            {/* Primary Time-Series Flipbook Player */}
+            <div className={isScientistMode ? 'xl:col-span-8 min-w-0' : 'w-full min-w-0'}>
               <FramePlayer
                 ra={queryRa}
                 dec={queryDec}
@@ -791,6 +889,38 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 sizePix={currentSizePix}
                 initialDetector={initialDetector}
                 language={language}
+                explorerMode={!isScientistMode}
+                targetLabel={targetDisplayName}
+                spexHighlights={spexHighlights}
+                onExplainContextChange={setSpexExplainContext}
+                onSpotSelect={(spot, ctx) => {
+                  markTargetAction(activePresetId, 'spotOrSpex');
+                  setSpexSpotSelection(spot);
+                  setSpexExplainContext(ctx);
+                  setSpexHighlights([]);
+                  setSpexGuideOpen(true);
+                  setSpexAutoAskToken((n) => n + 1);
+                }}
+                onAskSpex={() => {
+                  markTargetAction(activePresetId, 'spotOrSpex');
+                  setSpexHighlights([]);
+                  setSpexGuideOpen(true);
+                  setSpexAutoAskToken((n) => n + 1);
+                }}
+                onExplorerPlay={() => markTargetAction(activePresetId, 'played')}
+                onExplorerToggleDiff={(diffActive) => {
+                  if (diffActive) markTargetAction(activePresetId, 'diffShown');
+                }}
+                onCanvasReady={setCanvasInstance}
+                onOpenDictionary={(termId) => {
+                  setDictionaryTermId(termId || null);
+                  setShowDictionary(true);
+                }}
+                onSwitchToScientist={() => {
+                  if (!isScientistMode && onToggleScientistMode) {
+                    onToggleScientistMode();
+                  }
+                }}
                 onDetectorChange={onDetectorChange}
                 onSelectFovSize={handleSelectFovSize}
                 onDataLoaded={handlePlayerDataLoaded}
@@ -800,9 +930,30 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 onOpenDetectorStacking={() => setShowDetectorStacking(true)}
                 guidedStepAction={guidedDemoStep !== null ? GUIDED_DEMO_STEPS[guidedDemoStep].action : null}
               />
+
+              {!isScientistMode && (
+                <div className="mt-4">
+                  <ExplorerMissions
+                    language={language}
+                    activeCaseId={activePresetId}
+                    progressByCase={missionProgressByCase}
+                    onSelectTargetCase={(caseId) => {
+                      const preset = BENCHMARK_PRESETS.find((p) => p.caseId === caseId);
+                      if (preset) {
+                        setGuidedDemoStep(null);
+                        setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
+                        onSelectCase(preset.caseId, { sizePix: currentSizePix });
+                      }
+                    }}
+                    onOpenPostcard={() => setShowPostcard(true)}
+                    canOpenPostcard={Boolean(currentResult)}
+                  />
+                </div>
+              )}
             </div>
 
-            {/* Secondary Sky Context & Why This Matters Column (4 cols on XL) */}
+            {/* Secondary Sky Context & Why This Matters Column (Scientist Mode only) */}
+            {isScientistMode && (
             <div className="xl:col-span-4 flex flex-col gap-4 min-w-0">
               {/* Reserved Collapsible Slot: Aladin Sky Context */}
               <div className="obs-glass rounded-2xl border border-white/10 overflow-hidden">
@@ -878,6 +1029,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 </div>
               </div>
             </div>
+            )}
           </main>
         ) : (
           /* Curtain & 4-Lens Inspection Lab (preserved 100%) */
@@ -999,9 +1151,28 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* SPEX INTELLIGENT COMPANION (Mounted on user demand so sky stays clean) */}
+      {/* SPEX AI GUIDE PANEL (Grounded /api/spex/explain bottom sheet / side panel) */}
       {/* ==================================================================== */}
-      {showCompanion && (
+      <SpexGuidePanel
+        isOpen={spexGuideOpen}
+        onClose={() => setSpexGuideOpen(false)}
+        language={language}
+        context={spexExplainContext}
+        selectedSpot={spexSpotSelection}
+        onClearSpot={() => setSpexSpotSelection(null)}
+        onHighlightsChange={setSpexHighlights}
+        onOpenDictionary={(termId) => {
+          setDictionaryTermId(termId || null);
+          setShowDictionary(true);
+        }}
+        onSpexAsked={() => markTargetAction(activePresetId, 'spotOrSpex')}
+        autoAskToken={spexAutoAskToken}
+      />
+
+      {/* ==================================================================== */}
+      {/* SPEX INTELLIGENT COMPANION (Scientist mode on-demand assistant) */}
+      {/* ==================================================================== */}
+      {isScientistMode && showCompanion && (
         <SpexCompanion
           currentResult={currentResult}
           activeLens={activeLens}

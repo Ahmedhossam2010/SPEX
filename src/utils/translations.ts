@@ -319,6 +319,53 @@ export interface TranslationDictionary {
   emptySpectrum: string;
   emptyAladin: string;
 
+  // Step 1 Explorer Beginner Mode
+  explorerBtnPlaySky: string;
+  explorerBtnPauseSky: string;
+  explorerBtnShowChanged: string;
+  explorerBtnShowingChanges: string;
+  explorerBtnAskSpex: string;
+  explorerSentencePrefix: string;
+  explorerSentenceSuffix: string;
+  explorerBadgeLiveNasa: string;
+  explorerBadgeSavedCopy: string;
+  explorerBadgeTrainingCopy: string;
+  explorerLearnWords: string;
+  explorerMoreTools: string;
+  explorerTargetsTitle: string;
+  explorerHookBarnard: string;
+  explorerHookWise0855: string;
+  explorerHookEpsilonIndi: string;
+  explorerHookRwAur: string;
+  explorerHookRDra: string;
+  explorerHonestySaturated: string;
+  explorerHonestyNotDetected: string;
+  explorerHonestyWingFit: string;
+  explorerHonestyNotSignificant: string;
+  explorerHonestySignificant: string;
+
+  // Step 2 SPEX AI Guide
+  spexLevelKid: string;
+  spexLevelBeginner: string;
+  spexLevelScientist: string;
+  spexOfflineModeLabel: string;
+  spexAiSourceTruthNote: string;
+  spexGuideWelcomeTitle: string;
+  spexGuideWelcomeBody: string;
+  spexGuideInputPlaceholder: string;
+  spexChipWhatIsThis: string;
+  spexChipWhyBlink: string;
+  spexChipHowSure: string;
+  spexChipReallyMoving: string;
+  spexChipLikeTen: string;
+  explorerTapHint: string;
+  explainThisSpotBtn: string;
+  missionsHeading: string;
+  missionsDoneLabel: string;
+  missionLabelPrefix: string;
+  missionWhatYouLearned: string;
+  missionMakePostcard: string;
+
   // 2D Game Station
   gameStationTitle: string;
   gameStationSubtitle: string;
@@ -672,6 +719,55 @@ export const translations: Record<Language, TranslationDictionary> = {
     emptySpectrum: 'No measured spectrum points available yet for this target.',
     emptyAladin: 'Select a target or enter RA/Dec coordinates to load sky survey context.',
 
+    // Step 1 Explorer Beginner Mode
+    explorerBtnPlaySky: 'Play the sky',
+    explorerBtnPauseSky: 'Pause sky',
+    explorerBtnShowChanged: 'Show what changed',
+    explorerBtnShowingChanges: 'Showing what changed',
+    explorerBtnAskSpex: 'Ask SPEX',
+    explorerSentencePrefix: 'You are looking at',
+    explorerSentenceSuffix: 'Each frame is a different date.',
+    explorerBadgeLiveNasa: 'Live from NASA',
+    explorerBadgeSavedCopy: 'Saved copy from',
+    explorerBadgeTrainingCopy: 'Training sky copy',
+    explorerLearnWords: 'Learn the words',
+    explorerMoreTools: 'More tools',
+    explorerTargetsTitle: 'Pick a sky target',
+    explorerHookBarnard: 'Our fast-moving red star neighbor',
+    explorerHookWise0855: 'The coldest brown dwarf we know',
+    explorerHookEpsilonIndi: 'A twin pair of cool brown dwarfs',
+    explorerHookRwAur: 'A young star in glowing dust (still control)',
+    explorerHookRDra: 'A giant star that breathes in brightness (still control)',
+    explorerHonestySaturated: 'Too bright for this camera — showing the predicted path instead.',
+    explorerHonestyNotDetected: 'Too faint or masked in this view — showing where we expect it to be.',
+    explorerHonestyWingFit: 'Estimated from the outer glow around a bright star — less certain than usual.',
+    explorerHonestyNotSignificant: 'Not enough evidence yet to prove motion here (below 3 sigma) — tracked at its predicted spot.',
+    explorerHonestySignificant: 'Motion spotted! Real drift measured across months.',
+
+    // Step 2 SPEX AI Guide
+    spexLevelKid: 'Kid',
+    spexLevelBeginner: 'Beginner',
+    spexLevelScientist: 'Scientist',
+    spexOfflineModeLabel: 'SPEX offline mode',
+    spexAiSourceTruthNote: 'AI explanation. The data panel is the source of truth.',
+    spexGuideWelcomeTitle: 'Tap any spot or ask a question',
+    spexGuideWelcomeBody: 'I read the real SPHEREx frame, nearby Gaia & AllWISE stars, and quality warnings on your screen.',
+    spexGuideInputPlaceholder: 'Ask about a star, motion, or noise...',
+    spexChipWhatIsThis: 'What is this?',
+    spexChipWhyBlink: 'Why does it blink?',
+    spexChipHowSure: "What does 'how sure' mean?",
+    spexChipReallyMoving: 'Is it really moving?',
+    spexChipLikeTen: "Explain like I'm 10",
+    explorerTapHint: 'Tap anywhere on the sky',
+    explainThisSpotBtn: 'Explain this spot',
+
+    // Step 3 Explorer Missions
+    missionsHeading: 'Hands-on sky missions',
+    missionsDoneLabel: 'completed',
+    missionLabelPrefix: 'Mission',
+    missionWhatYouLearned: 'What you learned',
+    missionMakePostcard: 'Make a Discovery Postcard',
+
     // 2D Game Station
     gameStationTitle: 'SPHEREx Observatory Station',
     gameStationSubtitle: 'Interactive 2D Science Mini-Games',
@@ -1022,6 +1118,55 @@ export const translations: Record<Language, TranslationDictionary> = {
     emptyCentroid: 'يلزم إطاران على الأقل بقياسات مركز صالحة لرسم الحركة مع الزمن.',
     emptySpectrum: 'لا توجد نقاط طيفية مقاسة متاحة بعد لهذا الهدف.',
     emptyAladin: 'اختر هدفاً أو أدخل إحداثيات السماء لتحميل الخريطة المرجعية.',
+
+    // Step 1 Explorer Beginner Mode
+    explorerBtnPlaySky: 'شغّل السماء',
+    explorerBtnPauseSky: 'أوقف التشغيل',
+    explorerBtnShowChanged: 'اعرض ما تغير',
+    explorerBtnShowingChanges: 'يعرض ما تغير',
+    explorerBtnAskSpex: 'اسأل سبيكس',
+    explorerSentencePrefix: 'أنت تشاهد الآن',
+    explorerSentenceSuffix: 'كل إطار يمثل تاريخ رصد مختلف.',
+    explorerBadgeLiveNasa: 'مباشر من ناسا',
+    explorerBadgeSavedCopy: 'نسخة محفوظة بتاريخ',
+    explorerBadgeTrainingCopy: 'نسخة تدريبية للسماء',
+    explorerLearnWords: 'تعلّم الكلمات',
+    explorerMoreTools: 'أدوات أكثر',
+    explorerTargetsTitle: 'اختر هدفاً في السماء',
+    explorerHookBarnard: 'نجمنا الأحمر الجار سريع الحركة',
+    explorerHookWise0855: 'أبرد قزم بني نعرفه في جوارنا',
+    explorerHookEpsilonIndi: 'توأم من الأقزام البنية الباردة',
+    explorerHookRwAur: 'نجم شاب محاط بغبار متوهج (مرجع ثابت)',
+    explorerHookRDra: 'نجم عملاق يتنفس سطوعاً وخفوتاً (مرجع ثابت)',
+    explorerHonestySaturated: 'ساطع جداً على الكاميرا — نعرض المسار المتوقع بدلاً من ذلك.',
+    explorerHonestyNotDetected: 'خافت جداً أو محجوب في هذه اللقطة — نعرض الموقع المتوقع له.',
+    explorerHonestyWingFit: 'مُقدَّر من الهالة المحيطة بنجم ساطع — لذا فدرجة اليقين أقل من المعتاد.',
+    explorerHonestyNotSignificant: 'لا توجد أدلة كافية لإثبات الحركة هنا بعد (أقل من 3 سيجما) — يتم التتبع عند الموضع المتوقع.',
+    explorerHonestySignificant: 'تم رصد الحركة! انجراف حقيقي مُقاس عبر عدة أشهر.',
+
+    // Step 2 SPEX AI Guide
+    spexLevelKid: 'للأطفال',
+    spexLevelBeginner: 'مبتدئ',
+    spexLevelScientist: 'عالم فلك',
+    spexOfflineModeLabel: 'سبيكس في الوضع غير المتصل',
+    spexAiSourceTruthNote: 'شرح بالذكاء الاصطناعي. لوحة البيانات هي المرجع الأساسي.',
+    spexGuideWelcomeTitle: 'اضغط على أي بقعة أو اسأل سبيكس',
+    spexGuideWelcomeBody: 'أقرأ إطار سبيراكس الحقيقي أمامك والنجوم المجاورة وتحذيرات الجودة لأشرحها ببساطة.',
+    spexGuideInputPlaceholder: 'اسأل عن نجم أو حركة أو تشويش...',
+    spexChipWhatIsThis: 'ما هذا؟',
+    spexChipWhyBlink: 'لماذا يومض المشهد؟',
+    spexChipHowSure: 'ماذا يعني مدى تأكدنا؟',
+    spexChipReallyMoving: 'هل يتحرك فعلاً؟',
+    spexChipLikeTen: 'اشرح لي كأن عمري 10 سنوات',
+    explorerTapHint: 'اضغط على أي مكان في السماء',
+    explainThisSpotBtn: 'اشرح هذه البقعة',
+
+    // Step 3 Explorer Missions
+    missionsHeading: 'مهام الاستكشاف العملية',
+    missionsDoneLabel: 'مكتملة',
+    missionLabelPrefix: 'المهمة',
+    missionWhatYouLearned: 'ماذا تعلمت',
+    missionMakePostcard: 'اصنع بطاقة اكتشاف',
 
     // 2D Game Station
     gameStationTitle: 'محطة مرصد سفيركس الفضائي',

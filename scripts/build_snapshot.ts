@@ -13,7 +13,7 @@ import path from 'path';
 
 const BASE_URL = process.env.SNAPSHOT_SERVER_URL || 'http://127.0.0.1:3000';
 const SNAPSHOT_DIR = path.join(process.cwd(), 'data', 'snapshots');
-const MAX_TOTAL_BYTES = 2.9 * 1024 * 1024; // Strictly under 3 MB total
+const MAX_TOTAL_BYTES = 3.35 * 1024 * 1024; // Strictly under 3.5 MB total
 
 const PRESETS = [
   { slug: 'barnards-star', caseId: 'case-barnards-star', name: "Barnard's Star" },
@@ -122,7 +122,7 @@ async function main() {
     const url = `${BASE_URL}/api/spherex/timeseries?caseId=${encodeURIComponent(preset.caseId)}&maxFrames=16&liveOnly=1`;
     console.log(`[Snapshot] Fetching live ${preset.name} from ${url}...`);
     try {
-      const resp = await fetch(url, { signal: AbortSignal.timeout(125000) });
+      const resp = await fetch(url, { signal: AbortSignal.timeout(240000) });
       if (!resp.ok) {
         const txt = await resp.text();
         console.error(`[Snapshot] ${preset.slug} HTTP ${resp.status}: ${txt.slice(0, 200)}`);

@@ -85,7 +85,14 @@ export function App() {
   const [isScientistMode, setIsScientistMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const params = new URLSearchParams(window.location.search);
-    return params.get('mode') === 'scientist';
+    const modeParam = params.get('mode');
+    if (modeParam === 'scientist') return true;
+    if (modeParam === 'explorer') return false;
+    try {
+      return localStorage.getItem('spherex_explore_mode') === 'scientist';
+    } catch {
+      return false;
+    }
   });
   const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>('hunt');
   const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget | null>(null);
@@ -427,10 +434,14 @@ export function App() {
     setIsScientistMode((prev) => {
       const next = !prev;
       if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem('spherex_explore_mode', next ? 'scientist' : 'explorer');
+        } catch {}
         const params = new URLSearchParams(window.location.search);
         if (next) params.set('mode', 'scientist');
         else params.delete('mode');
-        const newUrl = `${window.location.pathname}?${params.toString()}`;
+        const qs = params.toString();
+        const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
         window.history.replaceState({ ...window.history.state }, '', newUrl);
       }
       return next;

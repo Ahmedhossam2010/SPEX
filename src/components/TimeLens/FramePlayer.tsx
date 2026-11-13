@@ -47,6 +47,15 @@ import { WCS } from '../../science/wcs';
 export type PlayerRenderMode = 'raw' | 'diff_ref' | 'diff_median' | 'coadd';
 export type PlayerStretchMode = 'asinh' | 'linear' | 'sqrt' | 'log';
 
+import { ScienceTerm } from '../ScienceTerm';
+import {
+  SpexExplainContext,
+  SpexHighlight,
+  SpexNearbySource,
+  SpexSpotSelection,
+  decodeFlagsPlainWords,
+} from '../../science/spexExplain';
+
 export interface FramePlayerProps {
   ra: number;
   dec: number;
@@ -54,6 +63,16 @@ export interface FramePlayerProps {
   sizePix?: number;
   initialDetector?: string;
   language: Language;
+  explorerMode?: boolean;
+  targetLabel?: string;
+  onAskSpex?: () => void;
+  onSpotSelect?: (spot: SpexSpotSelection, context: SpexExplainContext) => void;
+  onExplainContextChange?: (context: SpexExplainContext) => void;
+  spexHighlights?: SpexHighlight[];
+  onOpenDictionary?: (termId?: string) => void;
+  onSwitchToScientist?: () => void;
+  onExplorerPlay?: () => void;
+  onExplorerToggleDiff?: (diffActive: boolean) => void;
   onSelectFrame?: (frameIndex: number) => void;
   onDetectorChange?: (detector: string) => void;
   onSelectFovSize?: (sizePix: number) => void;
@@ -62,6 +81,7 @@ export interface FramePlayerProps {
   onOpenPostcard?: () => void;
   onOpenProvenance?: () => void;
   onOpenDetectorStacking?: () => void;
+  onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
   guidedStepAction?: {
     play?: boolean;
     blinkFirstLast?: boolean;
@@ -133,6 +153,15 @@ export interface TimeSeriesResponse {
   centroidStacked?: boolean;
   astrometrySummary?: {
     method: string;
+    chosenOption?: 'a' | 'b';
+    errorBudgetLabel?: string;
+    annualMotion?: {
+      pmRaArcsecYr: number;
+      pmDecArcsecYr: number;
+      totalArcsecYr: number;
+      errorArcsecYr: number;
+      reducedChi2: number;
+    };
     medianRefStarsUsed: number;
     lowConfidence: boolean;
     lowConfidenceReason?: string;
@@ -203,6 +232,16 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   sizePix = 64,
   initialDetector,
   language,
+  explorerMode = false,
+  targetLabel,
+  onAskSpex,
+  onSpotSelect,
+  onExplainContextChange,
+  spexHighlights = [],
+  onOpenDictionary,
+  onSwitchToScientist,
+  onExplorerPlay,
+  onExplorerToggleDiff,
   onSelectFrame,
   onDetectorChange,
   onSelectFovSize,
@@ -211,6 +250,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   onOpenPostcard,
   onOpenProvenance,
   onOpenDetectorStacking,
+  onCanvasReady,
   guidedStepAction,
   className = '',
 }) => {
@@ -281,6 +321,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [lightCurveSlotOpen, setLightCurveSlotOpen] = useState<boolean>(true);
   const [lcBandFilter, setLcBandFilter] = useState<'all' | 'lower' | 'middle' | 'upper'>('all');
   const [spectrumSlotOpen, setSpectrumSlotOpen] = useState<boolean>(true);
+  const [tappedPix, setTappedPix] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    setTappedPix(null);
+  }, [ra, dec, caseId, selectedDetector]);
 
   const prefersReducedMotion = useMemo(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -722,7 +767,192 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     }
 
     ctx.putImageData(imgData, 0, 0);
-  }, [data, currentFrameIdx, renderMode, globalScale, globalScaleEnabled, showDqOverlay, stretchMode, contrastFactor, getDisplayArray]);
+    onCanvasReady?.(canvas);
+  }, [data, currentFrameIdx, renderMode, globalScale, globalScaleEnabled, showDqOverlay, stretchMode, contrastFactor, getDisplayArray, onCanvasReady]);
+
+  // Grounded context & WCS pixel-to-sky builder for SPEX AI Guide (Step 2)
+  const buildExplainContext = useCallback((): SpexExplainContext | null => {
+    if (!data?.frames?.length) return null;
+    const frames = displayFrames.length > 0 ? displayFrames : data.frames;
+    const idx = Math.min(currentFrameIdx, Math.max(0, frames.length - 1));
+    const fr = frames[idx] || frames[0];
+    if (!fr) return null;
+
+    const predictedPix = fr.targetRefPixel || fr.targetPixel || null;
+    const aSum = data.astrometrySummary;
+    const dataSourceType: 'live' | 'snapshot' | 'cached' | 'demo' = data.isDemoCopy
+      ? 'demo'
+      : data.isSnapshot || data.sourceMode === 'saved_benchmark'
+      ? 'snapshot'
+      : fr.isCached
+      ? 'cached'
+      : 'live';
+
+    const nearestCatalogSources: SpexNearbySource[] = (data.catalogOverlays || [])
+      .slice(0, 6)
+      .map((cat) => {
+        let distArcsec = 999;
+        const catRa = cat.raPropagated ?? cat.raRaw;
+        const catDec = cat.decPropagated ?? cat.decRaw;
+        if (Number.isFinite(catRa) && Number.isFinite(catDec)) {
+          let dRa = catRa - data.targetCoords.ra;
+          if (dRa > 180) dRa -= 360;
+          if (dRa < -180) dRa += 360;
+          distArcsec =
+            Math.hypot(
+              dRa * Math.cos((data.targetCoords.dec * Math.PI) / 180),
+              catDec - data.targetCoords.dec
+            ) * 3600;
+        } else if (predictedPix) {
+          distArcsec = Math.hypot(cat.x - predictedPix.x, cat.y - predictedPix.y) * 6.2;
+        }
+        return {
+          id: cat.identifier,
+          catalog: cat.catalog,
+          magnitude: cat.magLabel || (cat.mag != null ? Number(cat.mag).toFixed(2) : null),
+          distanceArcsec: Number(distArcsec.toFixed(2)),
+          x: Number(cat.x.toFixed(2)),
+          y: Number(cat.y.toFixed(2)),
+        };
+      })
+      .sort((a, b) => a.distanceArcsec - b.distanceArcsec);
+
+    return {
+      targetName: targetLabel || caseId || 'SPHEREx Sky Patch',
+      caseId: caseId || data.properMotion?.targetId,
+      frameWidth: fr.width || 64,
+      frameHeight: fr.height || 64,
+      frameIndex: idx + 1,
+      totalFrames: frames.length,
+      dateObs: fr.dateObs,
+      detector: fr.detector,
+      wavelengthUm: fr.wavelengthUm,
+      release: (fr.release || data.activeRelease || 'public').toUpperCase(),
+      dataSourceType,
+      snapshotDate: data.snapshotTakenAt || data.cachedAt || fr.dateObs?.slice(0, 10),
+      renderMode,
+      targetPixel: fr.targetPixel || null,
+      predictedPixel: predictedPix,
+      measuredCentroidPixel: fr.measuredCentroid?.valid
+        ? { x: fr.measuredCentroid.x, y: fr.measuredCentroid.y }
+        : null,
+      motionSummary: aSum
+        ? {
+            measuredDxArcsec: aSum.measuredNetDxArcsec,
+            measuredDyArcsec: aSum.measuredNetDyArcsec,
+            measuredTotalArcsec: aSum.measuredDisplacementArcsec,
+            measuredErrorArcsec: aSum.measuredDisplacementErrorArcsec,
+            expectedTotalArcsec: aSum.expectedOffset?.totalArcsec,
+            sigma:
+              aSum.sigma ??
+              (aSum.measuredDisplacementErrorArcsec > 0
+                ? aSum.measuredDisplacementArcsec / aSum.measuredDisplacementErrorArcsec
+                : 0),
+            motionSignificant: aSum.motionSignificant,
+            motionVerdict: aSum.motionVerdict,
+            targetDetectedInDetector: aSum.targetDetectedInDetector,
+            wingFitUsed:
+              aSum.errorBudgetLabel === 'includes wing-fit frames, low confidence' ||
+              (aSum.wingFitCount ?? 0) > 0,
+            saturatedAllDetectors: aSum.saturatedAllDetectors,
+            errorBudgetLabel: aSum.errorBudgetLabel,
+          }
+        : null,
+      nearestCatalogSources,
+    };
+  }, [data, displayFrames, currentFrameIdx, targetLabel, caseId, renderMode]);
+
+  useEffect(() => {
+    const ctx = buildExplainContext();
+    if (ctx) onExplainContextChange?.(ctx);
+  }, [buildExplainContext, onExplainContextChange]);
+
+  const inspectSpotAtPixel = useCallback(
+    (px: number, py: number) => {
+      if (!data?.frames?.length) return;
+      const frames = displayFrames.length > 0 ? displayFrames : data.frames;
+      const idx = Math.min(currentFrameIdx, Math.max(0, frames.length - 1));
+      const fr = frames[idx] || frames[0];
+      if (!fr) return;
+      const w = fr.width || 64;
+      const h = fr.height || 64;
+      const clampedX = Math.max(0, Math.min(w - 1, px));
+      const clampedY = Math.max(0, Math.min(h - 1, py));
+      setTappedPix({ x: clampedX, y: clampedY });
+
+      const pixIdx = Math.round(clampedY) * w + Math.round(clampedX);
+      const disp = getDisplayArray(idx);
+      const fluxMjySr = Number.isFinite(disp[pixIdx])
+        ? disp[pixIdx]
+        : Number.isFinite(fr.flux[pixIdx])
+        ? fr.flux[pixIdx]
+        : null;
+      const variance = fr.variance?.[pixIdx];
+      const snr =
+        fluxMjySr != null && variance != null && Number.isFinite(variance) && variance > 0
+          ? fluxMjySr / Math.sqrt(variance)
+          : null;
+      const flagsBitmask = fr.flags?.[pixIdx] ?? 0;
+      const flagsPlain = decodeFlagsPlainWords(flagsBitmask, language);
+
+      const activeWcs = data.referenceWcs || fr.wcs;
+      const sky = activeWcs ? WCS.pixToSky(clampedX, clampedY, activeWcs) : null;
+
+      const nearbySources: SpexNearbySource[] = (data.catalogOverlays || [])
+        .map((cat) => {
+          let distArcsec = 999;
+          const catRa = cat.raPropagated ?? cat.raRaw;
+          const catDec = cat.decPropagated ?? cat.decRaw;
+          if (sky && Number.isFinite(catRa) && Number.isFinite(catDec)) {
+            let dRa = catRa - sky.ra;
+            if (dRa > 180) dRa -= 360;
+            if (dRa < -180) dRa += 360;
+            distArcsec =
+              Math.hypot(dRa * Math.cos((sky.dec * Math.PI) / 180), catDec - sky.dec) * 3600;
+          } else {
+            distArcsec = Math.hypot(cat.x - clampedX, cat.y - clampedY) * 6.2;
+          }
+          return {
+            id: cat.identifier,
+            catalog: cat.catalog,
+            magnitude: cat.magLabel || (cat.mag != null ? Number(cat.mag).toFixed(2) : null),
+            distanceArcsec: Number(distArcsec.toFixed(2)),
+            x: Number(cat.x.toFixed(2)),
+            y: Number(cat.y.toFixed(2)),
+          };
+        })
+        .filter((item) => item.distanceArcsec <= 22)
+        .sort((a, b) => a.distanceArcsec - b.distanceArcsec)
+        .slice(0, 5);
+
+      const predPix = fr.targetRefPixel || fr.targetPixel;
+      const measPix = fr.measuredCentroid?.valid ? fr.measuredCentroid : null;
+      const isNearTarget = Boolean(
+        measPix && Math.hypot(clampedX - measPix.x, clampedY - measPix.y) <= 2.8
+      );
+      const isNearPredicted = Boolean(
+        predPix && Math.hypot(clampedX - predPix.x, clampedY - predPix.y) <= 2.8
+      );
+
+      const spot: SpexSpotSelection = {
+        x: Number(clampedX.toFixed(2)),
+        y: Number(clampedY.toFixed(2)),
+        ra: sky ? Number(sky.ra.toFixed(6)) : null,
+        dec: sky ? Number(sky.dec.toFixed(6)) : null,
+        fluxMjySr: fluxMjySr != null ? Number(fluxMjySr.toFixed(4)) : null,
+        snr: snr != null ? Number(snr.toFixed(2)) : null,
+        flagsBitmask,
+        flagsPlain,
+        isNearTarget,
+        isNearPredicted,
+        nearbySources,
+      };
+
+      const ctx = buildExplainContext();
+      if (ctx) onSpotSelect?.(spot, ctx);
+    },
+    [data, displayFrames, currentFrameIdx, getDisplayArray, language, buildExplainContext, onSpotSelect]
+  );
 
   // PNG Snapshot Export (P0.3)
   const handleExportPng = () => {
@@ -973,7 +1203,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <div>
-            <span className="font-bold">DEMO COPY (DIFFERENT FIELD): </span>
+            <span className="font-bold">{explorerMode ? t.explorerBadgeTrainingCopy : 'DEMO COPY (DIFFERENT FIELD)'}: </span>
             {data.demoNotice ||
               `Showing cached NEP field at RA ${data.trueCenter?.ra.toFixed(4)}°, Dec ${data.trueCenter?.dec.toFixed(4)}° (obs ${currentFrame.trueObsId || currentFrame.obsId}).`}
           </div>
@@ -981,7 +1211,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       )}
 
       {/* Honest Partial Cutout Failures Notice (B2) */}
-      {data.partialFailures && data.partialFailures.failedCount > 0 && (
+      {!explorerMode && data.partialFailures && data.partialFailures.failedCount > 0 && (
         <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-[11px] font-mono flex items-center gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
           <span>{data.partialFailures.notice}</span>
@@ -989,7 +1219,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       )}
 
       {/* P1-2 & Task 3: Mixed Release / Processing Version Guard Warning */}
-      {(hasMixedReleasesInFrames || hasMixedReleasesServer || sameReleaseOnly) && (
+      {!explorerMode && (hasMixedReleasesInFrames || hasMixedReleasesServer || sameReleaseOnly) && (
         <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 text-[11px] font-mono flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
@@ -1036,7 +1266,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         </div>
       )}
 
-      {/* Top Row (A3 Default Visible): Source Badge, Detector (D1-D6 Auto), Normal/Show changes toggle, Advanced Drawer toggle */}
+      {/* Top Row (A3 Default Visible — Scientist Mode only): Source Badge, Detector (D1-D6 Auto), Normal/Show changes toggle, Advanced Drawer toggle */}
+      {!explorerMode && (
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-2.5">
         <div className="flex items-center gap-2 flex-wrap">
           <Badge
@@ -1160,9 +1391,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Collapsed "Advanced" Drawer (A3: Display, Overlays, Analysis, Export) */}
-      {advancedOpen && (
+      {!explorerMode && advancedOpen && (
         <div
           id="spex-advanced-drawer"
           data-tour="advanced_drawer"
@@ -1493,18 +1725,35 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       {/* Main Sky Viewport + Synchronized SVG Overlay */}
       <div
         data-tour="viewport_canvas"
-        className="relative w-full h-72 sm:h-96 rounded-xl bg-black border border-white/10 overflow-auto flex items-center justify-center"
+        className={`relative w-full ${
+          explorerMode ? 'h-72 sm:h-[400px]' : 'h-72 sm:h-96'
+        } rounded-xl bg-black border border-white/10 overflow-auto flex items-center justify-center`}
       >
         <div
           className="relative shrink-0"
-          style={{
-            width: `${Math.round(288 * zoom)}px`,
-            height: `${Math.round(288 * zoom)}px`,
-          }}
+          style={
+            explorerMode
+              ? {
+                  width: 'min(100%, 360px)',
+                  height: 'min(100%, 360px)',
+                  aspectRatio: '1 / 1',
+                }
+              : {
+                  width: `${Math.round(288 * zoom)}px`,
+                  height: `${Math.round(288 * zoom)}px`,
+                }
+          }
         >
           <canvas
             ref={canvasRef}
-            className="w-full h-full block"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (!rect.width || !rect.height) return;
+              const px = ((e.clientX - rect.left) / rect.width) * frameW;
+              const py = ((e.clientY - rect.top) / rect.height) * frameH;
+              inspectSpotAtPixel(px, py);
+            }}
+            className="w-full h-full block cursor-crosshair"
             style={{ imageRendering: pixelSharp ? 'pixelated' : 'auto' }}
             aria-label={`SPHEREx infrared cutout canvas for frame ${currentFrameIdx + 1}`}
           />
@@ -1613,28 +1862,257 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 strokeWidth={0.3}
               />
             )}
+
+            {/* Tapped Spot Reticle */}
+            {tappedPix && (
+              <g stroke="#FACC15" strokeWidth={0.35}>
+                <circle cx={tappedPix.x} cy={tappedPix.y} r={1.8} fill="none" />
+                <circle cx={tappedPix.x} cy={tappedPix.y} r={0.3} fill="#FACC15" />
+              </g>
+            )}
+
+            {/* SPEX Animated Highlight Rings */}
+            {spexHighlights.map((h, i) => (
+              <g key={`spex-ring-${i}`}>
+                <circle
+                  cx={h.x}
+                  cy={h.y}
+                  r={h.r || 3.2}
+                  fill="none"
+                  stroke="#FFB900"
+                  strokeWidth={0.45}
+                >
+                  <animate attributeName="r" values={`${(h.r || 3) * 0.85};${(h.r || 3) * 1.35};${(h.r || 3) * 0.85}`} dur="1.6s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" values="1;0.35;1" dur="1.6s" repeatCount="indefinite" />
+                </circle>
+                <line
+                  x1={h.x + (h.r || 3.2)}
+                  y1={Math.max(0, h.y - (h.r || 3.2))}
+                  x2={h.x + 1.2}
+                  y2={h.y - 1.2}
+                  stroke="#FFB900"
+                  strokeWidth={0.35}
+                />
+              </g>
+            ))}
           </svg>
+
+          {/* Crisp HTML Labels for SPEX Highlights ("SPEX points here") */}
+          {spexHighlights.map((h, i) => (
+            <div
+              key={`spex-lbl-${i}`}
+              data-testid="spex-canvas-highlight"
+              className="absolute pointer-events-none -translate-x-1/2 -translate-y-full px-2 py-0.5 rounded-md bg-amber-400 text-slate-950 font-bold text-[10px] shadow-md whitespace-nowrap"
+              style={{
+                left: `${(h.x / frameW) * 100}%`,
+                top: `${Math.max(8, ((h.y - (h.r || 3)) / frameH) * 100)}%`,
+              }}
+            >
+              {h.label || (isRtl ? 'سبيكس يشير هنا' : 'SPEX points here')}
+            </div>
+          ))}
         </div>
 
         {/* Fixed HUD: Coordinates, Detector, Wavelength */}
-        <div className="absolute top-2 left-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-[#00D3F3]">
-          RA {data.targetCoords.ra.toFixed(4)}° · DEC {data.targetCoords.dec >= 0 ? '+' : ''}
-          {data.targetCoords.dec.toFixed(4)}° · {currentFrame.detector} · λ {currentFrame.wavelengthUm.toFixed(2)} µm
-        </div>
+        {!explorerMode ? (
+          <div className="absolute top-2 left-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-[#00D3F3]">
+            RA {data.targetCoords.ra.toFixed(4)}° · DEC {data.targetCoords.dec >= 0 ? '+' : ''}
+            {data.targetCoords.dec.toFixed(4)}° · {currentFrame.detector} · λ {currentFrame.wavelengthUm.toFixed(2)} µm
+          </div>
+        ) : (
+          <div className="absolute top-2 left-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[11px] text-[#00D3F3]">
+            {currentFrame.dateObs?.slice(0, 10)} · {safeFrameIdx + 1}/{activeFrameList.length}
+          </div>
+        )}
 
-        {/* Fixed HUD: Obs ID & MJD */}
-        <div className="absolute bottom-2 left-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-[#F1F5F9]">
-          {currentFrame.obsId} · MJD {currentFrame.mjd.toFixed(5)} · {currentFrame.dateObs}
-        </div>
+        {/* Top-Right Viewport Action: "Explain this spot" */}
+        {onSpotSelect && (
+          <button
+            type="button"
+            data-testid="explain-this-spot-btn"
+            onClick={() => {
+              const target = tappedPix || currentTargetPix || { x: Math.floor(frameW / 2), y: Math.floor(frameH / 2) };
+              inspectSpotAtPixel(target.x, target.y);
+            }}
+            className="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/80 hover:bg-amber-400 hover:text-slate-950 border border-amber-400/50 text-amber-300 text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer backdrop-blur-md"
+          >
+            <Sparkles className="w-3 h-3 shrink-0" />
+            <span>{t.explainThisSpotBtn}</span>
+          </button>
+        )}
+
+        {/* Fixed HUD: Obs ID & MJD (Scientist) */}
+        {!explorerMode && (
+          <div className="absolute bottom-2 left-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-[#F1F5F9]">
+            {currentFrame.obsId} · MJD {currentFrame.mjd.toFixed(5)} · {currentFrame.dateObs}
+          </div>
+        )}
+
+        {/* Explorer subtle tap hint */}
+        {explorerMode && (
+          <div className="absolute bottom-2 left-2 pointer-events-none bg-black/70 px-2 py-0.5 rounded-md border border-white/10 text-[10px] text-slate-300">
+            {t.explorerTapHint}
+          </div>
+        )}
 
         {/* Angular Scale Bar (5 px = 31") */}
-        <div className="absolute bottom-2 right-2 pointer-events-none bg-black/75 px-2 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-slate-300 flex items-center gap-1.5">
-          <span className="inline-block w-8 h-0.5 bg-amber-400" />
-          <span>31″ (5 px · 6.2″/px)</span>
-        </div>
+        {!explorerMode && (
+          <div className="absolute bottom-2 right-2 pointer-events-none bg-black/75 px-2 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-slate-300 flex items-center gap-1.5">
+            <span className="inline-block w-8 h-0.5 bg-amber-400" />
+            <span>31″ (5 px · 6.2″/px)</span>
+          </div>
+        )}
       </div>
 
-      {/* A4: WiseView-Style Compact Control Bar Directly Under Viewer */}
+      {/* EXPLORER MODE: Exactly 3 Big Buttons + Plain Sentence + Friendly Badge + Plain Honesty Labels + Learn/More links */}
+      {explorerMode ? (
+        <div className="flex flex-col gap-3">
+          {/* (c) Exactly three big buttons */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <button
+              type="button"
+              data-testid="explorer-play-btn"
+              onClick={() => {
+                setIsPlaying((p) => {
+                  const next = !p;
+                  if (next) onExplorerPlay?.();
+                  return next;
+                });
+              }}
+              aria-pressed={isPlaying}
+              className={`min-h-[48px] px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-sm ${
+                isPlaying
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'bg-[#FFB900] hover:bg-amber-400 text-slate-950'
+              }`}
+            >
+              {isPlaying ? <Pause className="w-4 h-4 shrink-0" /> : <Play className="w-4 h-4 shrink-0 fill-current" />}
+              <span>{isPlaying ? t.explorerBtnPauseSky : t.explorerBtnPlaySky}</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="explorer-diff-btn"
+              onClick={() => {
+                setRenderMode((prev) => {
+                  const next = prev === 'diff_ref' ? 'raw' : 'diff_ref';
+                  onExplorerToggleDiff?.(next === 'diff_ref');
+                  return next;
+                });
+              }}
+              aria-pressed={renderMode === 'diff_ref'}
+              className={`min-h-[48px] px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border transition cursor-pointer ${
+                renderMode === 'diff_ref'
+                  ? 'bg-[#00D3F3] border-[#00D3F3] text-slate-950 shadow-sm'
+                  : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/40 text-cyan-200'
+              }`}
+            >
+              <Zap className="w-4 h-4 shrink-0" />
+              <span>{renderMode === 'diff_ref' ? t.explorerBtnShowingChanges : t.explorerBtnShowChanged}</span>
+            </button>
+
+            <button
+              type="button"
+              data-testid="explorer-ask-spex-btn"
+              onClick={() => onAskSpex?.()}
+              className="min-h-[48px] px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-amber-400/40 bg-white/5 hover:bg-white/10 text-amber-300 transition cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span>{t.explorerBtnAskSpex}</span>
+            </button>
+          </div>
+
+          {/* (d) One plain sentence under the image + friendly data badge */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-sm">
+            <p className="text-slate-200 leading-relaxed">
+              {t.explorerSentencePrefix}{' '}
+              <span className="font-bold text-white">{targetLabel || caseId || 'this sky patch'}</span>.{' '}
+              {t.explorerSentenceSuffix}
+            </p>
+            <span
+              data-testid="explorer-data-badge"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border shrink-0 ${
+                data.isDemoCopy
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                  : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
+                  ? 'bg-slate-800 border-slate-600 text-slate-200'
+                  : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+              }`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  data.isDemoCopy
+                    ? 'bg-amber-400'
+                    : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
+                    ? 'bg-slate-400'
+                    : 'bg-emerald-400'
+                }`}
+              />
+              {data.isDemoCopy
+                ? t.explorerBadgeTrainingCopy
+                : data.isSnapshot || data.sourceMode === 'saved_benchmark' || currentFrame.isCached
+                ? `${t.explorerBadgeSavedCopy} ${(data.snapshotTakenAt || data.cachedAt || currentFrame.dateObs || '').slice(0, 10)}`
+                : t.explorerBadgeLiveNasa}
+            </span>
+          </div>
+
+          {/* Plain-word Honesty Labels (keep scientific honesty in beginner language) */}
+          {data.astrometrySummary && (
+            <div className="flex flex-col gap-1.5 rounded-xl bg-black/40 border border-white/10 px-3.5 py-2.5 text-xs text-slate-300">
+              {data.astrometrySummary.saturatedAllDetectors ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-rose-300">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t.explorerHonestySaturated}</span>
+                  <ScienceTerm termKey="saturated" language={language} onOpenDictionary={onOpenDictionary} />
+                </div>
+              ) : !data.astrometrySummary.targetDetectedInDetector ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-amber-200">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{t.explorerHonestyNotDetected}</span>
+                  <ScienceTerm termKey="centroid" language={language} onOpenDictionary={onOpenDictionary} />
+                </div>
+              ) : data.astrometrySummary.motionSignificant ? (
+                <div className="flex flex-wrap items-center gap-1.5 text-emerald-300">
+                  <span>{t.explorerHonestySignificant}</span>
+                  <ScienceTerm termKey="proper_motion" language={language} onOpenDictionary={onOpenDictionary} />
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center gap-1.5 text-amber-200">
+                  <span>{t.explorerHonestyNotSignificant}</span>
+                  <ScienceTerm termKey="sigma" language={language} onOpenDictionary={onOpenDictionary} />
+                </div>
+              )}
+              {(data.astrometrySummary.errorBudgetLabel === 'includes wing-fit frames, low confidence' ||
+                (data.astrometrySummary.wingFitCount ?? 0) > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5 text-amber-300/90">
+                  <span>{t.explorerHonestyWingFit}</span>
+                  <ScienceTerm termKey="wing_fit" language={language} onOpenDictionary={onOpenDictionary} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* (e) Learn the words + More tools links */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => onOpenDictionary?.()}
+              className="inline-flex items-center gap-1.5 text-amber-300 hover:text-amber-200 underline underline-offset-4 font-medium cursor-pointer"
+            >
+              <span>{t.explorerLearnWords}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSwitchToScientist?.()}
+              className="inline-flex items-center gap-1 text-cyan-300 hover:text-cyan-200 underline underline-offset-4 font-medium cursor-pointer"
+            >
+              <span>{t.explorerMoreTools}</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
+      {/* A4: WiseView-Style Compact Control Bar Directly Under Viewer (Scientist Mode) */}
       <div
         data-tour="wiseview_bar"
         className="flex flex-col gap-2 p-2.5 rounded-xl bg-[#050811] border border-white/10"
@@ -2010,7 +2488,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                   (aSum.measuredDisplacementErrorArcsec > 0
                     ? aSum.measuredDisplacementArcsec / aSum.measuredDisplacementErrorArcsec
                     : 0);
-                const floorTooltip = `Floor ratio: ${aSum.significanceRatio.toFixed(1)}× floor (1σ err = ${(aSum.targetSigmaArcsec ?? aSum.measuredDisplacementErrorArcsec).toFixed(2)}″${aSum.diffFromExpectedSigma != null ? `, |meas − exp| = ${aSum.diffFromExpectedSigma.toFixed(1)}σ` : ''})`;
+                const floorTooltip = `Own 1σ err = ${(aSum.targetSigmaArcsec ?? aSum.measuredDisplacementErrorArcsec).toFixed(2)}″ | σ = ${sigmaVal.toFixed(2)}${aSum.diffFromExpectedSigma != null ? ` | |meas − exp| = ${aSum.diffFromExpectedSigma.toFixed(2)}σ` : ''}${aSum.annualMotion ? ` | Rate: ${aSum.annualMotion.totalArcsecYr.toFixed(2)} ± ${aSum.annualMotion.errorArcsecYr.toFixed(2)}″/yr` : ''}${aSum.errorBudgetLabel ? ` (${aSum.errorBudgetLabel})` : ''}`;
                 return (
                   <span
                     title={floorTooltip}
@@ -2034,12 +2512,15 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                   </span>
                 );
               })()}
-              {(data.astrometrySummary?.wingFitCount ?? 0) > 0 && (
+              {(data.astrometrySummary?.errorBudgetLabel === 'includes wing-fit frames, low confidence' ||
+                (!data.astrometrySummary?.errorBudgetLabel && (data.astrometrySummary?.wingFitCount ?? 0) > 0)) && (
                 <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px]">
-                  wing fit, low confidence
+                  includes wing-fit frames, low confidence
                 </span>
               )}
-              {data.astrometrySummary?.lowConfidence && (data.astrometrySummary?.wingFitCount ?? 0) === 0 && (
+              {data.astrometrySummary?.lowConfidence &&
+                data.astrometrySummary?.errorBudgetLabel !== 'includes wing-fit frames, low confidence' &&
+                (data.astrometrySummary?.wingFitCount ?? 0) === 0 && (
                 <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px]">
                   low confidence ({data.astrometrySummary.medianRefStarsUsed} ref stars)
                 </span>
@@ -2065,9 +2546,13 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       {data.astrometrySummary
                         ? ` · ${data.astrometrySummary.medianRefStarsUsed} Gaia ref stars · Meas Δ (${data.astrometrySummary.measuredNetDxArcsec.toFixed(2)}″, ${data.astrometrySummary.measuredNetDyArcsec.toFixed(2)}″) ± ${data.astrometrySummary.measuredDisplacementErrorArcsec.toFixed(2)}″ (${(data.astrometrySummary.sigma ?? 0).toFixed(1)}σ)`
                         : ''}
+                      {data.astrometrySummary?.annualMotion
+                        ? ` · Rate ${data.astrometrySummary.annualMotion.totalArcsecYr.toFixed(2)} ± ${data.astrometrySummary.annualMotion.errorArcsecYr.toFixed(2)}″/yr`
+                        : ''}
                       {data.astrometrySummary?.expectedOffset && (data.astrometrySummary.expectedOffset.totalArcsec > 0 || data.properMotion)
                         ? ` · Exp (${data.astrometrySummary.expectedOffset.dxArcsec.toFixed(2)}″, ${data.astrometrySummary.expectedOffset.dyArcsec.toFixed(2)}″)`
                         : ''}
+                      {data.astrometrySummary?.errorBudgetLabel ? ` · ${data.astrometrySummary.errorBudgetLabel}` : ''}
                       {data.astrometrySummary?.nearbyNeighbors15Arcsec &&
                       data.astrometrySummary.nearbyNeighbors15Arcsec.length > 0
                         ? ` · Nearest catalog neighbor: ${data.astrometrySummary.nearbyNeighbors15Arcsec[0].distToPredictedArcsec.toFixed(1)}″ (${data.astrometrySummary.nearbyNeighbors15Arcsec[0].identifier})`
@@ -2354,6 +2839,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           )}
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };

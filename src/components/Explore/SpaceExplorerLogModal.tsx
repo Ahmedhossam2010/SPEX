@@ -176,7 +176,6 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
   const isRtl = language === 'ar';
   useModalBehavior(isOpen, onClose);
 
-  // Completed milestones stored in localStorage
   const [completedMilestones, setCompletedMilestones] = useState<string[]>(() => {
     if (typeof window === 'undefined') return ['first_look'];
     try {
@@ -186,6 +185,39 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
       return ['first_look'];
     }
   });
+
+  const [completedMissionsCount, setCompletedMissionsCount] = useState<number>(() => {
+    if (typeof window === 'undefined') return 0;
+    try {
+      const saved = localStorage.getItem('spex_explorer_missions');
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed.length : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      try {
+        const savedMilestones = localStorage.getItem('spex_explorer_milestones');
+        if (savedMilestones) {
+          const parsed = JSON.parse(savedMilestones);
+          if (Array.isArray(parsed)) setCompletedMilestones(parsed);
+        }
+        const savedMissions = localStorage.getItem('spex_explorer_missions');
+        if (savedMissions) {
+          const parsedMissions = JSON.parse(savedMissions);
+          if (Array.isArray(parsedMissions)) setCompletedMissionsCount(parsedMissions.length);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    };
+    if (isOpen) syncFromStorage();
+    window.addEventListener('spex-missions-updated', syncFromStorage);
+    return () => window.removeEventListener('spex-missions-updated', syncFromStorage);
+  }, [isOpen]);
 
   const [activeMilestoneId, setActiveMilestoneId] = useState<string>('first_look');
   const [activeDepth, setActiveDepth] = useState<'level1' | 'level2' | 'level3'>('level2');
@@ -238,6 +270,9 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
                 </h2>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-semibold">
                   {completedMilestones.length} / {SPACE_MILESTONES.length} {isRtl ? 'مكتمل' : 'Completed'} ({progressPercent}%)
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-semibold">
+                  {completedMissionsCount} / 3 {isRtl ? 'مهام' : 'Missions'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-sans hidden sm:block">
