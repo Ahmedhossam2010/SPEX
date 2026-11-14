@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Header } from './components/Header';
+import { Header, AppTab } from './components/Header';
 import { HomeView } from './components/HomeView';
+import { AcademyView } from './components/AcademyView';
 import { ExploreView } from './components/ExploreView';
 import { CasesView } from './components/CasesView';
 import { AboutView } from './components/AboutView';
 import { SpexAdventureGame } from './game/SpexAdventureGame';
 import { Screen1Sky } from './components/Screen1Sky';
+import { AchievementsModal } from './components/AchievementsModal';
 import { InvestigationResult, ChallengeTarget } from './science/types';
 import { parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
@@ -13,8 +15,9 @@ import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal'
 import { FamousObjectsView } from './components/FamousObjectsView';
 import { FamousObject, getFamousObjectById } from './science/famousObjects';
 import { FlyTargetSelection } from './ui/FlyToSearch';
+import { CommunityView } from './components/CommunityView';
 
-export type AppTab = 'home' | 'explore' | 'famous' | 'game' | 'cases' | 'about';
+export type { AppTab };
 
 function resolveCaseIdFromTargetSlug(slug?: string | null): string | null {
   if (!slug) return null;
@@ -28,6 +31,10 @@ function resolveCaseIdFromTargetSlug(slug?: string | null): string | null {
 }
 
 export function App() {
+  const isEmbed =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('embed') === '1';
+
   const getInitialTab = (): AppTab => {
     if (typeof window === 'undefined') return 'home';
     const path = window.location.pathname.replace(/^\//, '').toLowerCase();
@@ -42,10 +49,12 @@ export function App() {
         params.get('fov')
     );
     const tabParam = params.get('tab');
-    if (tabParam === 'explore' || path === 'explore' || hasDeepLink) return 'explore';
+    if (tabParam === 'explore' || path === 'explore' || hasDeepLink || isEmbed) return 'explore';
+    if (tabParam === 'academy' || path === 'academy') return 'academy';
     if (tabParam === 'famous' || path === 'famous') return 'famous';
     if (tabParam === 'game' || path === 'game') return 'game';
     if (tabParam === 'cases' || path === 'cases') return 'cases';
+    if (tabParam === 'community' || path === 'community') return 'community';
     if (tabParam === 'about' || path === 'about') return 'about';
     if (tabParam === 'home' || path === 'home') return 'home';
     return 'home';
@@ -71,11 +80,15 @@ export function App() {
   };
 
   const [language, setLanguage] = useState<Language>(() => {
-    const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
-    const langParam = params.get('lang');
-    if (langParam === 'ar' || langParam === 'en') return langParam;
-    const saved = typeof window !== 'undefined' ? (localStorage.getItem('spherex_lang') as Language | null) : null;
-    return saved === 'ar' || saved === 'en' ? saved : 'en';
+    try {
+      const params = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const langParam = params.get('lang');
+      if (langParam === 'ar' || langParam === 'en') return langParam;
+      const saved = typeof window !== 'undefined' ? (localStorage.getItem('spherex_lang') as Language | null) : null;
+      return saved === 'ar' || saved === 'en' ? saved : 'en';
+    } catch {
+      return 'en';
+    }
   });
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [cases, setCases] = useState<any[]>([]);
@@ -121,6 +134,8 @@ export function App() {
   const [fallbackQuery, setFallbackQuery] = useState<{ ra: number; dec: number } | null>(null);
   const [globalDictionaryOpen, setGlobalDictionaryOpen] = useState(false);
   const [globalDictionaryTermId, setGlobalDictionaryTermId] = useState<string | null>(null);
+  const [achievementsOpen, setAchievementsOpen] = useState(false);
+  const [autoPlayExplore, setAutoPlayExplore] = useState(false);
 
   // Global listener for dictionary requests from anywhere in the app
   useEffect(() => {
@@ -140,11 +155,15 @@ export function App() {
 
   // Initialize theme from localStorage
   useEffect(() => {
-    const savedTheme = localStorage.getItem('spherex_theme') as 'dark' | 'light' | null;
-    if (savedTheme === 'light' || savedTheme === 'dark') {
-      setTheme(savedTheme);
-      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-    } else {
+    try {
+      const savedTheme = localStorage.getItem('spherex_theme') as 'dark' | 'light' | null;
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme);
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      } else {
+        document.documentElement.classList.add('dark');
+      }
+    } catch {
       document.documentElement.classList.add('dark');
     }
   }, []);
@@ -160,7 +179,9 @@ export function App() {
   const handleToggleTheme = () => {
     setTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
-      localStorage.setItem('spherex_theme', next);
+      try {
+        localStorage.setItem('spherex_theme', next);
+      } catch {}
       document.documentElement.classList.toggle('dark', next === 'dark');
       return next;
     });
@@ -182,9 +203,11 @@ export function App() {
           params.get('fov')
       );
       if (tabParam === 'explore' || path === 'explore' || (path === '' && hasDeepLink)) setActiveTabState('explore');
+      else if (tabParam === 'academy' || path === 'academy') setActiveTabState('academy');
       else if (tabParam === 'famous' || path === 'famous') setActiveTabState('famous');
       else if (tabParam === 'game' || path === 'game') setActiveTabState('game');
       else if (tabParam === 'cases' || path === 'cases') setActiveTabState('cases');
+      else if (tabParam === 'community' || path === 'community') setActiveTabState('community');
       else if (tabParam === 'about' || path === 'about') setActiveTabState('about');
       else setActiveTabState('home');
     };
@@ -210,7 +233,9 @@ export function App() {
 
     if (langParam === 'ar' || langParam === 'en') {
       setLanguage(langParam);
-      localStorage.setItem('spherex_lang', langParam);
+      try {
+        localStorage.setItem('spherex_lang', langParam);
+      } catch {}
     }
 
     let parsedCoords: { ra: number; dec: number } | null = null;
@@ -352,6 +377,14 @@ export function App() {
     setActiveTab('explore');
   };
 
+  const handleQuickDemoWise = () => {
+    setFallbackQuery(null);
+    setExploreScreen('hunt');
+    setAutoPlayExplore(true);
+    loadCase('case-wise-0855');
+    setActiveTab('explore');
+  };
+
   const handleSelectCase = (caseId: string, options?: { sizePix?: number; epochPair?: string }) => {
     setFallbackQuery(null);
     if (options?.sizePix) setActiveSizePix(options.sizePix);
@@ -463,7 +496,9 @@ export function App() {
   const handleToggleLanguage = () => {
     setLanguage((prev) => {
       const next = prev === 'en' ? 'ar' : 'en';
-      localStorage.setItem('spherex_lang', next);
+      try {
+        localStorage.setItem('spherex_lang', next);
+      } catch {}
       return next;
     });
   };
@@ -497,17 +532,18 @@ export function App() {
       }`}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
-      <Header
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        targetCoords={currentResult?.targetCoords}
-        language={language}
-        onToggleLanguage={handleToggleLanguage}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-        isScientistMode={isScientistMode}
-        onToggleScientistMode={handleToggleScientistMode}
-      />
+      {!isEmbed && (
+        <Header
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          targetCoords={currentResult?.targetCoords}
+          language={language}
+          onToggleLanguage={handleToggleLanguage}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+          onOpenAchievements={() => setAchievementsOpen(true)}
+        />
+      )}
 
       <main className="flex-1 w-full relative">
         {errorMsg && (
@@ -544,13 +580,24 @@ export function App() {
 
         {activeTab === 'home' && (
           <HomeView
+            onStartAcademy={() => setActiveTab('academy')}
             onStartExplore={handleStartExplore}
+            onQuickDemoWise={handleQuickDemoWise}
             onFlySelection={handleFlySelection}
             onOpenAbout={() => setActiveTab('about')}
             onOpenCases={() => setActiveTab('cases')}
             onPlayGame={() => setActiveTab('game')}
+            onOpenCommunity={() => setActiveTab('community')}
             cases={cases}
             language={language}
+          />
+        )}
+
+        {activeTab === 'academy' && (
+          <AcademyView
+            language={language}
+            onOpenTargetInViewer={(caseId) => handleStartExplore(caseId)}
+            onGoToPlay={() => setActiveTab('game')}
           />
         )}
 
@@ -603,6 +650,9 @@ export function App() {
               onDetectorChange={handleDetectorChange}
               activeSizePix={activeSizePix}
               activeCaseId={activeCaseId}
+              autoPlay={autoPlayExplore}
+              onAutoPlayConsumed={() => setAutoPlayExplore(false)}
+              isEmbed={isEmbed}
             />
           </div>
         )}
@@ -630,12 +680,21 @@ export function App() {
           />
         )}
 
+        {activeTab === 'community' && (
+          <CommunityView
+            language={language}
+            onOpenTargetInViewer={(caseId) => handleStartExplore(caseId)}
+          />
+        )}
+
         {activeTab === 'about' && <AboutView language={language} />}
       </main>
 
-      <footer className="w-full border-t border-slate-200 dark:border-white/[0.08] bg-white/80 dark:bg-[#05070C] px-4 py-3 text-center text-[11px] font-mono text-slate-500 dark:text-slate-400">
-        Data: NASA/IPAC IRSA SPHEREx, ESA Gaia DR3, NASA AllWISE, CDS SIMBAD &amp; Aladin Lite. NASA does not endorse this project.
-      </footer>
+      {!isEmbed && (
+        <footer className="w-full border-t border-slate-200 dark:border-white/[0.08] bg-white/80 dark:bg-[#05070C] px-4 py-3 text-center text-[11px] font-mono text-slate-500 dark:text-slate-400">
+          Credits: NASA/IPAC IRSA, SPHEREx, Gaia, WISE, Aladin/CDS. NASA does not endorse this project.
+        </footer>
+      )}
 
       {/* Global SPEX Space Dictionary Modal */}
       <SpexSpaceDictionaryModal
@@ -644,6 +703,14 @@ export function App() {
         language={language}
         initialTermId={globalDictionaryTermId}
         onSelectTerm={(termId) => setGlobalDictionaryTermId(termId)}
+      />
+
+      {/* Local Achievements & Nickname Scoreboard Modal */}
+      <AchievementsModal
+        isOpen={achievementsOpen}
+        onClose={() => setAchievementsOpen(false)}
+        language={language}
+        onOpenExplore={() => handleStartExplore()}
       />
     </div>
   );

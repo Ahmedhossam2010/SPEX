@@ -1,11 +1,13 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { X, Download, Share2, Check, Sparkles, AlertTriangle, Link2 } from 'lucide-react';
+import { Download, Share2, Check, Sparkles, AlertTriangle, Link2 } from 'lucide-react';
 import { Button } from '../../design/components/Button';
+import { Modal } from '../../design/components/Modal';
 import { CandidateDetection, InvestigationResult } from '../../science/types';
 import { canClaimDiscovery, getSourceClassificationMeta } from '../../science/provenance';
 import { Language, translations } from '../../utils/translations';
-import { useModalBehavior } from '../../hooks/useModalBehavior';
 import { gameAudio } from '../../game/utils/gameAudio';
+import { unlockAchievement } from '../../progress/progressStore';
+import { drawPsfStar, getCanvasDpr } from '../../utils/smoothCanvas';
 
 interface PostcardModalProps {
   isOpen: boolean;
@@ -32,8 +34,6 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
   const gate = canClaimDiscovery(result);
   const classMeta = getSourceClassificationMeta(gate.sourceClassification, language);
 
-  useModalBehavior(isOpen, onClose);
-
   useEffect(() => {
     if (!isOpen || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -42,8 +42,12 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
 
     const width = 800;
     const height = 480;
-    canvas.width = width;
-    canvas.height = height;
+    const dpr = getCanvasDpr();
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     const bgGrad = ctx.createLinearGradient(0, 0, width, height);
     bgGrad.addColorStop(0, '#040711');
@@ -52,15 +56,12 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, width, height);
 
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
     const seed = Math.floor((result.targetCoords?.ra || 276.26) * 100);
-    for (let i = 0; i < 90; i++) {
+    for (let i = 0; i < 85; i++) {
       const sx = ((i * 37 + seed * 13) % (width - 40)) + 20;
       const sy = ((i * 71 + seed * 29) % (height - 40)) + 20;
-      const r = i % 3 === 0 ? 1.5 : 0.8;
-      ctx.beginPath();
-      ctx.arc(sx, sy, r, 0, Math.PI * 2);
-      ctx.fill();
+      const r = i % 4 === 0 ? 1.8 : 1.05;
+      drawPsfStar(ctx, sx, sy, r, '#E2E8F0', i % 5 === 0 ? 0.65 : 0.38);
     }
 
     ctx.strokeStyle = 'rgba(245, 158, 11, 0.45)';
@@ -89,18 +90,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
     if (sourceCanvas && sourceCanvas.width > 0 && sourceCanvas.height > 0) {
       ctx.drawImage(sourceCanvas, vpX, vpY, vpSize, vpSize);
     } else {
-      const radGrad = ctx.createRadialGradient(
-        vpX + vpSize / 2, vpY + vpSize / 2, 2,
-        vpX + vpSize / 2, vpY + vpSize / 2, 45
-      );
-      radGrad.addColorStop(0, '#FFFFFF');
-      radGrad.addColorStop(0.25, '#38BDF8');
-      radGrad.addColorStop(0.6, 'rgba(56, 189, 248, 0.16)');
-      radGrad.addColorStop(1, 'transparent');
-      ctx.fillStyle = radGrad;
-      ctx.beginPath();
-      ctx.arc(vpX + vpSize / 2, vpY + vpSize / 2, 45, 0, Math.PI * 2);
-      ctx.fill();
+      drawPsfStar(ctx, vpX + vpSize / 2, vpY + vpSize / 2, 18, '#38BDF8', 0.9);
     }
 
     ctx.strokeStyle = '#F59E0B';
@@ -229,6 +219,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
   const handleDownload = () => {
     if (!canvasRef.current || !gate.allowed) return;
     gameAudio.playClick();
+    unlockAchievement('shared_card', 25);
     const url = canvasRef.current.toDataURL('image/png');
     const a = document.createElement('a');
     a.href = url;
@@ -239,6 +230,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
   const handleCopyImage = async () => {
     if (!canvasRef.current) return;
     gameAudio.playClick();
+    unlockAchievement('shared_card', 25);
     try {
       canvasRef.current.toBlob(async (blob) => {
         if (!blob) return;
@@ -249,7 +241,7 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
         setTimeout(() => setCopiedImage(false), 2500);
       });
     } catch {
-      navigator.clipboard.writeText(window.location.href);
+      navigator.clipboard?.writeText(window.location.href).catch(() => {});
       setCopiedImage(true);
       setTimeout(() => setCopiedImage(false), 2500);
     }
@@ -257,52 +249,49 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
 
   const handleCopyLink = async () => {
     gameAudio.playClick();
+    unlockAchievement('shared_card', 25);
+    const summaryText = `${result.title || 'SPHEREx Sky Target'} (RA ${result.targetCoords.ra.toFixed(4)}°, Dec ${result.targetCoords.dec.toFixed(4)}°) — ${window.location.href}`;
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        await navigator.share({
+          title: result.title || 'SPEX · SPHEREx Discovery Card',
+          text: summaryText,
+          url: window.location.href,
+        });
+      } else {
+        await navigator.clipboard.writeText(summaryText);
+      }
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     } catch {
-      // ignore clipboard errors
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        setCopiedLink(true);
+        setTimeout(() => setCopiedLink(false), 2500);
+      } catch {}
     }
   };
 
   return (
-    <div
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fade-in"
-      dir={isRtl ? 'rtl' : 'ltr'}
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        gate.allowed
+          ? isRtl
+            ? 'مشاركة بطاقة الاكتشاف الفلكي'
+            : 'Share Discovery Postcard'
+          : isRtl
+          ? 'بطاقة مرجعية (نسخة غير مباشرة)'
+          : 'Reference Snapshot Postcard'
+      }
+      icon={<Sparkles className="w-5 h-5 text-amber-400 shrink-0" />}
+      isRtl={isRtl}
+      maxWidthClass="max-w-3xl"
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="spex-postcard-flip-in relative w-full max-w-3xl bg-[#090F1E] border border-sky-400/30 rounded-2xl shadow-2xl p-5 sm:p-6 overflow-hidden max-h-[92vh] overflow-y-auto"
-      >
-        <div className="flex items-center justify-between pb-4 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-amber-400 shrink-0" />
-            <h3 className="text-lg font-display font-bold text-white">
-              {gate.allowed
-                ? isRtl
-                  ? 'مشاركة بطاقة الاكتشاف الفلكي'
-                  : 'Share Discovery Postcard'
-                : isRtl
-                ? 'بطاقة مرجعية (نسخة غير مباشرة)'
-                : 'Reference Snapshot Postcard'}
-            </h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-300 hover:text-white rounded-xl hover:bg-white/10 transition cursor-pointer"
-            aria-label="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
+      <div className="space-y-4">
         {!gate.allowed && (
-          <div className="mt-4 p-3 rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-200 text-xs flex items-start gap-2">
+          <div className="p-3 rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-200 text-xs flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <span>
               <strong>{classMeta.badgeLabel}:</strong> {t.provenanceBlockedPassportNotice}
@@ -310,10 +299,10 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
           </div>
         )}
 
-        <div className="my-5 flex justify-center bg-black/60 p-2 rounded-xl border border-white/10 overflow-hidden">
+        <div className="flex justify-center bg-black/60 p-2 rounded-xl border border-white/10 overflow-hidden">
           <canvas
             ref={canvasRef}
-            className="max-w-full h-auto rounded-lg shadow-lg"
+            className="w-full max-w-[740px] h-auto rounded-lg shadow-lg"
           />
         </div>
 
@@ -365,6 +354,6 @@ export const PostcardModal: React.FC<PostcardModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 };

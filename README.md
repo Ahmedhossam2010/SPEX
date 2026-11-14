@@ -1,44 +1,58 @@
-# SPHEREx: The Changing Sky (`SPEX`)
+# SPEX — SPHEREx: The Changing Sky
 
-**NASA Space Apps Challenge 2026** — A public multi-epoch astronomical blink, subpixel proper-motion tracker, and `-TAB` LVF spectro-photometric explorer powered by live **NASA/IPAC IRSA SPHEREx (`spherex.artifact` JOIN `spherex.plane`)** Level-2B FITS cutouts.
-
----
-
-## Official Data Sources & Reference UX
-
-- **SPHEREx at IRSA:** https://irsa.ipac.caltech.edu/Missions/spherex.html
-- **IRSA SPHEREx Tutorial Notebooks:** https://caltech-ipac.github.io/irsa-tutorials/spherex/
-- **WiseView (Reference Flipbook UX):** http://byw.tools/wiseview
-- **Gaia DR3 (Latest Astrometric Catalog):** https://archive.stsci.edu/missions-and-data/gaia
+**NASA Space Apps Challenge 2026** — An interactive multi-epoch infrared sky viewer, Mr. SPEX Learning Academy, and 2D/3D cosmic detective experience powered by live **NASA/IPAC IRSA SPHEREx** cutouts, Gaia DR3 differential astrometry, and `WCS-WAVE` `-TAB` spectroscopy (English & Arabic RTL).
 
 ---
 
-## Key Capabilities & Comparison to WiseView
+## 60-Second Judge Demo Script
 
-| Feature | WiseView (NEOWISE) | SPHEREx: The Changing Sky |
-| :--- | :--- | :--- |
-| Multi-epoch flipbook & blink | Epoch flipbook & blink | Progressive multi-epoch flipbook (10–20 frames) across all available releases (`dr1`/`qr3`/`qr2`) + `Blink 1↔Last` + keyboard shortcuts (`Space`, `←`, `→`, `L`, `B`) |
-| Progressive disclosure | Single flat toolbar | Clean primary toolbar (`Normal` / `Show changes`, Play/Pause, Speed, `D1–D6` detector selector) + collapsed `Advanced` drawer |
-| Intensity scaling | Adjustable contrast | Global per-band `p02–p98` percentile stretch (eliminates flicker) + optional `Per-Frame Auto`, `asinh/linear/sqrt/log` stretches |
-| Moving-object astrometry | Reticle + blinking | SIMBAD/Spitzer/Gaia PM propagation, sky-frame motion trail, differential Gaia DR3 (`\|pm\| < 20 mas/yr`) alignment, two-pass weighted linear regression (`option a` unsaturated vs `option b` wing-fit), own-error `≥ 3σ` & `≤ 2σ` expected-agreement gate, and `VARIANCE`+`FLAGS`-gated **Measured Centroid vs Time** SVG plot |
-| Image arithmetic | Epoch diff toggle | `Normal` (`Raw`), `Show changes` (`Diff vs Ep 1`), `Diff vs Median`, and inverse-variance weighted `Co-add Stack` strictly within same `release` + `VERSION` |
-| Spectral & detector bands | W1 (3.4 µm), W2 (4.6 µm) | Live `D1–D6` detector switcher (`0.75–5.0 µm`) + exact `WCS-WAVE` `-TAB` evaluation per pixel + `wlWindow` filter + 102 LVF channel inspector |
-| Catalog & sky context | Gaia/WISE linkouts | Live CDS VizieR `Gaia DR3` (propagated from epoch `2016.0` to exposure epoch) & `AllWISE` overlays (note: ultra-cool Y-dwarfs like WISE 0855 rely on Spitzer/HST and are absent from optical Gaia DR3) + pinned interactive `Aladin Lite v3` |
-| URL sharing & Bilingual UI | Query string state | Deep links (`?target=`, `?ra=&dec=`, `?band=`, `?fov=`), PNG snapshot/Discovery Postcard, EN/AR bilingual UI |
+1. **0:00–0:10 · Home & Quick Demo:** Open `http://localhost:3000`. Note the 4-item header (`Home`, `Explore`, `Academy`, `Play`), live `Rank + XP` badge, and 3 primary Hero cards (`Start Academy`, `Explore the Sky`, `Play`). Click **Quick Demo: WISE 0855**.
+2. **0:10–0:25 · Full-Bleed Explore Viewer & Blink Motion:** Explore opens **WISE 0855-0714** (`D5`) in a full-bleed high-DPR sky viewport with smooth Catmull-Rom bicubic interpolation and auto-playing blink animation. Use the floating **Time** panel to toggle **Survey-pass** mode (`≤ 45d` clustering; discloses `< 2` passes honestly) and notice the **dashed "expected" track** (`motion not significant` below `3σ`).
+3. **0:25–0:40 · Cross-Telescopes, DQ Flags & Share:** Switch targets via preset or deep link (`/?target=barnards-star&band=D5&fov=6.6&pass=1`) to see a solid measured proper-motion trail. Open **Other telescopes** (`Gaia DR3`, `AllWISE`, `Aladin Lite` with marker legend), inspect red **DQ** artifact highlights (`Why is this marked?` / `Report bad data`), and click **Share** for deep links, Web Share API, or `?embed=1` iframe snippets.
+4. **0:40–0:55 · Mr. SPEX Academy & 6-Chapter Game:** Open **Academy** (`6` Khan-style levels with course map, SVG diagrams, inline practice checks, and Level 0–5 exams earning Learning XP). Open **Play** to enter the Main Menu (`Play Story`, `Level Select Map` with 0–3 ★ stars, `Sliding Sky Puzzle`, HUD, Pause, Tutorial, plus lazy-loaded 3D station).
+5. **0:55–1:00 · Community & 3-Source XP:** Open the **Community** icon in the header or Home to inspect **Learning / Solving / Game XP**, post a discovery note, reply/report, and view citizen bad-data flags.
 
 ---
 
-## Live Architecture & Data Flow
+## How to Run
 
-```mermaid
-flowchart LR
-  UI["React 19 Home + ExploreView + FramePlayer + AladinLitePanel"] -->|"GET /api/spherex/timeseries?stream=ndjson"| API["Express API (server.ts)"]
-  API -->|"ADQL JOIN + CONTAINS(POINT, p.poly)=1 + Semaphore(6)"| TAP["NASA/IPAC IRSA TAP (spherex.artifact + spherex.plane)"]
-  TAP -->|"obsid, t_min/t_max, detector, uri, release dedup"| CUT["IRSA Direct Cutout (?center=RA,DECd&size=DEG)"]
-  CUT -->|"sha256(cutoutUrl) cache + MEF EXTNAME parser"| FITS["Level-2B MEF: IMAGE, VARIANCE, FLAGS, ZODI, EPSF, WCS-WAVE"]
-  FITS -->|"TAN-SIP Reprojection + WCS-WAVE -TAB + Gaia DR3 Astrometry"| UI
-  API -->|"Persisted Gaia DR3 + AllWISE Disk Cache"| CAT["CDS VizieR (Gaia DR3 + AllWISE)"]
+```bash
+npm install
+npm run dev     # Starts Express + Vite dev server on http://localhost:3000
+npm run lint    # Runs TypeScript type-checking (tsc --noEmit)
+npm test        # Runs unit & API validation suites (tsx --test)
+npm run build   # Builds Vite production bundle + esbuild server.js
+npm start       # Runs production server (node server.js)
 ```
+
+---
+
+## Working Deep-Link Examples (All 5 Test Targets + Embed Mode)
+
+- **WISE 0855-0714 (Default Quick Demo):** `/?target=wise-0855&band=D5&fov=6.6&pass=1`
+- **Barnard's Star (Fast Proper-Motion Red Dwarf):** `/?target=barnards-star&band=D5&fov=6.6&pass=1`
+- **Epsilon Indi B (Clean Unsaturated Motion Detection):** `/?target=epsilon-indi&band=D3&fov=6.6&pass=1`
+- **RW Aurigae (Stationary Control):** `/?target=rw-aurigae&band=D1&fov=6.6&pass=1`
+- **R Draconis (Bright Mira Control):** `/?target=r-draconis&band=D2&fov=6.6&pass=1`
+- **Arbitrary Sky Coordinates:** `/?ra=269.452&dec=4.693&band=D5&fov=6.6`
+- **Minimal-Chrome Embed Mode:** `/?target=wise-0855&band=D5&embed=1`
+
+---
+
+## Challenge Checklist Mapped to Features
+
+| Challenge Requirement | SPEX Implementation |
+| :--- | :--- |
+| **Clear entry in <60s & simple UX** | 4-item header, 3-card Home Hero, `Quick Demo: WISE 0855`, Scientist/Raw-pixel controls tucked behind explicit toggle |
+| **Image quality & high-DPR optics** | `bicubicUpsampleRgba()` (Catmull-Rom) + `devicePixelRatio`-scaled canvases + smooth PSF star glows across Explore, Home, Postcards, Academy & Mini-Games |
+| **Multi-epoch blink, trails & cadence** | Full-bleed `FramePlayer` w/ collapsible panels, fading ghost trails (`solid` vs `dashed + "expected"`), honest `groupFramesBySurveyPass`, `< 2` pass fallback disclosure |
+| **DQ artifact transparency & catalogs** | Highlighted DQ cutouts + `"Why is this marked?"` legend + timeline warning badges + `"Report bad data"` + `Other telescopes` menu (`Gaia DR3`, `AllWISE`, `Aladin Lite`) |
+| **Khan-style Academy (6 levels)** | Course map, preview toggle, SVG diagrams, inline practice + hint, key takeaways, exam, results screen, and 3-source XP (`Learning / Solving / Game`) |
+| **Story Game + 4 Mini-Games + 3D** | Main Menu, 6-chapter Level Select Map (`0–3 ★`), Gameplay HUD, 3-step Tutorial, Pause/Complete modals, `SlidingSkyPuzzleGame`, lazy-loaded 3D SPEX Station |
+| **Community & Embed Sharing** | Validated & rate-limited REST API (`/api/community/posts`, `/comments`, `/report`, `/flags`) backed by `data/community_store.json`, `?embed=1`, and survey credits footer |
+
+### Deployment Note (Cloud Run / Container Ephemeral Storage)
+- Community posts, comments, reports, and citizen bad-data flags persist to `data/community_store.json` on disk (seeded safely on first boot). In stateless/ephemeral container environments such as Cloud Run without an attached persistent volume, new Community entries last for the container instance's lifetime and gracefully degrade to offline/local mode if storage is read-only.
 
 ---
 
@@ -51,26 +65,6 @@ flowchart LR
 | **WISE 0855-0714** | `D5` | `9/16 (9/0)` | `373.18` | `5` | `(-8.30″, +0.69″)` | `(-5.99″, +1.22″)` [`6.11″ ± 4.41″`] | `1.39σ` | `motion not significant` | `0.54σ` | `a` (`unsaturated frames only`) |
 | **RW Aurigae** *(control)* | `D1` | `16/16 (6/10)` | `371.86` | `23` | `(+0.01″, -0.02″)` | `(+0.20″, -0.24″)` [`0.32″ ± 0.67″`] | `0.47σ` | `motion not significant` | `0.44σ` | `a` (`unsaturated frames only`) |
 | **R Draconis** *(control)* | `D2` | `14/16 (0/14)` | `379.67` | `6` | `(-0.02″, +0.01″)` | `(+1.32″, -1.24″)` [`1.81″ ± 4.73″`] | `0.38σ` | `motion not significant` | `0.39σ` | `b` (`includes wing-fit frames, low confidence`) |
-
-**One-Click Deep Links:**
-1. **Epsilon Indi Ba/Bb** (`/?target=epsilon-indi&band=D3`): `6.45″ ± 1.98″` (`3.26σ`, rate `4.55 ± 1.40″/yr`), `0.27σ` from expected over `517.3` days (`16/16` unsaturated).
-2. **Barnard's Star** (`/?target=barnards-star&band=D5`): `11.60″ ± 2.90″` (`4.00σ`, rate `10.68 ± 2.67″/yr`), `0.48σ` from expected over `396.6` days (PSF wing fits, low confidence).
-3. **WISE 0855-0714** (`/?target=wise-0855&band=D5`): tracked at the predicted position with measured vs predicted shown (`6.11″ ± 4.41″`, `1.39σ`, `0.54σ` from expected; below `3σ` due to the `4.03″` faint-star floor in `D5`).
-4. **RW Aurigae** (`/?target=rw-aurigae&band=D1`): stationary control tracked at the predicted position with measured vs predicted shown (`0.32″ ± 0.67″`, `0.47σ`, `0.44σ` from expected).
-5. **R Draconis** (`/?target=r-draconis&band=D2`): bright Mira stationary control tracked at the predicted position with measured vs predicted shown (`1.81″ ± 4.73″`, `0.38σ`, `0.39σ` from expected; wing-fit frames, low confidence).
-
----
-
-## 3-Sentence Pitch & 60-Second Demo Script
-
-### 3-Sentence Pitch
-SPEX turns live NASA/IPAC IRSA SPHEREx Level-2B multi-epoch cutouts into a transparent infrared time-domain laboratory with subpixel Gaia DR3 differential astrometry, per-detector error budgets, and `WCS-WAVE` `-TAB` spectroscopy. Across `372–517` days of real SPHEREx observations, it detects significant proper motion on **Epsilon Indi B** (`6.45″ ± 1.98″`, `3.26σ`, within `0.27σ` of expected) using unsaturated frames and recovers **Barnard's Star** (`11.60″ ± 2.90″`, `4.00σ`, within `0.48σ` of expected) via PSF wing fitting, while stationary controls **RW Aurigae** (`0.32″ ± 0.67″`, `0.47σ`) and **R Draconis** (`1.81″ ± 4.73″`, `0.38σ`) remain consistent with zero motion. Targets below `3σ`—including ultra-cool Y-dwarf **WISE 0855** (`6.11″ ± 4.41″`, `1.39σ`, `0.54σ` from expected)—are tracked at the predicted position with measured vs predicted offsets shown honestly alongside the per-detector astrometric floor.
-
-### 60-Second Demo Script
-- **0:00–0:15 (Epsilon Indi B — Clean Unsaturated Detection):** Open `/?target=epsilon-indi&band=D3`. Show `16/16` unsaturated `D3` frames across `517.3` days aligned to `10` isolated Gaia DR3 reference stars: weighted linear fit measures `(+5.21″, -3.80″)` = `6.45″ ± 1.98″` (`3.26σ`, rate `4.55 ± 1.40″/yr`), matching the expected `(+5.64″, -3.49″)` offset within `0.27σ`.
-- **0:15–0:30 (Barnard's Star — Saturated Wing-Fit Caveat):** Switch to `/?target=barnards-star&band=D5`. Point out the `0x02` saturated core and the explicit `"includes wing-fit frames, low confidence"` badge: `2–6 px` Moffat wing fitting over `396.6` days measures `(-2.26″, +11.38″)` = `11.60″ ± 2.90″` (`4.00σ`, `0.48σ` from expected `(-0.87″, +11.25″)`).
-- **0:30–0:45 (WISE 0855 — Honest `< 3σ` Tracking):** Open `/?target=wise-0855&band=D5`. Explain that WISE 0855 is tracked at the predicted position with measured vs predicted shown (`6.11″ ± 4.41″`, `1.39σ`, `0.54σ` from expected `(-8.30″, +0.69″)`), honestly gated below `3σ` because only `5` faint Gaia reference stars set a `4.03″` floor in `D5`.
-- **0:45–1:00 (Stationary Controls & Spectroscopy):** Show **RW Aurigae** (`D1`, `0.32″ ± 0.67″`, `0.47σ`, `6` unsaturated frames) and **R Draconis** (`D2`, `1.81″ ± 4.73″`, `0.38σ`, wing fits) tracked at the predicted position with measured vs predicted shown, then toggle `Show changes` and open the `WCS-WAVE` spectrum inspector.
 
 ---
 

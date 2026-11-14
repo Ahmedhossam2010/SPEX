@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "posts": [
+    {
+      "id": "seed-barnard-01",
+      "nickname": "OrionScout",
+      "rank": "Discoverer",
+      "xp": 740,
+      "target": "Barnard's Star",
+      "caseId": "case-barnards-star",
+      "ra": 269.4485,
+      "dec": 4.7394,
+      "note": "Clear north-northwest proper motion hop visible when blinking Survey Pass 1 vs Pass 2 in D1.",
+      "createdAt": "2026-04-02T14:15:00.000Z",
+      "reports": 0,
+      "comments": [
+        {
+          "id": "seed-c1",
+          "nickname": "VegaCadet",
+          "text": "Checked Show changes mode — crisp white/cyan dipole right at center!",
+          "createdAt": "2026-04-02T15:10:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "seed-wise-02",
+      "nickname": "LyraIR",
+      "rank": "Analyst",
+      "xp": 510,
+      "target": "WISE 0855",
+      "caseId": "case-wise-0855",
+      "ra": 133.786,
+      "dec": -7.244,
+      "note": "Faint in D1 optical edge, brightens dramatically in D6 (4.7 um) and stays honestly marked below 3-sigma gate.",
+      "createdAt": "2026-04-03T10:30:00.000Z",
+      "reports": 0,
+      "comments": []
+    }
+  ],
+  "flags": []
+}

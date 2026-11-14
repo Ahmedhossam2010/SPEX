@@ -124,6 +124,9 @@ export interface ExploreViewProps {
   onDetectorChange?: (detector: string) => void;
   activeSizePix?: number;
   activeCaseId?: string | null;
+  autoPlay?: boolean;
+  onAutoPlayConsumed?: () => void;
+  isEmbed?: boolean;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -144,6 +147,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   onDetectorChange,
   activeSizePix,
   activeCaseId,
+  autoPlay = false,
+  onAutoPlayConsumed,
+  isEmbed = false,
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];
@@ -675,7 +681,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   return (
     <div
-      className={`relative w-full min-h-[calc(100vh-64px)] flex flex-col bg-[#02040A] text-slate-100 select-none ${
+      className={`relative w-full ${isEmbed ? 'min-h-screen' : 'min-h-[calc(100vh-64px)]'} flex flex-col bg-[#02040A] text-slate-100 select-none ${
         viewMode === 'curtain' ? 'h-[calc(100vh-64px)] overflow-hidden' : ''
       } ${isRtl ? 'font-cairo' : 'font-sans'}`}
       dir={isRtl ? 'rtl' : 'ltr'}
@@ -683,6 +689,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       {/* ==================================================================== */}
       {/* PART 3.A: COMPACT OBSERVATORY HEADER & CONTROLS */}
       {/* ==================================================================== */}
+      {!isEmbed && (
       <header className="relative z-30 shrink-0 min-h-13 bg-[#0C0E14]/95 backdrop-blur-xl border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3 shadow-md">
         {/* Left: Back to Sky & Target Name */}
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -872,6 +879,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           )}
         </div>
       </header>
+      )}
 
       {/* ==================================================================== */}
       {/* EXPLORER: ZERO TOOLBAR (Optional On-Demand Fly Drawer Only)          */}
@@ -1066,7 +1074,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {viewMode === 'flipbook' ? (
           <main
             className={`flex-1 w-full ${
-              isScientistMode ? 'max-w-[1600px] xl:grid-cols-12 p-3 sm:p-4' : 'max-w-[1180px] px-2 py-2 sm:px-4 sm:py-3'
+              isScientistMode ? 'max-w-[1600px] xl:grid-cols-12 p-3 sm:p-4' : 'max-w-none p-0'
             } mx-auto grid grid-cols-1 gap-4 items-start`}
           >
             {/* Primary Time-Series Flipbook Player */}
@@ -1079,6 +1087,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 initialDetector={initialDetector}
                 language={language}
                 explorerMode={!isScientistMode}
+                isEmbed={isEmbed}
                 targetLabel={targetDisplayName}
                 spexHighlights={spexHighlights}
                 onExplainContextChange={setSpexExplainContext}
@@ -1122,11 +1131,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 onOpenPostcard={() => setShowPostcard(true)}
                 onOpenProvenance={currentResult?.provenance ? () => setShowProvenance(true) : undefined}
                 onOpenDetectorStacking={() => setShowDetectorStacking(true)}
+                autoPlay={autoPlay}
+                onAutoPlayConsumed={onAutoPlayConsumed}
                 guidedStepAction={guidedDemoStep !== null ? GUIDED_DEMO_STEPS[guidedDemoStep].action : null}
               />
 
-              {!isScientistMode && (
-                <div className="mt-4">
+              {!isScientistMode && !isEmbed && (
+                <div className="max-w-[1180px] mx-auto px-3 sm:px-5 pb-6 mt-4">
                   <ExplorerMissions
                     language={language}
                     activeCaseId={activePresetId}

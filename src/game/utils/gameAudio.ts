@@ -1,8 +1,13 @@
 // Web Audio API synthesized sound generator for SPEX adventure (Zero external audio file dependencies)
 class GameAudioSystem {
   private ctx: AudioContext | null = null;
-  public enabled: boolean =
-    typeof window !== 'undefined' && window.localStorage?.getItem('spex_sound_enabled') === 'true';
+  public enabled: boolean = (() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage?.getItem('spex_sound_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  })();
 
   public setMuted(muted: boolean) {
     this.enabled = !muted;

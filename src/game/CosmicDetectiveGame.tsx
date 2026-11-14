@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { bicubicUpsampleRgba } from '../utils/smoothCanvas';
 import {
   Telescope,
   Sparkles,
@@ -548,42 +549,39 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     ctx.fillStyle = '#060a14';
     ctx.fillRect(0, 0, width, height);
 
-    // Difference image simulation for this scenario
+    // Difference image simulation for this scenario (48x48 upsampled smoothly via bicubic Catmull-Rom)
     const imgs = generateSyntheticScenarioImages(currentScenario.id);
     const diff = imgs.diff;
     const dW = imgs.width;
     const dH = imgs.height;
 
-    const imgData = ctx.createImageData(width, height);
-    for (let py = 0; py < height; py++) {
-      for (let px = 0; px < width; px++) {
-        const sx = Math.floor((px / width) * dW);
-        const sy = Math.floor((py / height) * dH);
-        const val = diff[sy * dW + sx] || 0;
-
-        const pIdx = (py * width + px) * 4;
-        if (val > 0.05) {
-          // Positive surge (red/amber)
-          imgData.data[pIdx] = Math.min(255, Math.floor(val * 40));
-          imgData.data[pIdx + 1] = Math.min(255, Math.floor(val * 15));
-          imgData.data[pIdx + 2] = 20;
-          imgData.data[pIdx + 3] = 255;
-        } else if (val < -0.05) {
-          // Negative deficit (cyan/blue)
-          imgData.data[pIdx] = 20;
-          imgData.data[pIdx + 1] = Math.min(255, Math.floor(-val * 35));
-          imgData.data[pIdx + 2] = Math.min(255, Math.floor(-val * 50));
-          imgData.data[pIdx + 3] = 255;
-        } else {
-          // Noise floor
-          const noise = 15 + Math.random() * 10;
-          imgData.data[pIdx] = noise;
-          imgData.data[pIdx + 1] = noise;
-          imgData.data[pIdx + 2] = noise + 10;
-          imgData.data[pIdx + 3] = 255;
-        }
+    const srcRgba = new Uint8ClampedArray(dW * dH * 4);
+    for (let idx = 0; idx < dW * dH; idx++) {
+      const val = diff[idx] || 0;
+      const pIdx = idx * 4;
+      if (val > 0.05) {
+        srcRgba[pIdx] = Math.min(255, Math.floor(val * 40));
+        srcRgba[pIdx + 1] = Math.min(255, Math.floor(val * 15));
+        srcRgba[pIdx + 2] = 20;
+        srcRgba[pIdx + 3] = 255;
+      } else if (val < -0.05) {
+        srcRgba[pIdx] = 20;
+        srcRgba[pIdx + 1] = Math.min(255, Math.floor(-val * 35));
+        srcRgba[pIdx + 2] = Math.min(255, Math.floor(-val * 50));
+        srcRgba[pIdx + 3] = 255;
+      } else {
+        const noise = 15 + (((idx * 37) % 11));
+        srcRgba[pIdx] = noise;
+        srcRgba[pIdx + 1] = noise;
+        srcRgba[pIdx + 2] = noise + 10;
+        srcRgba[pIdx + 3] = 255;
       }
     }
+
+    const upsampled = bicubicUpsampleRgba(srcRgba, dW, dH, width, height);
+    const clamped = new Uint8ClampedArray(upsampled.length);
+    clamped.set(upsampled);
+    const imgData = new ImageData(clamped, width, height);
     ctx.putImageData(imgData, 0, 0);
 
     // Scenario title banner

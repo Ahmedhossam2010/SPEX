@@ -12,3 +12,5 @@ export * from './components/EmptyState';
 export * from './components/ErrorState';
 export * from './components/SegmentedControl';
 export * from './components/LensButton';
+export * from './components/Modal';
+export * from './components/PanelHeading';

@@ -67,9 +67,13 @@ export const CurtainDivider: React.FC<CurtainDividerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = width;
-    canvas.height = height;
+    const dpr = Math.max(1, Math.min(2.5, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1));
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
 
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     const splitPx = splitPos * width;
@@ -117,7 +121,7 @@ export const CurtainDivider: React.FC<CurtainDividerProps> = ({
       <div className="crop-mark-bl" />
       <div className="crop-mark-br" />
 
-      <canvas ref={canvasRef} className="w-full h-full object-contain image-rendering-pixelated" />
+      <canvas ref={canvasRef} className="w-full h-full object-contain" />
 
       {/* Left Label (Epoch 1) */}
       <div className="absolute top-3 left-3 pointer-events-none bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md border border-white/10 font-mono text-[11px] text-[#00D3F3]">

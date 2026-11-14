@@ -31,16 +31,28 @@ import {
   Sliders,
   X,
   Eye,
+  EyeOff,
+  Telescope,
+  RotateCcw,
+  Flag,
+  Code2,
+  Maximize2,
+  Minimize2,
+  Info,
+  Globe,
 } from 'lucide-react';
 import { Badge } from '../../design/components/Badge';
 import { Button } from '../../design/components/Button';
 import { IconButton } from '../../design/components/IconButton';
+import { Modal } from '../../design/components/Modal';
+import { PanelHeading } from '../../design/components/PanelHeading';
 import { SkeletonSky } from '../../design/components/SkeletonSky';
 import { ErrorState } from '../../design/components/ErrorState';
 import { EmptyState } from '../../design/components/EmptyState';
 import { Language, translations } from '../../utils/translations';
 import { gameAudio } from '../../game/utils/gameAudio';
 import { useModalBehavior } from '../../hooks/useModalBehavior';
+import { bicubicUpsampleRgba, drawPsfStar, getCanvasDpr } from '../../utils/smoothCanvas';
 import {
   TimeSeriesFrame,
   TemporalPairInfo,
@@ -51,6 +63,9 @@ import {
   LightCurvePoint,
 } from '../../science/timeSeriesPipeline';
 import { computeExpectedProperMotionOffset } from '../../science/properMotion';
+import { groupFramesBySurveyPass } from '../../science/surveyPasses';
+import { addBadDataReport, recordViewerAction } from '../../progress/progressStore';
+import { AladinLitePanel } from '../Explore/AladinLitePanel';
 import { WCSParams } from '../../science/types';
 import { WCS } from '../../science/wcs';
 import {
@@ -108,6 +123,9 @@ export interface FramePlayerProps {
   onOpenProvenance?: () => void;
   onOpenDetectorStacking?: () => void;
   onCanvasReady?: (canvas: HTMLCanvasElement | null) => void;
+  isEmbed?: boolean;
+  autoPlay?: boolean;
+  onAutoPlayConsumed?: () => void;
   guidedStepAction?: {
     play?: boolean;
     blinkFirstLast?: boolean;
@@ -288,6 +306,9 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   onOpenProvenance,
   onOpenDetectorStacking,
   onCanvasReady,
+  isEmbed = false,
+  autoPlay = false,
+  onAutoPlayConsumed,
   guidedStepAction,
   className = '',
 }) => {
@@ -316,12 +337,28 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [contrastFactor, setContrastFactor] = useState<number>(1.0);
   const [blinkFirstLast, setBlinkFirstLast] = useState<boolean>(false);
   const [renderMode, setRenderMode] = useState<PlayerRenderMode>('raw');
-  const [zoom, setZoom] = useState<number>(explorerMode ? 1 : 2);
-  const [pixelSharp, setPixelSharp] = useState<boolean>(true);
+  const [zoom, setZoom] = useState<number>(explorerMode ? 1.15 : 2);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Survey-pass compare is ON by default (~6-month grouping, never fabricating passes)
+  const [surveyPassMode, setSurveyPassMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search).get('pass');
+      if (p === '0') return false;
+    }
+    return true;
+  });
+  const [otherTelescopesOpen, setOtherTelescopesOpen] = useState<boolean>(false);
+  const [showGaiaOverlay, setShowGaiaOverlay] = useState<boolean>(true);
+  const [showAllWiseOverlay, setShowAllWiseOverlay] = useState<boolean>(true);
+  const [showAladinOverlay, setShowAladinOverlay] = useState<boolean>(false);
+  // Raw pixels toggle ONLY in Advanced mode; presentation is always smooth bicubic
+  const [pixelSharp, setPixelSharp] = useState<boolean>(false);
   const [showPixelGrid, setShowPixelGrid] = useState<boolean>(false);
   const [showMotionTrail, setShowMotionTrail] = useState<boolean>(true);
   const [showEpoch1Crosshair, setShowEpoch1Crosshair] = useState<boolean>(true);
-  const [showDqOverlay, setShowDqOverlay] = useState<boolean>(false);
+  const [showDqOverlay, setShowDqOverlay] = useState<boolean>(true);
+  const [showWhyMarked, setShowWhyMarked] = useState<boolean>(false);
+  const [badDataToast, setBadDataToast] = useState<string | null>(null);
   const [showCatalogOverlay, setShowCatalogOverlay] = useState<boolean>(true);
   const [selectedReleaseKey, setSelectedReleaseKey] = useState<string | null>(null);
   const [sameReleaseOnly, setSameReleaseOnly] = useState<boolean>(false);
@@ -329,9 +366,20 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [smoothCrossfade, setSmoothCrossfade] = useState<boolean>(true);
   const [zoomLocked, setZoomLocked] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+  const [copiedEmbed, setCopiedEmbed] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState<boolean>(false);
   const [mobileToolboxOpen, setMobileToolboxOpen] = useState<boolean>(false);
   const [fadeOpacity, setFadeOpacity] = useState<number>(0);
+
+  // Full-bleed collapsible floating panels & Immersive idle auto-hide
+  const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState<boolean>(true);
+  const [immersiveMode, setImmersiveMode] = useState<boolean>(false);
+  const [idleHidden, setIdleHidden] = useState<boolean>(false);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backdropCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Phase 1 Explorer gesture & Polaroid states
   const [wavelengthPreview, setWavelengthPreview] = useState<{ um: number; snappedDetector: string } | null>(null);
@@ -399,6 +447,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   useEffect(() => {
     setSameReleaseOnly(false);
     setSelectedReleaseKey(null);
+    setPan({ x: 0, y: 0 });
   }, [ra, dec, caseId, selectedDetector]);
 
   // Collapsible A4 reserved slots
@@ -434,6 +483,28 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       setSelectedDetector(initialDetector);
     }
   }, [initialDetector]);
+
+  // Track target visits for Academy & Achievements progress
+  useEffect(() => {
+    const cid = (caseId || '').toLowerCase();
+    if (cid.includes('wise-0855') || cid.includes('0855')) {
+      recordViewerAction('visitedWise0855');
+    } else if (cid.includes('barnard')) {
+      recordViewerAction('visitedBarnard');
+    }
+  }, [caseId]);
+
+  // Quick Demo auto-play when triggered from Home -> Quick Demo
+  useEffect(() => {
+    if (!autoPlay || loading || !data?.frames?.length) return;
+    setIsPlaying(true);
+    setBlinkFirstLast(data.frames.length >= 2);
+    setShowMotionTrail(true);
+    setZoom((z) => (z < 1.8 ? 2 : z));
+    recordViewerAction('playedBlink');
+    onExplorerPlay?.();
+    onAutoPlayConsumed?.();
+  }, [autoPlay, loading, data?.frames?.length, onExplorerPlay, onAutoPlayConsumed]);
 
   // Apply guided tour step actions when driven externally (P2 60s guided demo)
   useEffect(() => {
@@ -581,14 +652,64 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     fetchTimeSeries();
   }, [fetchTimeSeries]);
 
+  // Group frames by normalized release::version for consistent diff/coadd subtraction
+  const frameReleaseGroups = useMemo(() => {
+    const map = new Map<string, TimeSeriesFrame[]>();
+    const all = data?.frames || [];
+    for (const f of all) {
+      const rel = (f.release || data?.activeRelease || 'public').toLowerCase();
+      const ver = f.version || data?.activeVersion || 'unknown';
+      const key = `${rel}::${ver}`;
+      const bucket = map.get(key) || [];
+      bucket.push(f);
+      map.set(key, bucket);
+    }
+    return map;
+  }, [data?.frames, data?.activeRelease, data?.activeVersion]);
+
+  const primaryReleaseKey = useMemo(() => {
+    let bestKey: string | null = null;
+    let bestCount = -1;
+    for (const [k, arr] of frameReleaseGroups.entries()) {
+      if (arr.length > bestCount) {
+        bestCount = arr.length;
+        bestKey = k;
+      }
+    }
+    return bestKey;
+  }, [frameReleaseGroups]);
+
+  const rawDisplayFrames = useMemo(() => {
+    const all = data?.frames || [];
+    if (!selectedReleaseKey) return all;
+    const subset = frameReleaseGroups.get(selectedReleaseKey);
+    return subset && subset.length > 0 ? subset : all;
+  }, [data?.frames, selectedReleaseKey, frameReleaseGroups]);
+
+  const surveyPasses = useMemo(() => {
+    return groupFramesBySurveyPass(rawDisplayFrames);
+  }, [rawDisplayFrames]);
+
+  const displayFrames = useMemo(() => {
+    if (!surveyPassMode) return rawDisplayFrames;
+    const combined = surveyPasses.map((p) => p.combinedFrame);
+    return combined.length > 0 ? combined : rawDisplayFrames;
+  }, [surveyPassMode, surveyPasses, rawDisplayFrames]);
+
+  useEffect(() => {
+    if (displayFrames.length > 0 && currentFrameIdx >= displayFrames.length) {
+      setCurrentFrameIdx(0);
+    }
+  }, [displayFrames.length, currentFrameIdx]);
+
   // Playback interval (handles both full sequence and Epoch 1 <-> Last Blink mode)
   useEffect(() => {
-    if (!isPlaying || !data?.frames?.length) {
+    if (!isPlaying || !displayFrames.length) {
       if (playTimerRef.current) clearInterval(playTimerRef.current);
       return;
     }
 
-    const total = data.frames.length;
+    const total = displayFrames.length;
     const intervalMs = Math.round(750 / playbackSpeed);
     playTimerRef.current = setInterval(() => {
       setCurrentFrameIdx((prev) => {
@@ -614,7 +735,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     return () => {
       if (playTimerRef.current) clearInterval(playTimerRef.current);
     };
-  }, [isPlaying, playbackSpeed, blinkFirstLast, isLooping, data?.frames?.length, onSelectFrame]);
+  }, [isPlaying, playbackSpeed, blinkFirstLast, isLooping, displayFrames.length, onSelectFrame]);
 
   // Keyboard shortcuts (Space: Play/Pause, Left/Right: Step, L: Loop, B: Blink 1<->Last)
   useEffect(() => {
@@ -629,17 +750,21 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       ) {
         return;
       }
-      if (!data?.frames?.length) return;
+      if (!displayFrames.length) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        setIsPlaying((p) => !p);
+        setIsPlaying((p) => {
+          const next = !p;
+          if (next) recordViewerAction('playedBlink');
+          return next;
+        });
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
         setIsPlaying(false);
         setCurrentFrameIdx((prev) => {
-          const next = blinkFirstLast && data.frames.length >= 2
-            ? (prev === 0 ? data.frames.length - 1 : 0)
-            : (prev + 1) % data.frames.length;
+          const next = blinkFirstLast && displayFrames.length >= 2
+            ? (prev === 0 ? displayFrames.length - 1 : 0)
+            : (prev + 1) % displayFrames.length;
           onSelectFrame?.(next);
           return next;
         });
@@ -647,16 +772,16 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         e.preventDefault();
         setIsPlaying(false);
         setCurrentFrameIdx((prev) => {
-          const prevIdx = blinkFirstLast && data.frames.length >= 2
-            ? (prev === 0 ? data.frames.length - 1 : 0)
-            : (prev - 1 + data.frames.length) % data.frames.length;
+          const prevIdx = blinkFirstLast && displayFrames.length >= 2
+            ? (prev === 0 ? displayFrames.length - 1 : 0)
+            : (prev - 1 + displayFrames.length) % displayFrames.length;
           onSelectFrame?.(prevIdx);
           return prevIdx;
         });
       } else if (e.key === 'l' || e.key === 'L') {
         setIsLooping((lp) => !lp);
       } else if (e.key === 'b' || e.key === 'B') {
-        if (data.frames.length >= 2) {
+        if (displayFrames.length >= 2) {
           setBlinkFirstLast((b) => !b);
         }
       } else if (e.key === '?') {
@@ -666,31 +791,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [data?.frames?.length, blinkFirstLast, onSelectFrame]);
-
-  // P1-2: Enforce same release and processing VERSION for differences and stacks
-  const frameReleaseGroups = useMemo(() => {
-    const groups = new Map<string, TimeSeriesFrame[]>();
-    for (const fr of data?.frames || []) {
-      const key = `${(fr.release || data?.activeRelease || 'public').toLowerCase()}::${fr.version || data?.activeVersion || 'unknown'}`;
-      const list = groups.get(key) || [];
-      list.push(fr);
-      groups.set(key, list);
-    }
-    return groups;
-  }, [data?.frames, data?.activeRelease, data?.activeVersion]);
-
-  const primaryReleaseKey = useMemo(() => {
-    const first = Array.from(frameReleaseGroups.entries()).sort((a, b) => b[1].length - a[1].length)[0];
-    return first ? first[0] : null;
-  }, [frameReleaseGroups]);
-
-  const displayFrames = useMemo(() => {
-    const all = data?.frames || [];
-    if (!selectedReleaseKey) return all;
-    const subset = frameReleaseGroups.get(selectedReleaseKey);
-    return subset && subset.length > 0 ? subset : all;
-  }, [data?.frames, selectedReleaseKey, frameReleaseGroups]);
+  }, [displayFrames.length, blinkFirstLast, onSelectFrame]);
 
   // Precompute stack median and inverse-variance co-add on common WCS grid (strictly largest same release & VERSION group)
   const diffGroupKey = primaryReleaseKey || data?.largestDiffGroupKey || null;
@@ -779,7 +880,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
 
   // Global per-band intensity scale (P0.2: prevents frame-to-frame flicker)
   const globalScale = useMemo(() => {
-    const frames = data?.frames || [];
+    const frames = displayFrames;
     if (frames.length === 0) return { p02: 0, p98: 1, absMaxDiff: 1 };
 
     const sampleValues: number[] = [];
@@ -794,12 +895,83 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     const absSorted = sampleValues.map((v) => Math.abs(v)).sort((a, b) => a - b);
     const absMaxDiff = Math.max(1e-5, absSorted[Math.floor(absSorted.length * 0.985)] ?? 1);
     return { p02, p98, absMaxDiff };
-  }, [data?.frames, getDisplayArray]);
+  }, [displayFrames, getDisplayArray]);
 
-  // Render active frame onto canvas (using globalScale or per-frame auto + DQ overlay)
+  // Immersive auto-hide on idle
+  const bumpActivity = useCallback(() => {
+    setIdleHidden(false);
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    if (!immersiveMode) return;
+    idleTimerRef.current = setTimeout(() => {
+      setIdleHidden(true);
+    }, 3400);
+  }, [immersiveMode]);
+
   useEffect(() => {
-    if (!data?.frames?.length) return;
-    const frame = data.frames[currentFrameIdx];
+    if (!immersiveMode) {
+      setIdleHidden(false);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      return;
+    }
+    bumpActivity();
+    return () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [immersiveMode, bumpActivity]);
+
+  // Keep URL ?pass= synced when Survey-pass mode changes
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('pass', surveyPassMode ? '1' : '0');
+    const qs = params.toString();
+    window.history.replaceState({ ...window.history.state }, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
+  }, [surveyPassMode]);
+
+  // Smooth high-DPR procedural PSF starfield backdrop behind sky cutouts
+  useEffect(() => {
+    const bgCanvas = backdropCanvasRef.current;
+    if (!bgCanvas) return;
+    const drawBg = () => {
+      const rect = bgCanvas.getBoundingClientRect();
+      const cssW = Math.max(320, Math.round(rect.width || 800));
+      const cssH = Math.max(280, Math.round(rect.height || 600));
+      const dpr = getCanvasDpr();
+      bgCanvas.width = Math.round(cssW * dpr);
+      bgCanvas.height = Math.round(cssH * dpr);
+      const bctx = bgCanvas.getContext('2d');
+      if (!bctx) return;
+      bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      bctx.imageSmoothingEnabled = true;
+      bctx.imageSmoothingQuality = 'high';
+
+      const rad = bctx.createRadialGradient(cssW * 0.5, cssH * 0.5, 20, cssW * 0.5, cssH * 0.5, Math.max(cssW, cssH) * 0.65);
+      rad.addColorStop(0, '#091124');
+      rad.addColorStop(0.55, '#040814');
+      rad.addColorStop(1, '#02040a');
+      bctx.fillStyle = rad;
+      bctx.fillRect(0, 0, cssW, cssH);
+
+      const seedBase = Math.abs(Math.round((ra + dec) * 137)) || 42;
+      for (let i = 0; i < 95; i++) {
+        const rx = (((i * 73 + seedBase * 19) % 1000) / 1000) * cssW;
+        const ry = (((i * 131 + seedBase * 31) % 1000) / 1000) * cssH;
+        const radius = 0.8 + ((i * 17) % 10) * 0.16;
+        const alpha = 0.22 + ((i * 23) % 10) * 0.055;
+        const warm = i % 4 === 0;
+        drawPsfStar(bctx, rx, ry, radius, warm ? '253, 224, 155' : '226, 232, 240', alpha);
+      }
+    };
+    drawBg();
+    window.addEventListener('resize', drawBg);
+    return () => window.removeEventListener('resize', drawBg);
+  }, [ra, dec]);
+
+  // Render active frame onto canvas (Bicubic smooth presentation by default; Raw pixels ONLY in Advanced mode)
+  useEffect(() => {
+    if (!displayFrames.length) return;
+    const safeIdx = Math.min(currentFrameIdx, Math.max(0, displayFrames.length - 1));
+    const frame = displayFrames[safeIdx];
     if (!frame) return;
 
     const canvas = canvasRef.current;
@@ -809,6 +981,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
 
     const width = frame.width || 64;
     const height = frame.height || 64;
+    const useRawPixels = !explorerMode && pixelSharp;
 
     // Capture previous canvas for subtle cross-fade on frame transitions
     if (
@@ -826,8 +999,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       const fCtx = fCanvas.getContext('2d');
       if (fCtx) {
         fCtx.clearRect(0, 0, fCanvas.width, fCanvas.height);
+        fCtx.imageSmoothingEnabled = !useRawPixels;
+        if (!useRawPixels) fCtx.imageSmoothingQuality = 'high';
         fCtx.drawImage(canvas, 0, 0);
-        setFadeOpacity(0.7);
+        setFadeOpacity(0.68);
         requestAnimationFrame(() => {
           requestAnimationFrame(() => setFadeOpacity(0));
         });
@@ -835,10 +1010,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     }
     prevRenderedFrameRef.current = currentFrameIdx;
 
-    canvas.width = width;
-    canvas.height = height;
-
-    const pixels = getDisplayArray(currentFrameIdx);
+    const pixels = getDisplayArray(safeIdx);
     if (!pixels || pixels.length === 0) return;
 
     const isDiff = renderMode === 'diff_ref' || renderMode === 'diff_median';
@@ -855,7 +1027,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     }
 
     const range = Math.max(1e-6, p98 - p02);
-    const imgData = ctx.createImageData(width, height);
+    const rgba = new Uint8ClampedArray(width * height * 4);
 
     for (let i = 0; i < width * height; i++) {
       const val = pixels[i] ?? 0;
@@ -864,7 +1036,6 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       let b = 0;
 
       if (isDiff) {
-        // Diverging colormap: positive excess = bright amber/white, negative deficit = cyan/blue
         const scaled = (val / diffScale) * contrastFactor;
         const signedBase =
           stretchMode === 'linear'
@@ -895,36 +1066,130 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           norm = 1 - norm;
         }
         const byteVal = Math.round(norm * 255);
-        // Warm infrared astronomical ramp
         r = Math.min(255, Math.round(byteVal * 1.05));
         g = Math.min(255, Math.round(byteVal * 0.86));
         b = Math.min(255, Math.round(byteVal * 0.58));
       }
 
-      // Optional DQ-flag pixel highlight overlay
+      // Highlight DQ-flagged pixels subtly so bad data is immediately clear
       if (showDqOverlay && frame.flags && (frame.flags[i] & DQ_ARTIFACT_MASK) !== 0) {
         r = Math.min(255, Math.round(r * 0.45 + 244 * 0.55));
         g = Math.min(255, Math.round(g * 0.45 + 63 * 0.55));
         b = Math.min(255, Math.round(b * 0.45 + 94 * 0.55));
       }
 
-      imgData.data[i * 4] = r;
-      imgData.data[i * 4 + 1] = g;
-      imgData.data[i * 4 + 2] = b;
-      imgData.data[i * 4 + 3] = 255;
+      rgba[i * 4] = r;
+      rgba[i * 4 + 1] = g;
+      rgba[i * 4 + 2] = b;
+      rgba[i * 4 + 3] = 255;
     }
 
-    ctx.putImageData(imgData, 0, 0);
+    if (useRawPixels) {
+      canvas.width = width;
+      canvas.height = height;
+      const imgData = new ImageData(rgba, width, height);
+      ctx.imageSmoothingEnabled = false;
+      ctx.putImageData(imgData, 0, 0);
+    } else {
+      const dpr = getCanvasDpr();
+      const targetW = Math.min(384, Math.max(256, width * 4));
+      const targetH = Math.min(384, Math.max(256, height * 4));
+      const upsampled = bicubicUpsampleRgba(rgba, width, height, targetW, targetH);
+
+      const off = document.createElement('canvas');
+      off.width = targetW;
+      off.height = targetH;
+      const octx = off.getContext('2d');
+      if (octx) {
+        const clamped = new Uint8ClampedArray(upsampled.length);
+        clamped.set(upsampled);
+        octx.putImageData(new ImageData(clamped, targetW, targetH), 0, 0);
+      }
+
+      const finalW = Math.round(targetW * Math.min(dpr, 1.5));
+      const finalH = Math.round(targetH * Math.min(dpr, 1.5));
+      canvas.width = finalW;
+      canvas.height = finalH;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.clearRect(0, 0, finalW, finalH);
+      ctx.drawImage(off, 0, 0, finalW, finalH);
+    }
+
     onCanvasReady?.(canvas);
-  }, [data, currentFrameIdx, renderMode, globalScale, globalScaleEnabled, showDqOverlay, stretchMode, contrastFactor, invertColors, smoothCrossfade, prefersReducedMotion, getDisplayArray, onCanvasReady]);
+  }, [displayFrames, currentFrameIdx, renderMode, globalScale, globalScaleEnabled, showDqOverlay, stretchMode, contrastFactor, invertColors, smoothCrossfade, prefersReducedMotion, explorerMode, pixelSharp, getDisplayArray, onCanvasReady]);
+
+  const buildShareDeepLink = useCallback(
+    (embed = false) => {
+      if (typeof window === 'undefined') return '';
+      const params = new URLSearchParams(window.location.search);
+      params.set('ra', ra.toFixed(5));
+      params.set('dec', dec.toFixed(5));
+      const fovArcmin = Number(((sizePix * 6.2) / 60).toFixed(1));
+      params.set('fov', String(fovArcmin));
+      if (selectedDetector || data?.selectedDetector) {
+        params.set('band', selectedDetector || data?.selectedDetector || 'D1');
+      }
+      if (caseId) {
+        const slug = caseId.replace(/^case-/, '');
+        params.set('target', slug);
+      }
+      params.set('pass', surveyPassMode ? '1' : '0');
+      if (embed) params.set('embed', '1');
+      else params.delete('embed');
+      return `${window.location.origin}/explore?${params.toString()}`;
+    },
+    [ra, dec, sizePix, selectedDetector, data?.selectedDetector, caseId, surveyPassMode]
+  );
 
   const handleCopyDeepLink = useCallback(() => {
     if (typeof window === 'undefined') return;
     gameAudio.playClick();
-    navigator.clipboard?.writeText(window.location.href).catch(() => {});
+    const link = buildShareDeepLink(false) || window.location.href;
+    navigator.clipboard?.writeText(link).catch(() => {});
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
-  }, []);
+  }, [buildShareDeepLink]);
+
+  const handleReportBadData = useCallback(
+    async (frame: TimeSeriesFrame) => {
+      gameAudio.playClick();
+      const targetPos = tappedPix || frame.targetRefPixel || frame.targetPixel || { x: Math.floor((frame.width || 64) / 2), y: Math.floor((frame.height || 64) / 2) };
+      addBadDataReport({
+        frameId: frame.obsId,
+        obsId: frame.obsId,
+        detector: frame.detector || 'D1',
+        targetName: targetLabel || caseId || 'SPHEREx Patch',
+        x: Number(targetPos.x.toFixed(1)),
+        y: Number(targetPos.y.toFixed(1)),
+        ra,
+        dec,
+        reason: (frame.dqDecoded?.totalMaskedPixels ?? 0) > 0 ? 'DQ artifact / cosmic-ray spike' : 'Citizen-flagged pixel anomaly',
+      });
+      setBadDataToast(t.badDataReportedToast);
+      setTimeout(() => setBadDataToast(null), 3200);
+      try {
+        await fetch('/api/community/flags', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            frameId: frame.obsId,
+            obsId: frame.obsId,
+            detector: frame.detector || 'D1',
+            targetName: targetLabel || caseId || 'SPHEREx Patch',
+            ra,
+            dec,
+            x: Number(targetPos.x.toFixed(1)),
+            y: Number(targetPos.y.toFixed(1)),
+            reason: (frame.dqDecoded?.totalMaskedPixels ?? 0) > 0 ? 'DQ artifact / cosmic-ray spike' : 'Citizen-flagged pixel anomaly',
+          }),
+        });
+      } catch {
+        // Offline graceful fallback already persisted locally
+      }
+    },
+    [tappedPix, targetLabel, caseId, ra, dec, t.badDataReportedToast]
+  );
 
   // Grounded context & WCS pixel-to-sky builder for SPEX AI Guide (Step 2)
   const buildExplainContext = useCallback((): SpexExplainContext | null => {
@@ -1126,6 +1391,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         nearbySources,
       };
 
+      recordViewerAction('inspectedSpot');
       const ctx = buildExplainContext();
       if (ctx) onSpotSelect?.(spot, ctx);
     },
@@ -1154,15 +1420,14 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const currentFrameUm =
     activeExplorerFrame?.wavelengthUm ?? detectorToCenterUm(currentDetectorId, detectorRanges);
 
+  const defaultZoom = explorerMode ? 1 : 2;
   const handleResetExplorerView = useCallback(() => {
-    setZoom(1);
-    setIsPlaying(false);
-    setCurrentFrameIdx(0);
-    onSelectFrame?.(0);
-  }, [onSelectFrame]);
+    setZoom(defaultZoom);
+    setPan({ x: 0, y: 0 });
+  }, [defaultZoom]);
 
   const gestures = useSkyGestures({
-    enabled: explorerMode && Boolean(data?.frames?.length),
+    enabled: Boolean(displayFrames.length),
     totalFrames: displayFrames.length || data?.frames?.length || 0,
     currentFrameIdx,
     onScrubFrame: (idx) => {
@@ -1180,6 +1445,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     onCommitDetector: (det) => {
       if (det !== selectedDetector) {
         setSelectedDetector(det);
+        recordViewerAction('changedBand');
         onDetectorChange?.(det);
       }
     },
@@ -1187,6 +1453,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     onZoomChange: (z) => {
       if (!zoomLocked) setZoom(z);
     },
+    pan,
+    onPanChange: setPan,
     onResetView: handleResetExplorerView,
     onTapPoint: (clientX, clientY) => {
       if (showGestureCoach) dismissGestureCoach();
@@ -1243,7 +1511,9 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   // PNG Snapshot Export (P0.3)
   const handleExportPng = () => {
     const srcCanvas = canvasRef.current;
-    const currentFrame = data?.frames?.[currentFrameIdx];
+    const frames = displayFrames.length > 0 ? displayFrames : data?.frames || [];
+    const safeIdx = Math.min(currentFrameIdx, Math.max(0, frames.length - 1));
+    const currentFrame = frames[safeIdx];
     if (!srcCanvas || !currentFrame || !data) return;
 
     const outSize = 512;
@@ -1255,7 +1525,9 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
 
     ctx.fillStyle = '#05070e';
     ctx.fillRect(0, 0, out.width, out.height);
-    ctx.imageSmoothingEnabled = !pixelSharp;
+    const exportSmooth = explorerMode || !pixelSharp;
+    ctx.imageSmoothingEnabled = exportSmooth;
+    if (exportSmooth) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(srcCanvas, 0, 0, outSize, outSize);
 
     const w = currentFrame.width || 64;
@@ -1263,8 +1535,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     const sx = outSize / w;
     const sy = outSize / h;
 
-    // Draw Epoch-1 crosshair + trail
-    const ep1Pix = data.frames[0]?.targetRefPixel || data.frames[0]?.targetPixel;
+    // Draw Epoch-1 crosshair + honest measured/expected trail
+    const ep1Pix = frames[0]?.targetRefPixel || frames[0]?.targetPixel;
     if (showEpoch1Crosshair && ep1Pix) {
       ctx.strokeStyle = 'rgba(255, 185, 0, 0.85)';
       ctx.lineWidth = 1.5;
@@ -1283,19 +1555,28 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     }
 
     if (showMotionTrail) {
-      const trailPts = data.frames
-        .slice(0, currentFrameIdx + 1)
+      const motionSig = Boolean(data.astrometrySummary?.motionSignificant);
+      const measPts = frames
+        .slice(0, safeIdx + 1)
+        .filter((f) => f.measuredCentroid?.valid)
+        .map((f) => ({ x: f.measuredCentroid!.x, y: f.measuredCentroid!.y }));
+      const expPts = frames
+        .slice(0, safeIdx + 1)
         .map((f) => f.targetRefPixel || f.targetPixel)
         .filter((p): p is { x: number; y: number } => Boolean(p));
-      if (trailPts.length > 1) {
-        ctx.strokeStyle = '#00D3F3';
+      const pts = motionSig && measPts.length >= 2 ? measPts : (measPts.length >= 2 ? measPts : expPts);
+      if (pts.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = motionSig ? '#00D3F3' : '#F59E0B';
         ctx.lineWidth = 2;
+        if (!motionSig) ctx.setLineDash([6, 4]);
         ctx.beginPath();
-        trailPts.forEach((p, idx) => {
+        pts.forEach((p, idx) => {
           if (idx === 0) ctx.moveTo(p.x * sx, p.y * sy);
           else ctx.lineTo(p.x * sx, p.y * sy);
         });
         ctx.stroke();
+        ctx.restore();
       }
       const curPix = currentFrame.targetRefPixel || currentFrame.targetPixel;
       if (curPix) {
@@ -1313,7 +1594,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     ctx.fillStyle = '#e2e8f0';
     ctx.font = 'bold 12px monospace';
     ctx.fillText(
-      `SPHEREx ${currentFrame.detector} (${currentFrame.wavelengthUm} um) | ${currentFrame.obsId}`,
+      `SPHEREx ${currentFrame.detector} (${currentFrame.wavelengthUm.toFixed(2)} um) | ${currentFrame.obsId}`,
       14,
       outSize + 24
     );
@@ -1327,7 +1608,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
 
     const a = document.createElement('a');
     a.href = out.toDataURL('image/png');
-    a.download = `spherex_${currentFrame.obsId}_${currentFrame.detector}_f${currentFrameIdx + 1}.png`;
+    a.download = `spherex_${currentFrame.obsId}_${currentFrame.detector}_f${safeIdx + 1}.png`;
     a.click();
   };
 
@@ -1482,20 +1763,63 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     )
   );
 
-  // Epoch 1 anchor pixel & current trail
-  const epoch1Anchor = data.frames[0]?.targetRefPixel || data.frames[0]?.targetPixel;
-  const trailPoints = data.frames
-    .slice(0, currentFrameIdx + 1)
-    .map((f) => f.targetRefPixel || f.targetPixel)
-    .filter((p): p is { x: number; y: number } => Boolean(p));
+  // Epoch 1 anchor pixel & honest measured-ghost vs dashed expected trail
+  const epoch1Anchor = activeFrameList[0]?.targetRefPixel || activeFrameList[0]?.targetPixel;
+  const motionIsSignificant = Boolean(data.astrometrySummary?.motionSignificant);
+  const measuredTrailPoints = activeFrameList
+    .slice(0, safeFrameIdx + 1)
+    .map((f, idx) =>
+      f.measuredCentroid?.valid
+        ? { x: f.measuredCentroid.x, y: f.measuredCentroid.y, idx }
+        : null
+    )
+    .filter((p): p is { x: number; y: number; idx: number } => Boolean(p));
+  const expectedTrailPoints = activeFrameList
+    .slice(0, safeFrameIdx + 1)
+    .map((f, idx) => {
+      const p = f.targetRefPixel || f.targetPixel;
+      return p ? { x: p.x, y: p.y, idx } : null;
+    })
+    .filter((p): p is { x: number; y: number; idx: number } => Boolean(p));
+  const activeTrailPoints =
+    motionIsSignificant && measuredTrailPoints.length > 0
+      ? measuredTrailPoints
+      : measuredTrailPoints.length >= 2
+      ? measuredTrailPoints
+      : expectedTrailPoints;
   const currentTargetPix = currentFrame.targetRefPixel || currentFrame.targetPixel;
+
+  // Compute sample of flagged DQ pixels on active frame to visually highlight affected regions
+  const dqHighlightSpots = useMemo(() => {
+    if (!showDqOverlay || !currentFrame?.flags?.length) return [] as Array<{ x: number; y: number }>;
+    const spots: Array<{ x: number; y: number }> = [];
+    const stride = currentFrame.flags.length > 4096 ? 2 : 1;
+    for (let i = 0; i < currentFrame.flags.length; i += stride) {
+      if ((currentFrame.flags[i] & DQ_ARTIFACT_MASK) !== 0) {
+        spots.push({ x: i % frameW, y: Math.floor(i / frameW) });
+        if (spots.length >= 24) break;
+      }
+    }
+    return spots;
+  }, [showDqOverlay, currentFrame?.flags, frameW]);
+
+  const hasTwoOrMorePasses = surveyPasses.length >= 2;
+  const explorerPanelVisibilityClass =
+    explorerMode && immersiveMode && idleHidden
+      ? 'opacity-0 pointer-events-none transition-opacity duration-300'
+      : 'opacity-100 transition-opacity duration-200';
 
   return (
     <div
       ref={containerRef}
+      onPointerMove={explorerMode ? bumpActivity : undefined}
+      onPointerDown={explorerMode ? bumpActivity : undefined}
+      onKeyDown={explorerMode ? bumpActivity : undefined}
       className={`${
         explorerMode
-          ? 'bg-[#02040A] rounded-2xl border border-white/10 p-2 sm:p-3 flex flex-col gap-3 overflow-hidden'
+          ? `relative w-full ${
+              isEmbed ? 'min-h-screen' : 'min-h-[calc(100vh-11rem)] sm:min-h-[calc(100vh-9.5rem)]'
+            } bg-[#02040A] overflow-hidden flex flex-col`
           : 'obs-glass rounded-2xl p-3 sm:p-4 flex flex-col gap-3 overflow-hidden'
       } ${className}`}
     >
@@ -1680,9 +2004,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 variant="secondary"
                 onClick={() => {
                   setIsPlaying(false);
-                  const prev = blinkFirstLast && data.frames.length >= 2
-                    ? (currentFrameIdx === 0 ? data.frames.length - 1 : 0)
-                    : (currentFrameIdx - 1 + data.frames.length) % data.frames.length;
+                  const total = activeFrameList.length;
+                  if (total === 0) return;
+                  const prev = blinkFirstLast && total >= 2
+                    ? (safeFrameIdx === 0 ? total - 1 : 0)
+                    : (safeFrameIdx - 1 + total) % total;
                   setCurrentFrameIdx(prev);
                   onSelectFrame?.(prev);
                 }}
@@ -1696,7 +2022,13 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 aria-label={isPlaying ? 'Pause playback (Space)' : 'Play playback (Space)'}
                 aria-pressed={isPlaying}
                 icon={isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                onClick={() => setIsPlaying((p) => !p)}
+                onClick={() =>
+                  setIsPlaying((p) => {
+                    const next = !p;
+                    if (next) recordViewerAction('playedBlink');
+                    return next;
+                  })
+                }
               >
                 {isPlaying ? t.framePlayerPause : t.framePlayerPlay}
               </Button>
@@ -1707,9 +2039,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 variant="secondary"
                 onClick={() => {
                   setIsPlaying(false);
-                  const next = blinkFirstLast && data.frames.length >= 2
-                    ? (currentFrameIdx === 0 ? data.frames.length - 1 : 0)
-                    : (currentFrameIdx + 1) % data.frames.length;
+                  const total = activeFrameList.length;
+                  if (total === 0) return;
+                  const next = blinkFirstLast && total >= 2
+                    ? (safeFrameIdx === 0 ? total - 1 : 0)
+                    : (safeFrameIdx + 1) % total;
                   setCurrentFrameIdx(next);
                   onSelectFrame?.(next);
                 }}
@@ -1754,7 +2088,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               <button
                 type="button"
                 onClick={() => setBlinkFirstLast((b) => !b)}
-                disabled={data.frames.length < 2}
+                disabled={activeFrameList.length < 2}
                 aria-label="Toggle Blink 1 to Last epoch (Shortcut: B)"
                 aria-pressed={blinkFirstLast}
                 title="Blink Epoch 1 ↔ Last (B)"
@@ -1772,18 +2106,18 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             {/* Frame Scrubber */}
             <div className="flex-1 min-w-[200px] flex flex-col gap-1">
               <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 tabular-nums">
-                <span>{data.frames[0]?.dateObs?.slice(0, 10) || 'Start'}</span>
+                <span>{activeFrameList[0]?.dateObs?.slice(0, 10) || 'Start'}</span>
                 <span className="text-amber-300 font-semibold">
-                  {currentFrame.dateObs?.replace('T', ' ').slice(0, 19) || `Frame ${currentFrameIdx + 1}`}
+                  {currentFrame.dateObs?.replace('T', ' ').slice(0, 19) || `Frame ${safeFrameIdx + 1}`}
                 </span>
-                <span>{data.frames[data.frames.length - 1]?.dateObs?.slice(0, 10) || 'End'}</span>
+                <span>{activeFrameList[activeFrameList.length - 1]?.dateObs?.slice(0, 10) || 'End'}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input
                   type="range"
                   min={0}
-                  max={Math.max(0, data.frames.length - 1)}
-                  value={currentFrameIdx}
+                  max={Math.max(0, activeFrameList.length - 1)}
+                  value={safeFrameIdx}
                   onChange={(e) => {
                     const idx = parseInt(e.target.value, 10);
                     setIsPlaying(false);
@@ -1791,10 +2125,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     onSelectFrame?.(idx);
                   }}
                   className="flex-1 accent-amber-400 cursor-pointer"
-                  aria-label={`Observation frame slider: frame ${currentFrameIdx + 1} of ${data.frames.length}, ${currentFrame.dateObs || ''}`}
+                  aria-label={`Observation frame slider: frame ${safeFrameIdx + 1} of ${activeFrameList.length}, ${currentFrame.dateObs || ''}`}
                 />
                 <span className="font-mono text-xs text-slate-300 shrink-0 tabular-nums">
-                  {currentFrameIdx + 1}/{data.frames.length}
+                  {safeFrameIdx + 1}/{activeFrameList.length}
                 </span>
               </div>
             </div>
@@ -1804,7 +2138,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       )}
 
       {/* Workspace Container: Optional WiseView Left Toolbox + Main Viewport */}
-      <div className={!explorerMode ? 'flex flex-col lg:flex-row gap-4 items-start' : 'flex flex-col gap-3'}>
+      <div className={!explorerMode ? 'flex flex-col lg:flex-row gap-4 items-start' : 'relative flex-1 w-full min-h-[560px] flex flex-col'}>
         {/* Scientist WiseView Collapsible Left Panel Rail */}
         {!explorerMode && (
           <aside
@@ -1894,9 +2228,13 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       type="button"
                       onClick={() => setPixelSharp((v) => !v)}
                       aria-pressed={pixelSharp}
-                      className="px-2 py-1 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white cursor-pointer"
+                      className={`px-2 py-1 rounded-lg border cursor-pointer ${
+                        pixelSharp
+                          ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-bold'
+                          : 'border-white/10 bg-white/5 text-slate-300 hover:text-white'
+                      }`}
                     >
-                      {pixelSharp ? 'Pixel-Sharp' : 'Smooth'}
+                      {t.showRawPixelsLabel}
                     </button>
                     <button
                       type="button"
@@ -1981,7 +2319,12 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       <button
                         key={m.id}
                         type="button"
-                        onClick={() => setRenderMode(m.id)}
+                        onClick={() => {
+                          setRenderMode(m.id);
+                          if (m.id === 'diff_ref' || m.id === 'diff_median') {
+                            recordViewerAction('toggledDiff');
+                          }
+                        }}
                         aria-pressed={renderMode === m.id}
                         className={`px-2 py-1.5 rounded-lg border text-center cursor-pointer ${
                           renderMode === m.id
@@ -2062,6 +2405,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     onChange={(e) => {
                       const det = e.target.value;
                       setSelectedDetector(det);
+                      recordViewerAction('changedBand');
                       onDetectorChange?.(det);
                     }}
                     aria-label="Select SPHEREx detector array (D1 to D6 or Auto)"
@@ -2094,6 +2438,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                           onClick={() => {
                             const next = active ? '' : detId;
                             setSelectedDetector(next);
+                            recordViewerAction('changedBand');
                             onDetectorChange?.(next);
                           }}
                           aria-pressed={active}
@@ -2309,18 +2654,241 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         )}
 
         {/* Primary Sky Viewport Column */}
-        <div className="flex-1 min-w-0 w-full flex flex-col gap-3">
-          {/* Main Sky Viewport + Synchronized SVG Overlay */}
+        <div className={explorerMode ? 'relative flex-1 w-full min-h-[560px] flex flex-col' : 'flex-1 min-w-0 w-full flex flex-col gap-3'}>
+          {/* Scientist Compact Strip OR Floating Explorer Left/Right Panels */}
+          {!explorerMode && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#050811] border border-white/10 px-2.5 py-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Other Telescopes Menu */}
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="other-telescopes-btn"
+                  aria-expanded={otherTelescopesOpen}
+                  onClick={() => setOtherTelescopesOpen((v) => !v)}
+                  className={`min-h-[34px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 cursor-pointer transition ${
+                    showAladinOverlay || (showCatalogOverlay && (showGaiaOverlay || showAllWiseOverlay))
+                      ? 'bg-sky-500/15 border-sky-400/40 text-sky-200'
+                      : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <Telescope className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+                  <span>{t.otherTelescopesBtn}</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${otherTelescopesOpen ? 'rotate-180' : ''}`} />
+                </button>
+                {otherTelescopesOpen && (
+                  <div className="absolute start-0 mt-1.5 z-30 w-72 rounded-xl bg-[#0B101D] border border-white/15 p-3 shadow-2xl space-y-2.5">
+                    <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                      <span className="flex items-start gap-2">
+                        <span className="w-2.5 h-2.5 mt-1 rounded-full border border-sky-400 inline-block shrink-0" />
+                        <span>
+                          <span className="block font-medium">{t.otherTelescopesGaia}</span>
+                          <span className="block text-[10px] text-slate-400">{t.otherTelescopesGaiaDesc}</span>
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={showCatalogOverlay && showGaiaOverlay}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setShowGaiaOverlay(checked);
+                          if (checked) setShowCatalogOverlay(true);
+                          else if (!showAllWiseOverlay) setShowCatalogOverlay(false);
+                        }}
+                        className="accent-sky-400 cursor-pointer mt-1"
+                      />
+                    </label>
+                    <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                      <span className="flex items-start gap-2">
+                        <span className="w-2.5 h-2.5 mt-1 rotate-45 border border-emerald-400 inline-block shrink-0" />
+                        <span>
+                          <span className="block font-medium">{t.otherTelescopesWise}</span>
+                          <span className="block text-[10px] text-slate-400">{t.otherTelescopesWiseDesc}</span>
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={showCatalogOverlay && showAllWiseOverlay}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setShowAllWiseOverlay(checked);
+                          if (checked) setShowCatalogOverlay(true);
+                          else if (!showGaiaOverlay) setShowCatalogOverlay(false);
+                        }}
+                        className="accent-emerald-400 cursor-pointer mt-1"
+                      />
+                    </label>
+                    <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                      <span className="flex items-start gap-2">
+                        <Globe className="w-3 h-3 mt-1 text-amber-400 shrink-0" />
+                        <span>
+                          <span className="block font-medium">{t.otherTelescopesAladin}</span>
+                          <span className="block text-[10px] text-slate-400">{t.otherTelescopesAladinDesc}</span>
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={showAladinOverlay}
+                        onChange={(e) => setShowAladinOverlay(e.target.checked)}
+                        className="accent-amber-400 cursor-pointer mt-1"
+                      />
+                    </label>
+                    <div className="pt-1.5 border-t border-white/10 text-[10px] text-slate-400 flex flex-col gap-0.5">
+                      <span><span className="text-sky-400">○</span> {t.telescopesLegendGaia}</span>
+                      <span><span className="text-emerald-400">◇</span> {t.telescopesLegendWise}</span>
+                      <span><span className="text-amber-400">+</span> {t.telescopesLegendTarget}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Survey-Pass Mode Toggle (~6-month passes, never fake spacing) */}
+              <button
+                type="button"
+                data-testid="survey-pass-toggle"
+                aria-pressed={surveyPassMode}
+                title={t.surveyPassCombinedHint}
+                onClick={() => {
+                  setSurveyPassMode((prev) => {
+                    const next = !prev;
+                    if (next) recordViewerAction('toggledSurveyPass');
+                    return next;
+                  });
+                  setCurrentFrameIdx(0);
+                  setIsPlaying(false);
+                }}
+                className={`min-h-[34px] px-2.5 py-1 rounded-lg border font-medium flex items-center gap-1.5 cursor-pointer transition ${
+                  surveyPassMode
+                    ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" aria-hidden="true" />
+                <span>{t.surveyPassToggle}</span>
+                <span className="font-mono text-[10px] opacity-80 tabular-nums">({surveyPasses.length})</span>
+              </button>
+
+              {(Math.abs(pan.x) > 4 || Math.abs(pan.y) > 4 || Math.abs(zoom - defaultZoom) > 0.08) && (
+                <button
+                  type="button"
+                  onClick={handleResetExplorerView}
+                  className="min-h-[34px] px-2.5 py-1 rounded-lg border border-sky-400/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                  <span>{t.resetPanBtn}</span>
+                </button>
+              )}
+            </div>
+
+            {/* Clearly Visible FOV Selector */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-mono text-[11px] text-slate-400">{t.fovLabelShort}:</span>
+              {[
+                { pix: 32, arcmin: "3.3'" },
+                { pix: 64, arcmin: "6.6'" },
+                { pix: 112, arcmin: "11.6'" },
+                { pix: 160, arcmin: "16.5'" },
+              ].map((opt) => {
+                const active = sizePix === opt.pix;
+                return (
+                  <button
+                    key={opt.pix}
+                    type="button"
+                    data-testid={`fov-option-${opt.pix}`}
+                    aria-pressed={active}
+                    disabled={!onSelectFovSize}
+                    onClick={() => onSelectFovSize?.(opt.pix)}
+                    className={`min-h-[30px] px-2 py-0.5 rounded-lg border font-mono text-[11px] tabular-nums cursor-pointer transition ${
+                      active
+                        ? 'bg-sky-400 text-slate-950 border-sky-400 font-bold'
+                        : 'bg-white/5 border-white/10 text-slate-300 hover:text-white disabled:opacity-50'
+                    }`}
+                  >
+                    {opt.arcmin}
+                  </button>
+                );
+              })}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="share-open-btn"
+                  onClick={() => setShowShareModal(true)}
+                  className="min-h-[30px] px-2.5 py-0.5 rounded-lg border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <Share2 className="w-3 h-3" aria-hidden="true" />
+                  <span>{t.panelShare}</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="report-bad-data-btn"
+                  onClick={() => handleReportBadData(currentFrame)}
+                  className="min-h-[30px] px-2 py-0.5 rounded-lg border border-rose-500/35 bg-rose-500/10 text-rose-200 hover:bg-rose-500/20 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <Flag className="w-3 h-3" aria-hidden="true" />
+                  <span>{t.badDataReportBtn}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+          )}
+
+          {/* Large FOV Size / Download Time Warning */}
+          {!explorerMode && sizePix >= 112 && (
+            <div
+              data-testid="large-fov-warning"
+              className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/35 text-amber-200 text-[11px] font-mono flex items-center justify-between gap-2"
+            >
+              <span className="flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" aria-hidden="true" />
+                <span>{t.fovLargeWarning}</span>
+              </span>
+              <span className="font-bold text-amber-300 tabular-nums shrink-0">
+                {sizePix >= 160 ? '~8–16 MB · ~18s' : '~4–8 MB · ~8s'}
+              </span>
+            </div>
+          )}
+
+          {/* Honest Survey-Pass Fallback Notice in Scientist Mode if <2 passes */}
+          {!explorerMode && surveyPassMode && !hasTwoOrMorePasses && (
+            <div
+              data-testid="survey-pass-fallback-notice"
+              className="px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-400/30 text-sky-200 text-[11px] flex items-center gap-2"
+            >
+              <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+              <span>{t.surveyPassFallbackNotice}</span>
+            </div>
+          )}
+
+          {/* Bad-data Toast */}
+          {badDataToast && (
+            <div
+              role="status"
+              data-testid="bad-data-toast"
+              className="fixed bottom-24 start-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-semibold text-xs shadow-2xl flex items-center gap-2"
+            >
+              <Check className="w-4 h-4 shrink-0" />
+              <span>{badDataToast}</span>
+            </div>
+          )}
+
+          {/* Main Full-Bleed Sky Viewport + Synchronized SVG Overlay */}
           <div
             ref={gestures.viewportRef}
             data-tour="viewport_canvas"
-            {...(explorerMode ? gestures.handlers : {})}
+            {...gestures.handlers}
             className={`relative w-full ${
               explorerMode
-                ? 'h-[56vh] min-h-[340px] sm:h-[62vh] max-h-[640px] bg-[#02040A] overflow-hidden touch-none select-none cursor-grab active:cursor-grabbing'
-                : 'h-72 sm:h-[410px] bg-black overflow-auto'
-            } rounded-xl border border-white/10 flex items-center justify-center`}
+                ? `${isEmbed ? 'h-screen' : 'h-[78vh] min-h-[540px] sm:h-[82vh]'} flex-1`
+                : 'h-80 sm:h-[430px] rounded-2xl'
+            } bg-[#02040A] overflow-hidden touch-none select-none cursor-grab active:cursor-grabbing flex items-center justify-center`}
           >
+            {/* High-DPR smooth procedural PSF starfield backdrop (replaces blocky SVG dots) */}
+            <canvas
+              ref={backdropCanvasRef}
+              aria-hidden="true"
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+
             {loading && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#040711]/90 backdrop-blur-sm">
                 <SkeletonSky
@@ -2346,42 +2914,26 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             >
               <div
                 className="relative shrink-0"
-                style={
-                  explorerMode
-                    ? {
-                        width: 'min(80vw, 48vh, 420px)',
-                        height: 'min(80vw, 48vh, 420px)',
-                        aspectRatio: '1 / 1',
-                        transform: `scale(${zoom})`,
-                        transformOrigin: 'center center',
-                        transition:
-                          gestures.activeGesture === 'pinch' || prefersReducedMotion
-                            ? 'none'
-                            : 'transform 140ms ease-out',
-                        willChange: 'transform',
-                      }
-                    : {
-                        width: `${Math.round(288 * zoom)}px`,
-                        height: `${Math.round(288 * zoom)}px`,
-                      }
-                }
+                style={{
+                  width: explorerMode ? 'min(86vw, 62vh, 520px)' : '288px',
+                  height: explorerMode ? 'min(86vw, 62vh, 520px)' : '288px',
+                  aspectRatio: '1 / 1',
+                  transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                  transformOrigin: 'center center',
+                  transition:
+                    gestures.activeGesture === 'pan' ||
+                    gestures.activeGesture === 'pinch' ||
+                    prefersReducedMotion
+                      ? 'none'
+                      : 'transform 140ms ease-out',
+                  willChange: 'transform',
+                }}
               >
                 <canvas
                   ref={canvasRef}
-                  onClick={
-                    !explorerMode
-                      ? (e) => {
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          if (!rect.width || !rect.height) return;
-                          const px = ((e.clientX - rect.left) / rect.width) * frameW;
-                          const py = ((e.clientY - rect.top) / rect.height) * frameH;
-                          inspectSpotAtPixel(px, py);
-                        }
-                      : undefined
-                  }
                   className="w-full h-full block cursor-crosshair"
-                  style={{ imageRendering: pixelSharp ? 'pixelated' : 'auto' }}
-                  aria-label={`SPHEREx infrared cutout canvas for frame ${currentFrameIdx + 1}`}
+                  style={{ imageRendering: !explorerMode && pixelSharp ? 'pixelated' : 'auto' }}
+                  aria-label={`SPHEREx infrared cutout canvas for frame ${safeFrameIdx + 1}`}
                 />
 
                 {/* Cross-fade trailing frame layer (pure visual polish; never alters underlying canvas) */}
@@ -2391,7 +2943,17 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                   className="absolute inset-0 w-full h-full pointer-events-none transition-opacity duration-200"
                   style={{
                     opacity: fadeOpacity,
-                    imageRendering: pixelSharp ? 'pixelated' : 'auto',
+                    imageRendering: !explorerMode && pixelSharp ? 'pixelated' : 'auto',
+                  }}
+                />
+
+                {/* Radial vignette so the cutout's square borders dissolve into deep space */}
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 pointer-events-none"
+                  style={{
+                    background:
+                      'radial-gradient(circle at center, transparent 58%, rgba(2,4,10,0.68) 84%, #02040A 99%)',
                   }}
                 />
 
@@ -2416,11 +2978,13 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     </g>
                   )}
 
-                  {/* Gaia DR3 & AllWISE Catalog Overlays */}
+                  {/* Gaia DR3 & AllWISE Catalog Overlays (respecting Other Telescopes toggles) */}
                   {showCatalogOverlay &&
                     data.catalogOverlays?.map((cat, idx) => {
                       if (cat.x < 0 || cat.x > frameW || cat.y < 0 || cat.y > frameH) return null;
                       const isGaia = cat.catalog === 'Gaia DR3';
+                      if (isGaia && !showGaiaOverlay) return null;
+                      if (!isGaia && !showAllWiseOverlay) return null;
                       return (
                         <g key={`${cat.identifier}-${idx}`}>
                           {isGaia ? (
@@ -2460,22 +3024,48 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     </g>
                   )}
 
-                  {/* Accumulating Proper-Motion Trail + Active Frame Reticle */}
-                  {showMotionTrail && trailPoints.length > 0 && (
+                  {/* Measured Ghost Trail (solid when significant, dashed + "expected" otherwise) */}
+                  {showMotionTrail && activeTrailPoints.length > 0 && (
                     <g>
-                      {trailPoints.length > 1 && (
+                      {activeTrailPoints.length > 1 && (
                         <polyline
                           fill="none"
-                          stroke="#00D3F3"
-                          strokeWidth={0.38}
-                          className={renderMode === 'diff_ref' ? 'spex-trail-path' : ''}
-                          strokeDasharray={renderMode === 'diff_ref' ? undefined : '0.8 0.5'}
-                          points={trailPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                          stroke={motionIsSignificant ? '#00D3F3' : '#F59E0B'}
+                          strokeWidth={0.42}
+                          className={motionIsSignificant && renderMode === 'diff_ref' ? 'spex-trail-path' : ''}
+                          strokeDasharray={motionIsSignificant ? undefined : '0.95 0.65'}
+                          points={activeTrailPoints.map((p) => `${p.x},${p.y}`).join(' ')}
                         />
                       )}
-                      {trailPoints.map((p, i) => (
-                        <circle key={i} cx={p.x} cy={p.y} r={0.45} fill="#00D3F3" opacity={0.75} />
-                      ))}
+                      {/* Fading ghost circles behind current epoch from real measured positions */}
+                      {measuredTrailPoints.map((p, i) => {
+                        const progress = measuredTrailPoints.length > 1 ? i / (measuredTrailPoints.length - 1) : 1;
+                        return (
+                          <circle
+                            key={`ghost-${p.idx}-${i}`}
+                            cx={p.x}
+                            cy={p.y}
+                            r={0.35 + progress * 0.3}
+                            fill={motionIsSignificant ? '#00D3F3' : '#F59E0B'}
+                            opacity={0.22 + progress * 0.65}
+                          />
+                        );
+                      })}
+                      {!motionIsSignificant && activeTrailPoints.length > 1 && (() => {
+                        const last = activeTrailPoints[activeTrailPoints.length - 1];
+                        return (
+                          <text
+                            x={Math.min(frameW - 12, last.x + 2.4)}
+                            y={Math.max(4, last.y - 2.2)}
+                            fill="#FBBF24"
+                            fontSize="2.2"
+                            fontFamily="monospace"
+                            opacity={0.9}
+                          >
+                            {t.trailExpectedLabel}
+                          </text>
+                        );
+                      })()}
                       {currentTargetPix && (
                         <circle
                           cx={currentTargetPix.x}
@@ -2515,6 +3105,21 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       strokeWidth={0.3}
                     />
                   )}
+
+                  {/* DQ Bad-Data Highlight Markers on Affected Regions */}
+                  {showDqOverlay && dqHighlightSpots.map((spot, idx) => (
+                    <rect
+                      key={`dq-${idx}`}
+                      x={spot.x - 0.55}
+                      y={spot.y - 0.55}
+                      width={1.1}
+                      height={1.1}
+                      fill="rgba(244,63,94,0.18)"
+                      stroke="#F43F5E"
+                      strokeWidth={0.22}
+                      rx={0.2}
+                    />
+                  ))}
 
                   {/* Tapped Spot Reticle */}
                   {tappedPix && (
@@ -2786,215 +3391,567 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 <span>31″ (5 px · 6.2″/px)</span>
               </div>
             )}
+            {/* Drag-to-pan hint on edge when zoomed/panned */}
+            {!showGestureCoach && (
+              <div className="pointer-events-none absolute bottom-1.5 start-1/2 -translate-x-1/2 hidden sm:block px-2 py-0.5 rounded bg-black/50 text-[10px] font-mono text-slate-400">
+                {t.dragToPanHint}
+              </div>
+            )}
           </div>
 
-          {/* EXPLORER MODE: Exactly 3 Big Buttons + Plain Sentence + Friendly Badge + Permanent Raw-Data Badge + Utility Links */}
-          {explorerMode ? (
-            <div className="flex flex-col gap-3">
-              {/* Exactly three primary actions */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                <button
-                  type="button"
-                  data-testid="explorer-play-btn"
-                  onClick={() => {
-                    gameAudio.playClick();
-                    setIsPlaying((p) => {
-                      const next = !p;
-                      if (next) onExplorerPlay?.();
-                      return next;
-                    });
-                  }}
-                  aria-pressed={isPlaying}
-                  className="min-h-[48px] px-4 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98] cursor-pointer shadow-sm"
-                >
-                  {isPlaying ? <Pause className="w-4 h-4 shrink-0" /> : <Play className="w-4 h-4 shrink-0 fill-current" />}
-                  <span>{isPlaying ? t.explorerBtnPauseSky : t.explorerBtnPlaySky}</span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="explorer-diff-btn"
-                  onClick={() => {
-                    gameAudio.playClick();
-                    setRenderMode((prev) => {
-                      const next = prev === 'diff_ref' ? 'raw' : 'diff_ref';
-                      onExplorerToggleDiff?.(next === 'diff_ref');
-                      return next;
-                    });
-                  }}
-                  aria-pressed={renderMode === 'diff_ref'}
-                  className={`min-h-[48px] px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border transition-transform active:scale-[0.98] cursor-pointer ${
-                    renderMode === 'diff_ref'
-                      ? 'bg-sky-400 border-sky-400 text-slate-950 shadow-sm'
-                      : 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-400/40 text-sky-200'
-                  }`}
-                >
-                  <Zap className="w-4 h-4 shrink-0" />
-                  <span>{renderMode === 'diff_ref' ? t.explorerBtnShowingChanges : t.explorerBtnShowChanged}</span>
-                </button>
-
-                <button
-                  type="button"
-                  data-testid="explorer-ask-spex-btn"
-                  onClick={() => {
-                    gameAudio.playClick();
-                    onAskSpex?.();
-                  }}
-                  className="min-h-[48px] px-4 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-amber-400/40 bg-white/5 hover:bg-white/10 text-amber-300 transition-transform active:scale-[0.98] cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 shrink-0" />
-                  <span>{t.explorerBtnAskSpex}</span>
-                </button>
-              </div>
-
-              {/* Plain sentence under image + friendly data badge */}
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-sm">
-                <p className="text-slate-200 leading-relaxed">
-                  {t.explorerSentencePrefix}{' '}
-                  <span className="font-bold text-white">{targetLabel || caseId || 'this sky patch'}</span>.{' '}
-                  {t.explorerSentenceSuffix}
-                </p>
-                <span
-                  data-testid="explorer-data-badge"
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border shrink-0 ${
-                    activeClassification === 'SYNTHETIC_DEMO'
-                      ? 'bg-orange-500/15 border-orange-500/40 text-orange-200'
-                      : activeClassification === 'STALE_TAP_CACHE'
-                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
-                      : activeClassification === 'SAVED_BENCHMARK'
-                      ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
-                      : activeClassification === 'VERIFIED_FITS_CACHE'
-                      ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-200'
-                      : activeClassification === 'UNAVAILABLE'
-                      ? 'bg-rose-500/15 border-rose-500/40 text-rose-200'
-                      : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                  }`}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      activeClassification === 'SYNTHETIC_DEMO'
-                        ? 'bg-orange-400'
-                        : activeClassification === 'STALE_TAP_CACHE'
-                        ? 'bg-amber-400'
-                        : activeClassification === 'SAVED_BENCHMARK'
-                        ? 'bg-indigo-400'
-                        : activeClassification === 'VERIFIED_FITS_CACHE'
-                        ? 'bg-cyan-400'
-                        : activeClassification === 'UNAVAILABLE'
-                        ? 'bg-rose-400'
-                        : 'bg-emerald-400'
-                    }`}
-                  />
-                  {activeClassification === 'SYNTHETIC_DEMO'
-                    ? t.explorerBadgeTrainingCopy
-                    : activeClassification === 'SAVED_BENCHMARK'
-                    ? `${t.explorerBadgeSavedCopy} ${(data.snapshotTakenAt || data.cachedAt || currentFrame.dateObs || '').slice(0, 10)}`
-                    : activeClassification === 'STALE_TAP_CACHE'
-                    ? t.provenanceStaleTap
-                    : activeClassification === 'VERIFIED_FITS_CACHE'
-                    ? t.provenanceVerifiedCache
-                    : activeClassification === 'UNAVAILABLE'
-                    ? t.provenanceUnavailable
-                    : t.explorerBadgeLiveNasa}
+          {/* Inline Aladin Multi-Survey Panel (toggled from Other telescopes menu) */}
+          {showAladinOverlay && (
+            <div className="rounded-xl border border-white/10 bg-[#050811] p-2.5 space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-xs font-mono text-cyan-300">
+                  {t.otherTelescopesAladin}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAladinOverlay(false)}
+                  className="px-2 py-0.5 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] font-mono text-slate-300"
+                >
+                  {language === 'ar' ? 'إغلاق' : 'Close'}
+                </button>
               </div>
+              <AladinLitePanel
+                ra={data.targetCoords.ra}
+                dec={data.targetCoords.dec}
+                fovArcmin={data.fovArcmin}
+                targetName={targetLabel || caseId || 'Target'}
+              />
+            </div>
+          )}
 
-              {/* Plain-word Honesty Labels + Permanent Display-Smoothing Disclosure */}
-              {data.astrometrySummary && (
-                <div className="flex flex-col gap-1.5 rounded-xl bg-black/40 border border-white/10 px-3.5 py-2.5 text-xs text-slate-300">
-                  {data.astrometrySummary.saturatedAllDetectors ? (
-                    <div className="flex flex-wrap items-center gap-1.5 text-rose-300">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{t.explorerHonestySaturated}</span>
-                      <ScienceTerm termKey="saturated" language={language} onOpenDictionary={onOpenDictionary} />
-                    </div>
-                  ) : !data.astrometrySummary.targetDetectedInDetector ? (
-                    <div className="flex flex-wrap items-center gap-1.5 text-amber-200">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{t.explorerHonestyNotDetected}</span>
-                      <ScienceTerm termKey="centroid" language={language} onOpenDictionary={onOpenDictionary} />
-                    </div>
-                  ) : data.astrometrySummary.motionSignificant ? (
-                    <div className="flex flex-wrap items-center gap-1.5 text-emerald-300">
-                      <span>{t.explorerHonestySignificant}</span>
-                      <ScienceTerm termKey="proper_motion" language={language} onOpenDictionary={onOpenDictionary} />
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-1.5 text-amber-200">
-                      <span>{t.explorerHonestyNotSignificant}</span>
-                      <ScienceTerm termKey="sigma" language={language} onOpenDictionary={onOpenDictionary} />
-                    </div>
-                  )}
-                  {(data.astrometrySummary.errorBudgetLabel === 'includes wing-fit frames, low confidence' ||
-                    (data.astrometrySummary.wingFitCount ?? 0) > 0) && (
-                    <div className="flex flex-wrap items-center gap-1.5 text-amber-300/90">
-                      <span>{t.explorerHonestyWingFit}</span>
-                      <ScienceTerm termKey="wing_fit" language={language} onOpenDictionary={onOpenDictionary} />
-                    </div>
-                  )}
+          {/* EXPLORER MODE: Collapsible Floating Glass Panels (Left: Time, Right: Telescopes/FOV/DQ, Bottom: Playback+Timeline+Share) */}
+          {explorerMode ? (
+            <>
+              {/* Floating LEFT Panel: Time & Frame Controls */}
+              {!isEmbed && (
+                <div
+                  data-gesture-ignore="true"
+                  className={`hidden md:flex flex-col absolute top-14 start-3 z-25 max-w-[238px] ${explorerPanelVisibilityClass}`}
+                >
+                  <div className="obs-glass rounded-xl border border-white/15 bg-[#090F1E]/88 backdrop-blur-xl shadow-2xl overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setLeftPanelOpen((v) => !v)}
+                      aria-expanded={leftPanelOpen}
+                      className="w-full px-3 py-2 flex items-center justify-between gap-2 font-mono font-bold text-slate-200 hover:bg-white/5 cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
+                        <span>{t.panelTime}</span>
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${leftPanelOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {leftPanelOpen && (
+                      <div className="p-2.5 pt-1.5 border-t border-white/10 space-y-2">
+                        <button
+                          type="button"
+                          data-testid="survey-pass-toggle"
+                          aria-pressed={surveyPassMode}
+                          onClick={() => {
+                            setSurveyPassMode((prev) => {
+                              const next = !prev;
+                              if (next) recordViewerAction('toggledSurveyPass');
+                              return next;
+                            });
+                            setCurrentFrameIdx(0);
+                            setIsPlaying(false);
+                          }}
+                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg border text-start flex items-center justify-between gap-1.5 cursor-pointer transition ${
+                            surveyPassMode
+                              ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
+                              : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <span>{t.surveyPassToggle}</span>
+                          </span>
+                          <span className="font-mono text-[10px] tabular-nums">({surveyPasses.length})</span>
+                        </button>
+
+                        {surveyPassMode && !hasTwoOrMorePasses && (
+                          <div
+                            data-testid="survey-pass-fallback-notice"
+                            className="p-2 rounded-lg bg-sky-500/10 border border-sky-400/25 text-[11px] text-sky-200 leading-snug flex items-start gap-1.5"
+                          >
+                            <Info className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
+                            <span>{t.surveyPassFallbackNotice}</span>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setShowMotionTrail((v) => !v)}
+                            aria-pressed={showMotionTrail}
+                            className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center justify-center gap-1 cursor-pointer ${
+                              showMotionTrail
+                                ? 'bg-sky-500/20 border-sky-400/45 text-sky-200'
+                                : 'bg-white/5 border-white/10 text-slate-400'
+                            }`}
+                          >
+                            <GitCommit className="w-3 h-3 shrink-0" />
+                            <span>{t.motionTrailToggle}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={activeFrameList.length < 2}
+                            onClick={() => setBlinkFirstLast((b) => !b)}
+                            aria-pressed={blinkFirstLast}
+                            className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 ${
+                              blinkFirstLast
+                                ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
+                                : 'bg-white/5 border-white/10 text-slate-300'
+                            }`}
+                          >
+                            <Zap className="w-3 h-3 shrink-0" />
+                            <span>Blink 1↔End</span>
+                          </button>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1">
+                          {['', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6'].map((det) => {
+                            const active = selectedDetector === det;
+                            return (
+                              <button
+                                key={det || 'auto'}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDetector(det);
+                                  recordViewerAction('changedBand');
+                                  onDetectorChange?.(det);
+                                }}
+                                aria-pressed={active}
+                                className={`px-1.5 py-0.5 rounded border font-mono text-[10px] cursor-pointer ${
+                                  active
+                                    ? 'bg-sky-400 text-slate-950 border-sky-400 font-bold'
+                                    : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                                }`}
+                              >
+                                {det || 'Auto'}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {(Math.abs(pan.x) > 4 || Math.abs(pan.y) > 4 || Math.abs(zoom - defaultZoom) > 0.08) && (
+                          <button
+                            type="button"
+                            onClick={handleResetExplorerView}
+                            className="w-full min-h-[32px] px-2 py-1 rounded-lg border border-sky-400/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 font-medium flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>{t.resetPanBtn}</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
-              <div
-                data-testid="display-smoothing-badge"
-                className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-white/[0.02] border border-white/10 text-[11px] font-mono text-slate-400"
-              >
-                <span>{t.honestyDisplaySmoothingBadge}</span>
-                <span className="text-slate-500">{t.explorerEdgeSwipeHint}</span>
-              </div>
-
-              {/* Subtle Explorer Utility Strip (understated text links) */}
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 text-xs">
-                <div className="flex flex-wrap items-center gap-3">
-                  {onOpenPostcard && (
-                    <a
-                      href="#save-postcard"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        gameAudio.playClick();
-                        onOpenPostcard();
-                      }}
-                      className="min-h-[44px] inline-flex items-center gap-1.5 text-slate-200 hover:text-amber-300 font-medium cursor-pointer"
-                    >
-                      <Share2 className="w-3.5 h-3.5 text-amber-400" />
-                      <span>{t.btnSavePostcard}</span>
-                    </a>
-                  )}
-                  <a
-                    href="#copy-link"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleCopyDeepLink();
-                    }}
-                    className="min-h-[44px] inline-flex items-center gap-1.5 text-slate-300 hover:text-sky-300 font-medium cursor-pointer"
-                  >
-                    {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Link2 className="w-3.5 h-3.5 text-sky-400" />}
-                    <span>{copiedLink ? t.btnLinkCopied : t.btnCopyLink}</span>
-                  </a>
-                  <a
-                    href="#learn-words"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onOpenDictionary?.();
-                    }}
-                    className="min-h-[44px] inline-flex items-center gap-1.5 text-amber-300 hover:text-amber-200 underline underline-offset-4 font-medium cursor-pointer"
-                  >
-                    <span>{t.explorerLearnWords}</span>
-                  </a>
-                </div>
-
-                <a
-                  href="#more-tools"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    onSwitchToScientist?.();
-                  }}
-                  className="min-h-[44px] inline-flex items-center gap-1 text-sky-300 hover:text-sky-200 underline underline-offset-4 font-medium cursor-pointer"
+              {/* Floating RIGHT Panel: Other Telescopes, FOV + Warning, Bad-Data Legend & Report */}
+              {!isEmbed && (
+                <div
+                  data-gesture-ignore="true"
+                  className={`hidden md:flex flex-col absolute top-14 end-3 z-25 max-w-[264px] ${explorerPanelVisibilityClass}`}
                 >
-                  <span>{t.explorerMoreTools}</span>
-                </a>
+                  <div className="obs-glass rounded-xl border border-white/15 bg-[#090F1E]/88 backdrop-blur-xl shadow-2xl overflow-hidden text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setRightPanelOpen((v) => !v)}
+                      aria-expanded={rightPanelOpen}
+                      className="w-full px-3 py-2 flex items-center justify-between gap-2 font-mono font-bold text-slate-200 hover:bg-white/5 cursor-pointer"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Telescope className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+                        <span>{t.panelTelescopes}</span>
+                      </span>
+                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${rightPanelOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {rightPanelOpen && (
+                      <div className="p-2.5 pt-1.5 border-t border-white/10 space-y-2.5">
+                        {/* Other Telescopes Menu */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            data-testid="other-telescopes-btn"
+                            aria-expanded={otherTelescopesOpen}
+                            onClick={() => setOtherTelescopesOpen((v) => !v)}
+                            className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg border font-medium flex items-center justify-between gap-1.5 cursor-pointer transition ${
+                              showAladinOverlay || (showCatalogOverlay && (showGaiaOverlay || showAllWiseOverlay))
+                                ? 'bg-sky-500/15 border-sky-400/40 text-sky-200'
+                                : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Telescope className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
+                              <span>{t.otherTelescopesBtn}</span>
+                            </span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${otherTelescopesOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {otherTelescopesOpen && (
+                            <div className="mt-1.5 rounded-lg bg-[#050811] border border-white/15 p-2.5 space-y-2">
+                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                                <span className="flex items-start gap-2">
+                                  <span className="w-2.5 h-2.5 mt-1 rounded-full border border-sky-400 inline-block shrink-0" />
+                                  <span>
+                                    <span className="block font-medium">{t.otherTelescopesGaia}</span>
+                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesGaiaDesc}</span>
+                                  </span>
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={showCatalogOverlay && showGaiaOverlay}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setShowGaiaOverlay(checked);
+                                    if (checked) setShowCatalogOverlay(true);
+                                    else if (!showAllWiseOverlay) setShowCatalogOverlay(false);
+                                  }}
+                                  className="accent-sky-400 cursor-pointer mt-1"
+                                />
+                              </label>
+                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                                <span className="flex items-start gap-2">
+                                  <span className="w-2.5 h-2.5 mt-1 rotate-45 border border-emerald-400 inline-block shrink-0" />
+                                  <span>
+                                    <span className="block font-medium">{t.otherTelescopesWise}</span>
+                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesWiseDesc}</span>
+                                  </span>
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={showCatalogOverlay && showAllWiseOverlay}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setShowAllWiseOverlay(checked);
+                                    if (checked) setShowCatalogOverlay(true);
+                                    else if (!showGaiaOverlay) setShowCatalogOverlay(false);
+                                  }}
+                                  className="accent-emerald-400 cursor-pointer mt-1"
+                                />
+                              </label>
+                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
+                                <span className="flex items-start gap-2">
+                                  <Globe className="w-3 h-3 mt-1 text-amber-400 shrink-0" />
+                                  <span>
+                                    <span className="block font-medium">{t.otherTelescopesAladin}</span>
+                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesAladinDesc}</span>
+                                  </span>
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={showAladinOverlay}
+                                  onChange={(e) => setShowAladinOverlay(e.target.checked)}
+                                  className="accent-amber-400 cursor-pointer mt-1"
+                                />
+                              </label>
+                              <div className="pt-1.5 border-t border-white/10 text-[10px] text-slate-400 flex flex-col gap-0.5">
+                                <span><span className="text-sky-400">○</span> {t.telescopesLegendGaia}</span>
+                                <span><span className="text-emerald-400">◇</span> {t.telescopesLegendWise}</span>
+                                <span><span className="text-amber-400">+</span> {t.telescopesLegendTarget}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* FOV Selector + Large-FOV Warning */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
+                            <span>{t.fovLabelShort}</span>
+                            <span className="text-slate-400">{data.fovArcmin.toFixed(1)}′</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1">
+                            {[
+                              { pix: 32, arcmin: "3.3'" },
+                              { pix: 64, arcmin: "6.6'" },
+                              { pix: 112, arcmin: "11.6'" },
+                              { pix: 160, arcmin: "16.5'" },
+                            ].map((opt) => {
+                              const active = sizePix === opt.pix;
+                              return (
+                                <button
+                                  key={opt.pix}
+                                  type="button"
+                                  data-testid={`fov-option-${opt.pix}`}
+                                  aria-pressed={active}
+                                  disabled={!onSelectFovSize}
+                                  onClick={() => onSelectFovSize?.(opt.pix)}
+                                  className={`min-h-[30px] px-1 py-0.5 rounded border font-mono text-[10px] tabular-nums cursor-pointer transition ${
+                                    active
+                                      ? 'bg-sky-400 text-slate-950 border-sky-400 font-bold'
+                                      : 'bg-white/5 border-white/10 text-slate-300 hover:text-white disabled:opacity-50'
+                                  }`}
+                                >
+                                  {opt.arcmin}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {sizePix >= 112 && (
+                            <div
+                              data-testid="large-fov-warning"
+                              className="p-1.5 rounded-lg bg-amber-500/12 border border-amber-500/35 text-amber-200 text-[10px] leading-snug flex items-start gap-1.5"
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
+                              <span>{t.fovLargeWarning} ({sizePix >= 160 ? '~18s' : '~8s'})</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* DQ Bad-Data Marking Legend + Report Button */}
+                        <div className="pt-1.5 border-t border-white/10 space-y-1.5">
+                          <div className="flex items-center justify-between gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setShowDqOverlay((v) => !v)}
+                              aria-pressed={showDqOverlay}
+                              className={`px-2 py-1 rounded border text-[10px] font-mono flex items-center gap-1 cursor-pointer ${
+                                showDqOverlay
+                                  ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
+                                  : 'bg-white/5 border-white/10 text-slate-400'
+                              }`}
+                            >
+                              <ShieldAlert className="w-3 h-3" />
+                              <span>DQ ({currentFrame.dqDecoded?.totalMaskedPixels ?? 0})</span>
+                            </button>
+                            <button
+                              type="button"
+                              data-testid="why-marked-btn"
+                              onClick={() => setShowWhyMarked((v) => !v)}
+                              className="text-[10px] text-sky-300 hover:underline cursor-pointer"
+                            >
+                              {t.badDataWhyTitle}
+                            </button>
+                          </div>
+                          {showWhyMarked && (
+                            <p className="p-2 rounded-lg bg-black/60 border border-white/10 text-[10px] text-slate-300 leading-relaxed">
+                              {t.badDataWhyDesc}
+                            </p>
+                          )}
+                          <button
+                            type="button"
+                            data-testid="report-bad-data-btn"
+                            onClick={() => handleReportBadData(currentFrame)}
+                            className="w-full min-h-[32px] px-2 py-1 rounded-lg border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-200 text-[11px] font-medium flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Flag className="w-3 h-3" aria-hidden="true" />
+                            <span>{t.badDataReportBtn}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Bottom Dock: Playback + Actual-Date Timeline w/ DQ Badges + Share + Immersive + Honesty Note */}
+              <div className={`relative md:static z-25 px-3 sm:px-5 pb-3 pt-2 ${explorerPanelVisibilityClass}`}>
+                {/* Mobile quick bar for Time / Telescopes / FOV */}
+                {!isEmbed && (
+                  <div className="md:hidden mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSurveyPassMode((p) => !p);
+                        setCurrentFrameIdx(0);
+                        setIsPlaying(false);
+                      }}
+                      className={`px-2 py-1 rounded-lg border font-medium flex items-center gap-1 cursor-pointer ${
+                        surveyPassMode ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold' : 'bg-white/5 border-white/10 text-slate-200'
+                      }`}
+                    >
+                      <Layers className="w-3 h-3" />
+                      <span>{t.surveyPassToggle} ({surveyPasses.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOtherTelescopesOpen((v) => !v)}
+                      className="px-2 py-1 rounded-lg border border-white/15 bg-white/5 text-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Telescope className="w-3 h-3 text-sky-400" />
+                      <span>{t.otherTelescopesBtn}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleReportBadData(currentFrame)}
+                      className="px-2 py-1 rounded-lg border border-rose-500/35 bg-rose-500/10 text-rose-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Flag className="w-3 h-3" />
+                      <span>{t.badDataReportBtn}</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="obs-glass rounded-2xl border border-white/15 bg-[#090F1E]/90 backdrop-blur-xl p-3 sm:p-4 shadow-2xl space-y-3">
+                  {/* Primary Actions + Share + Immersive */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="explorer-play-btn"
+                      onClick={() => {
+                        gameAudio.playClick();
+                        setIsPlaying((p) => {
+                          const next = !p;
+                          if (next) {
+                            recordViewerAction('playedBlink');
+                            onExplorerPlay?.();
+                          }
+                          return next;
+                        });
+                      }}
+                      aria-pressed={isPlaying}
+                      className="flex-1 min-w-[130px] min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98] cursor-pointer shadow-sm"
+                    >
+                      {isPlaying ? <Pause className="w-4 h-4 shrink-0" /> : <Play className="w-4 h-4 shrink-0 fill-current" />}
+                      <span>{isPlaying ? t.explorerBtnPauseSky : t.explorerBtnPlaySky}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      data-testid="explorer-diff-btn"
+                      onClick={() => {
+                        gameAudio.playClick();
+                        setRenderMode((prev) => {
+                          const next = prev === 'diff_ref' ? 'raw' : 'diff_ref';
+                          if (next === 'diff_ref') recordViewerAction('toggledDiff');
+                          onExplorerToggleDiff?.(next === 'diff_ref');
+                          return next;
+                        });
+                      }}
+                      aria-pressed={renderMode === 'diff_ref'}
+                      className={`flex-1 min-w-[140px] min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border transition-transform active:scale-[0.98] cursor-pointer ${
+                        renderMode === 'diff_ref'
+                          ? 'bg-sky-400 border-sky-400 text-slate-950 shadow-sm'
+                          : 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-400/40 text-sky-200'
+                      }`}
+                    >
+                      <Zap className="w-4 h-4 shrink-0" />
+                      <span>{renderMode === 'diff_ref' ? t.explorerBtnShowingChanges : t.explorerBtnShowChanged}</span>
+                    </button>
+
+                    {!isEmbed && (
+                      <>
+                        <button
+                          type="button"
+                          data-testid="explorer-ask-spex-btn"
+                          onClick={() => {
+                            gameAudio.playClick();
+                            onAskSpex?.();
+                          }}
+                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-amber-400/40 bg-white/5 hover:bg-white/10 text-amber-300 transition-transform active:scale-[0.98] cursor-pointer"
+                        >
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          <span>{t.explorerBtnAskSpex}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          data-testid="share-open-btn"
+                          onClick={() => setShowShareModal(true)}
+                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-sky-400/35 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 cursor-pointer"
+                        >
+                          <Share2 className="w-4 h-4 shrink-0" />
+                          <span>{t.panelShare}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          data-testid="explorer-immersive-btn"
+                          onClick={() => setImmersiveMode((v) => !v)}
+                          aria-pressed={immersiveMode}
+                          title={t.immersiveHint}
+                          className={`min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 cursor-pointer ${
+                            immersiveMode
+                              ? 'bg-emerald-500/20 border-emerald-400/45 text-emerald-200'
+                              : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
+                          }`}
+                        >
+                          {immersiveMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+                          <span className="hidden lg:inline">{t.immersiveToggle}</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Actual-Date Frame Timeline with DQ Flag Warning Badges */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    {activeFrameList.map((fr, idx) => {
+                      const active = idx === safeFrameIdx;
+                      const maskedCount = fr.dqDecoded?.totalMaskedPixels ?? 0;
+                      const isFlagged = maskedCount > 0;
+                      return (
+                        <button
+                          key={`${fr.obsId}-${idx}`}
+                          type="button"
+                          onClick={() => {
+                            setIsPlaying(false);
+                            setCurrentFrameIdx(idx);
+                            onSelectFrame?.(idx);
+                          }}
+                          className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] tabular-nums shrink-0 flex items-center gap-1.5 cursor-pointer transition ${
+                            active
+                              ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
+                              : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                          }`}
+                        >
+                          <span>{fr.dateObs?.slice(0, 10) || `F${idx + 1}`}</span>
+                          {isFlagged && (
+                            <AlertTriangle
+                              className={`w-3 h-3 ${active ? 'text-rose-800' : 'text-rose-400'}`}
+                              aria-label={t.flaggedFramesBadge}
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Compact Honesty + Status Row */}
+                  {!isEmbed && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <p className="text-slate-300">
+                        <span className="font-semibold text-white">{targetLabel || caseId || 'Sky target'}</span>
+                        {' · '}
+                        {data.astrometrySummary?.motionSignificant
+                          ? t.explorerHonestySignificant
+                          : t.explorerHonestyNotSignificant}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <span
+                          data-testid="explorer-data-badge"
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
+                            activeClassification === 'SYNTHETIC_DEMO'
+                              ? 'bg-orange-500/15 border-orange-500/40 text-orange-200'
+                              : activeClassification === 'SAVED_BENCHMARK'
+                              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
+                              : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                          }`}
+                        >
+                          {activeClassification === 'SAVED_BENCHMARK'
+                            ? `${t.explorerBadgeSavedCopy} ${(data.snapshotTakenAt || currentFrame.dateObs || '').slice(0, 10)}`
+                            : t.explorerBadgeLiveNasa}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onSwitchToScientist?.()}
+                          className="text-sky-300 hover:text-sky-200 underline underline-offset-4 font-medium cursor-pointer"
+                        >
+                          {t.explorerMoreTools}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            </>
           ) : (
             <div data-tour="collapsible_slots" className="flex flex-col gap-2.5">
               <div
@@ -3527,6 +4484,96 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           </div>
         </div>
       )}
+      {/* Unified Share Modal (Deep Link, Native Web Share, Embed Code, Discovery Card) */}
+      <Modal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+        title={t.panelShare}
+        icon={<Share2 className="w-4 h-4 text-sky-400" />}
+        isRtl={isRtl}
+        maxWidthClass="max-w-lg"
+      >
+        <div className="space-y-4 text-sm">
+          <p className="text-xs text-slate-300 leading-relaxed">{t.shareModalDesc}</p>
+
+          <div>
+            <p className="text-xs font-mono text-slate-400 mb-1.5">{t.btnCopyLink}</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={buildShareDeepLink(false)}
+                aria-label={t.btnCopyLink}
+                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/15 font-mono text-xs text-slate-200"
+              />
+              <Button variant="secondary" size="sm" onClick={handleCopyDeepLink}>
+                {copiedLink ? t.btnLinkCopied : t.btnCopyLink}
+              </Button>
+            </div>
+          </div>
+
+          {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+            <Button
+              variant="primary"
+              size="md"
+              className="w-full"
+              icon={<Share2 className="w-4 h-4" />}
+              onClick={() => {
+                navigator.share({
+                  title: targetLabel || 'SPEX · NASA SPHEREx',
+                  url: buildShareDeepLink(false),
+                }).catch(() => {});
+              }}
+            >
+              {t.shareNativeBtn}
+            </Button>
+          )}
+
+          <div>
+            <p className="text-xs font-mono text-slate-400 mb-1.5 flex items-center gap-1.5">
+              <Code2 className="w-3.5 h-3.5 text-amber-400" />
+              <span>{t.shareEmbedCodeLabel}</span>
+            </p>
+            <div className="flex items-start gap-2">
+              <textarea
+                readOnly
+                rows={2}
+                value={`<iframe src="${buildShareDeepLink(true)}" width="100%" height="560" style="border:0;border-radius:16px;" allowfullscreen></iframe>`}
+                aria-label={t.shareEmbedCodeLabel}
+                className="flex-1 px-3 py-2 rounded-xl bg-black/60 border border-white/15 font-mono text-[11px] text-slate-300 resize-none"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const code = `<iframe src="${buildShareDeepLink(true)}" width="100%" height="560" style="border:0;border-radius:16px;" allowfullscreen></iframe>`;
+                  navigator.clipboard?.writeText(code).catch(() => {});
+                  setCopiedEmbed(true);
+                  setTimeout(() => setCopiedEmbed(false), 2000);
+                }}
+              >
+                {copiedEmbed ? t.shareEmbedCopied : t.shareCopyEmbedBtn}
+              </Button>
+            </div>
+          </div>
+
+          {onOpenPostcard && (
+            <div className="pt-2 border-t border-white/10 flex justify-end">
+              <Button
+                variant="primary"
+                size="sm"
+                icon={<Download className="w-4 h-4" />}
+                onClick={() => {
+                  setShowShareModal(false);
+                  onOpenPostcard();
+                }}
+              >
+                {t.discoveryCardTitle}
+              </Button>
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -470,6 +470,165 @@ export interface TranslationDictionary {
   gestureResetViewAria: string;
   honestyDisplaySmoothingBadge: string;
   explorerEdgeSwipeHint: string;
+
+  // Phase 1-4 Additions: Flow, Viewer, Academy, Game, Community
+  navAcademy: string;
+  navPlay: string;
+  homeBtnStartAcademy: string;
+  homeBtnExploreSky: string;
+  homeBtnPlaySimple: string;
+  homeBtnQuickDemo: string;
+  otherTelescopesBtn: string;
+  otherTelescopesGaia: string;
+  otherTelescopesWise: string;
+  otherTelescopesAladin: string;
+  otherTelescopesHint: string;
+  fovLabelShort: string;
+  fovLargeWarning: string;
+  surveyPassToggle: string;
+  surveyPassCombinedHint: string;
+  trailExpectedLabel: string;
+  trailMeasuredLabel: string;
+  resetPanBtn: string;
+  dragToPanHint: string;
+  rankLabel: string;
+  xpLabel: string;
+  achievementsTitle: string;
+  discoveryCardTitle: string;
+  academyTitle: string;
+  academySubtitle: string;
+  academyStartLesson: string;
+  academyTakeExam: string;
+  academyPassedBadge: string;
+  academyRewardXp: string;
+  gameStoryBannerTitle: string;
+  gameStoryBannerDesc: string;
+  gameChaptersTab: string;
+  gameMiniGamesTab: string;
+  gameStation3dTab: string;
+  gameLockedByRank: string;
+  leaderboardTitle: string;
+  leaderboardJoinPrompt: string;
+  leaderboardSubmitBtn: string;
+
+  // Unified Navigation, Header & Design System
+  navCommunity: string;
+  navExploreShort: string;
+  headerAdvancedToggle: string;
+  headerRankBadgeTooltip: string;
+  xpSourceLearning: string;
+  xpSourceSolving: string;
+  xpSourceGame: string;
+  homeCardAcademyDesc: string;
+  homeCardExploreDesc: string;
+  homeCardPlayDesc: string;
+  homeCommunityLink: string;
+  homePlainHeroTag: string;
+  homePlainSubtitle: string;
+
+  // Explore Full-Bleed Viewer & Organized Panels
+  panelView: string;
+  panelTime: string;
+  panelTelescopes: string;
+  panelTools: string;
+  panelShare: string;
+  immersiveToggle: string;
+  immersiveHint: string;
+  showRawPixelsLabel: string;
+  surveyPassCompareTitle: string;
+  surveyPassFallbackNotice: string;
+  motionTrailToggle: string;
+  badDataWhyTitle: string;
+  badDataWhyDesc: string;
+  badDataReportBtn: string;
+  badDataReportedToast: string;
+  badDataReportHint: string;
+  flaggedFramesBadge: string;
+  telescopesLegendTitle: string;
+  telescopesLegendGaia: string;
+  telescopesLegendWise: string;
+  telescopesLegendTarget: string;
+  otherTelescopesGaiaDesc: string;
+  otherTelescopesWiseDesc: string;
+  otherTelescopesAladinDesc: string;
+  shareModalDesc: string;
+  shareEmbedCodeLabel: string;
+  shareCopyEmbedBtn: string;
+  shareEmbedCopied: string;
+  shareNativeBtn: string;
+  panelCollapseAria: string;
+
+  // Khan-Style Academy (6 Levels)
+  academyCourseMapTitle: string;
+  academyLevelsCompleted: string;
+  academyPreviewModeToggle: string;
+  academyPracticeTitle: string;
+  academyPracticeCheckBtn: string;
+  academyPracticeCorrect: string;
+  academyPracticeTryAgain: string;
+  academyKeyTakeaways: string;
+  academyTryInExplore: string;
+  academyPrevSection: string;
+  academyNextSection: string;
+  academyBackToMap: string;
+  academyExamTitle: string;
+  academyResultsTitle: string;
+  academyResultsPassed: string;
+  academyResultsTryAgain: string;
+  academyResultsScoreLabel: string;
+  academyResultsXpEarned: string;
+  academyNextLevelBtn: string;
+  academyRetryExamBtn: string;
+  academyMinutesRead: string;
+
+  // Full Game Structure (Main Menu, Map, HUD, Tutorial, Pause, Complete)
+  gameMenuPlay: string;
+  gameMenuLevels: string;
+  gameMenuRank: string;
+  gameMenuSettings: string;
+  gameSettingsTitle: string;
+  gameSettingsSoundLabel: string;
+  gameSettingsTutorialReset: string;
+  gameHudScore: string;
+  gameHudLives: string;
+  gameHudTimer: string;
+  gameHudPause: string;
+  gameHudHelp: string;
+  gameHudSound: string;
+  gameTutorialStep1Title: string;
+  gameTutorialStep1Body: string;
+  gameTutorialStep2Title: string;
+  gameTutorialStep2Body: string;
+  gameTutorialStep3Title: string;
+  gameTutorialStep3Body: string;
+  gamePauseTitle: string;
+  gamePauseResume: string;
+  gamePauseRestart: string;
+  gamePauseBackMap: string;
+  gameCompleteTitle: string;
+  gameCompleteStarsLabel: string;
+  gameCompleteNextChapter: string;
+  gameCompleteReplay: string;
+  gamePuzzleTitle: string;
+  gamePuzzleSubtitle: string;
+  gamePuzzleMovesLabel: string;
+  gamePuzzleResetBtn: string;
+
+  // Community Page
+  communityTitle: string;
+  communitySubtitle: string;
+  communityTabFeed: string;
+  communityTabRankBoard: string;
+  communityTabFlags: string;
+  communityPostBtn: string;
+  communityNicknameLabel: string;
+  communityTargetLabel: string;
+  communityNoteLabel: string;
+  communityCommentPlaceholder: string;
+  communityCommentBtn: string;
+  communityReportBtn: string;
+  communityReportedLabel: string;
+  communityOfflineNotice: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -964,6 +1123,165 @@ export const translations: Record<Language, TranslationDictionary> = {
     gestureResetViewAria: 'Reset sky zoom and frame',
     honestyDisplaySmoothingBadge: 'Display smoothing only – measurements use raw data',
     explorerEdgeSwipeHint: 'Drag ↔ time · ↕ color',
+
+    // Phase 1-4 Additions
+    navAcademy: 'Academy',
+    navPlay: 'Play',
+    homeBtnStartAcademy: 'Start Academy',
+    homeBtnExploreSky: 'Explore the Sky',
+    homeBtnPlaySimple: 'Play',
+    homeBtnQuickDemo: 'Quick Demo: WISE 0855',
+    otherTelescopesBtn: 'Other telescopes',
+    otherTelescopesGaia: 'Gaia DR3 stars',
+    otherTelescopesWise: 'AllWISE infrared',
+    otherTelescopesAladin: 'Aladin background survey',
+    otherTelescopesHint: 'Compare SPHEREx cutouts against archival reference surveys.',
+    fovLabelShort: 'FOV',
+    fovLargeWarning: 'Large FOV (~4–16 MB, slower download)',
+    surveyPassToggle: 'Survey-pass',
+    surveyPassCombinedHint: 'Grouped by SPHEREx ~6-month sky pass (median combined per pass)',
+    trailExpectedLabel: 'expected',
+    trailMeasuredLabel: 'measured',
+    resetPanBtn: 'Reset view',
+    dragToPanHint: 'Drag to pan · Wheel/pinch to zoom',
+    rankLabel: 'Rank',
+    xpLabel: 'XP',
+    achievementsTitle: 'My Achievements',
+    discoveryCardTitle: 'Discovery Card',
+    academyTitle: 'SPHEREx Academy with Mr. SPEX',
+    academySubtitle: 'Five quick 2-minute lessons + interactive sky exams to earn XP and unlock story chapters.',
+    academyStartLesson: 'Study Lesson',
+    academyTakeExam: 'Take Exam',
+    academyPassedBadge: 'Completed',
+    academyRewardXp: 'XP Reward',
+    gameStoryBannerTitle: 'Mr. SPEX lost a faint signal — help him find the object',
+    gameStoryBannerDesc: 'Earn XP in the Academy or mini-games to raise your rank and unlock all 5 story chapters.',
+    gameChaptersTab: 'Story & Mini-Games',
+    gameMiniGamesTab: '2D Mini-Games',
+    gameStation3dTab: '3D Station',
+    gameLockedByRank: 'Requires rank',
+    leaderboardTitle: 'Community Rank Board',
+    leaderboardJoinPrompt: 'Post your explorer rank (nickname only)',
+    leaderboardSubmitBtn: 'Save Score',
+
+    // Unified Navigation, Header & Design System
+    navCommunity: 'Community',
+    navExploreShort: 'Explore',
+    headerAdvancedToggle: 'Advanced',
+    headerRankBadgeTooltip: 'View your explorer rank, XP breakdown, and Community feed',
+    xpSourceLearning: 'Learning XP',
+    xpSourceSolving: 'Solving XP',
+    xpSourceGame: 'Game XP',
+    homeCardAcademyDesc: 'Learn how space telescopes spot moving stars in 6 quick interactive lessons.',
+    homeCardExploreDesc: 'Flip through real NASA infrared photos and spot moving cosmic objects yourself.',
+    homeCardPlayDesc: 'Help Mr. SPEX track a lost signal across 6 story chapters and mini-games.',
+    homeCommunityLink: 'Explorer Community & Discovery Feed',
+    homePlainHeroTag: 'Real NASA Infrared Sky Explorer',
+    homePlainSubtitle: 'Flip through real SPHEREx space telescope photos over time. Watch faint brown dwarfs and fast stars move across the sky — no science degree needed.',
+
+    // Explore Full-Bleed Viewer & Organized Panels
+    panelView: 'View',
+    panelTime: 'Time',
+    panelTelescopes: 'Telescopes',
+    panelTools: 'Tools',
+    panelShare: 'Share',
+    immersiveToggle: 'Immersive',
+    immersiveHint: 'Panels auto-hide on idle; move cursor to reveal',
+    showRawPixelsLabel: 'Show raw pixels (6.15"/px)',
+    surveyPassCompareTitle: 'Survey-pass compare (~6 months)',
+    surveyPassFallbackNotice: 'Fewer than 2 sky passes exist for this target yet — showing all available visits on their real dates.',
+    motionTrailToggle: 'Motion trail',
+    badDataWhyTitle: 'Why is this marked?',
+    badDataWhyDesc: 'SPHEREx detector quality (DQ) flags mark cosmic-ray spikes, saturated bright cores, or dead sensor pixels so you do not mistake hardware glitches for real moving stars.',
+    badDataReportBtn: 'Report bad data',
+    badDataReportedToast: 'Flag recorded locally (+15 Solving XP) and synced when online.',
+    badDataReportHint: 'Flag a bright glitch or corrupted pixel in this frame',
+    flaggedFramesBadge: 'DQ flag',
+    telescopesLegendTitle: 'Marker Legend',
+    telescopesLegendGaia: 'Cyan diamond: Gaia DR3 optical star position',
+    telescopesLegendWise: 'Amber circle: AllWISE archival infrared source',
+    telescopesLegendTarget: 'Crosshair / comet trail: Target & measured motion',
+    otherTelescopesGaiaDesc: 'Optical precision positions from ESA Gaia DR3.',
+    otherTelescopesWiseDesc: 'Earlier 3.4–22 µm infrared stars from NASA WISE.',
+    otherTelescopesAladinDesc: 'Interactive full-sky optical/IR background mosaic.',
+    shareModalDesc: 'Copy a deep link to this exact sky spot, share natively, or embed the minimal sky viewer.',
+    shareEmbedCodeLabel: 'Embed minimal viewer (?embed=1)',
+    shareCopyEmbedBtn: 'Copy embed code',
+    shareEmbedCopied: 'Embed copied!',
+    shareNativeBtn: 'Share via device',
+    panelCollapseAria: 'Toggle panel visibility',
+
+    // Khan-Style Academy (6 Levels)
+    academyCourseMapTitle: 'Course Map',
+    academyLevelsCompleted: 'levels completed',
+    academyPreviewModeToggle: 'Preview all levels',
+    academyPracticeTitle: 'Quick Practice Check',
+    academyPracticeCheckBtn: 'Check Answer',
+    academyPracticeCorrect: 'Spot on! You unlocked the key idea.',
+    academyPracticeTryAgain: 'Not quite — check the hint above and try again.',
+    academyKeyTakeaways: 'Key Takeaways',
+    academyTryInExplore: 'Try it in Explore',
+    academyPrevSection: 'Previous',
+    academyNextSection: 'Next Section',
+    academyBackToMap: 'Back to Course Map',
+    academyExamTitle: 'Level Exam',
+    academyResultsTitle: 'Exam Results',
+    academyResultsPassed: 'Level Complete!',
+    academyResultsTryAgain: 'Almost there! Review the hints and retry.',
+    academyResultsScoreLabel: 'Score',
+    academyResultsXpEarned: 'XP Earned',
+    academyNextLevelBtn: 'Next Level',
+    academyRetryExamBtn: 'Retry Exam',
+    academyMinutesRead: 'min read',
+
+    // Full Game Structure (Main Menu, Map, HUD, Tutorial, Pause, Complete)
+    gameMenuPlay: 'Play Story',
+    gameMenuLevels: 'Level Select Map',
+    gameMenuRank: 'Rank & Achievements',
+    gameMenuSettings: 'Settings',
+    gameSettingsTitle: 'Game Settings',
+    gameSettingsSoundLabel: 'Sound Effects',
+    gameSettingsTutorialReset: 'Replay 3-Step Tutorial',
+    gameHudScore: 'Score',
+    gameHudLives: 'Lives',
+    gameHudTimer: 'Time',
+    gameHudPause: 'Pause',
+    gameHudHelp: 'Help',
+    gameHudSound: 'Sound',
+    gameTutorialStep1Title: '1. Spot the Signal',
+    gameTutorialStep1Body: 'Read Mr. SPEX’s clue and inspect real infrared colors, stars, or time frames.',
+    gameTutorialStep2Title: '2. Beat the Challenge',
+    gameTutorialStep2Body: 'Solve the mini-game puzzle cleanly to earn up to 3 Gold Stars per chapter.',
+    gameTutorialStep3Title: '3. Earn Game XP',
+    gameTutorialStep3Body: 'Every chapter boosts your Explorer Rank and unlocks the next mission on the map.',
+    gamePauseTitle: 'Mission Paused',
+    gamePauseResume: 'Resume Mission',
+    gamePauseRestart: 'Restart Chapter',
+    gamePauseBackMap: 'Back to Level Map',
+    gameCompleteTitle: 'Chapter Complete!',
+    gameCompleteStarsLabel: 'Stars Earned',
+    gameCompleteNextChapter: 'Next Chapter',
+    gameCompleteReplay: 'Replay Chapter',
+    gamePuzzleTitle: 'Sliding Sky Tile Puzzle',
+    gamePuzzleSubtitle: 'Slide the 8 sky tiles to restore the calibrated SPHEREx infrared frame.',
+    gamePuzzleMovesLabel: 'Moves',
+    gamePuzzleResetBtn: 'Shuffle Tiles',
+
+    // Community Page
+    communityTitle: 'Explorer Community',
+    communitySubtitle: 'Share verified target finds, compare explorer ranks, and inspect citizen bad-data reports.',
+    communityTabFeed: 'Discoveries Feed',
+    communityTabRankBoard: 'Rank Board',
+    communityTabFlags: 'Bad-Data Flags',
+    communityPostBtn: 'Post Discovery',
+    communityNicknameLabel: 'Explorer Nickname (2–20 chars, no real names/emails)',
+    communityTargetLabel: 'Target or Sky Coordinates',
+    communityNoteLabel: 'What did you spot?',
+    communityCommentPlaceholder: 'Add a short observation (max 240 chars)...',
+    communityCommentBtn: 'Reply',
+    communityReportBtn: 'Report',
+    communityReportedLabel: 'Reported',
+    communityOfflineNotice: 'Live community server offline — showing local saved reports only.',
   },
   ar: {
     // Brand & Top Navigation
@@ -1456,5 +1774,164 @@ export const translations: Record<Language, TranslationDictionary> = {
     gestureResetViewAria: 'إعادة ضبط التكبير والإطار',
     honestyDisplaySmoothingBadge: 'تنعيم للعرض فقط — القياسات تستخدم البيانات الخام الأصلية',
     explorerEdgeSwipeHint: 'اسحب ↔ الزمن · ↕ اللون',
+
+    // Phase 1-4 Additions
+    navAcademy: 'الأكاديمية',
+    navPlay: 'العب',
+    homeBtnStartAcademy: 'ابدأ الأكاديمية',
+    homeBtnExploreSky: 'استكشف السماء',
+    homeBtnPlaySimple: 'العب',
+    homeBtnQuickDemo: 'عرض سريع: WISE 0855',
+    otherTelescopesBtn: 'تلسكوبات أخرى',
+    otherTelescopesGaia: 'نجوم Gaia DR3',
+    otherTelescopesWise: 'أشعة AllWISE',
+    otherTelescopesAladin: 'خلفية علاء الدين السماوية',
+    otherTelescopesHint: 'قارن لقطات سفيركس مع فهارس وصور التلسكوبات المرجعية.',
+    fovLabelShort: 'المجال',
+    fovLargeWarning: 'مجال رؤية واسع (~4–16 ميجا، تحميل أبطأ)',
+    surveyPassToggle: 'وضع التمريرات',
+    surveyPassCombinedHint: 'مجمّع حسب تمريرة سبيراكس (~كل 6 أشهر، إطار موحد لكل تمريرة)',
+    trailExpectedLabel: 'متوقع',
+    trailMeasuredLabel: 'مُقاس',
+    resetPanBtn: 'إعادة الضبط',
+    dragToPanHint: 'اسحب للتحريك · عجلة/لمس للتكبير',
+    rankLabel: 'الرتبة',
+    xpLabel: 'نقطة',
+    achievementsTitle: 'إنجازاتي',
+    discoveryCardTitle: 'بطاقة الاكتشاف',
+    academyTitle: 'أكاديمية سبيراكس مع الأستاذ سبيكس',
+    academySubtitle: 'خمسة دروس سريعة واختبارات تطبيقية في السماء لكسب النقاط وفتح فصول القصة.',
+    academyStartLesson: 'ابدأ الدرس',
+    academyTakeExam: 'ابدأ الاختبار',
+    academyPassedBadge: 'مكتمل',
+    academyRewardXp: 'مكافأة النقاط',
+    gameStoryBannerTitle: 'فقد الأستاذ سبيكس إشارة خافتة — ساعده في العثور على الجرم',
+    gameStoryBannerDesc: 'اكسب النقاط في الأكاديمية أو الألعاب المصغرة لترقية رتبتك وفتح فصول القصة الخمسة.',
+    gameChaptersTab: 'القصة والألعاب المصغرة',
+    gameMiniGamesTab: 'ألعاب 2D مصغرة',
+    gameStation3dTab: 'محطة الفضاء 3D',
+    gameLockedByRank: 'يتطلب رتبة',
+    leaderboardTitle: 'لوحة مستكشفي المجتمع',
+    leaderboardJoinPrompt: 'سجل رتبتك باسم مستعار فقط',
+    leaderboardSubmitBtn: 'حفظ النتيجة',
+
+    // Unified Navigation, Header & Design System
+    navCommunity: 'المجتمع',
+    navExploreShort: 'استكشاف',
+    headerAdvancedToggle: 'متقدم',
+    headerRankBadgeTooltip: 'عرض رتبتك ونقاط الخبرة وصفحة المجتمع',
+    xpSourceLearning: 'نقاط التعلّم',
+    xpSourceSolving: 'نقاط التحليل',
+    xpSourceGame: 'نقاط الألعاب',
+    homeCardAcademyDesc: 'تعلّم كيف تكتشف التلسكوبات الفضائية النجوم المتحركة في 6 دروس تفاعلية قصيرة.',
+    homeCardExploreDesc: 'اقلب بين صور ناسا الحقيقية بالأشعة تحت الحمراء والتقط الأجرام المتحركة بنفسك.',
+    homeCardPlayDesc: 'ساعد الأستاذ سبيكس في تتبع إشارة مفقودة عبر 6 فصول قصصية وألعاب مصغرة.',
+    homeCommunityLink: 'مجتمع المستكشفين وسجل الاكتشافات',
+    homePlainHeroTag: 'مستكشف سماء ناسا الحقيقي بالأشعة تحت الحمراء',
+    homePlainSubtitle: 'تصفح صوراً حقيقية لتلسكوب SPHEREx الفضائي عبر الزمن. شاهد الأقزام البنية الباردة والنجوم السريعة تتحرك عبر السماء — دون أي تعقيد.',
+
+    // Explore Full-Bleed Viewer & Organized Panels
+    panelView: 'العرض',
+    panelTime: 'الزمن',
+    panelTelescopes: 'التلسكوبات',
+    panelTools: 'الأدوات',
+    panelShare: 'مشاركة',
+    immersiveToggle: 'وضع غامر',
+    immersiveHint: 'تختفي اللوحات تلقائياً عند التوقف؛ حرك المؤشر لإظهارها',
+    showRawPixelsLabel: 'إظهار البكسلات الخام (6.15″/px)',
+    surveyPassCompareTitle: 'مقارنة تمريرات المسح (~6 أشهر)',
+    surveyPassFallbackNotice: 'يتوفر أقل من تمريرتين لهذا الهدف حتى الآن — نعرض الزيارات المتاحة بتواريخها الحقيقية.',
+    motionTrailToggle: 'مسار الحركة',
+    badDataWhyTitle: 'لماذا تم تعليم هذه البقعة؟',
+    badDataWhyDesc: 'تشير أعلام جودة الحساس في SPHEREx إلى ضربات الأشعة الكونية أو التشبع الساطع أو البكسلات المعطلة حتى لا تخلط بين خلل الكاميرا والنجم الحقيقي.',
+    badDataReportBtn: 'الإبلاغ عن بيانات تالفة',
+    badDataReportedToast: 'تم تسجيل البلاغ محلياً (+15 نقطة تحليل) ومزامنته عند الاتصال.',
+    badDataReportHint: 'أبلغ عن خلل ساطع أو بكسل تالف في هذا الإطار',
+    flaggedFramesBadge: 'تنبيه جودة',
+    telescopesLegendTitle: 'دليل الرموز',
+    telescopesLegendGaia: 'معين سماوي: موقع النجم في كتالوج Gaia DR3',
+    telescopesLegendWise: 'دائرة كهرمانية: مصدر أرشيفي بالأشعة تحت الحمراء AllWISE',
+    telescopesLegendTarget: 'مؤشر الهدف / الذيل: الهدف ومسار حركته المقاس',
+    otherTelescopesGaiaDesc: 'مواقع نجمية بصرية عالية الدقة من مرصد غايا الأوروبي.',
+    otherTelescopesWiseDesc: 'نجوم أرشيفية بالأشعة تحت الحمراء من مهمة وايز.',
+    otherTelescopesAladinDesc: 'خلفية سماوية تفاعلية متعددة المسوحات.',
+    shareModalDesc: 'انسخ رابطاً مباشراً لهذه البقعة السماوية، أو شاركه، أو انسخ كود التضمين المصغر.',
+    shareEmbedCodeLabel: 'كود التضمين المصغر (?embed=1)',
+    shareCopyEmbedBtn: 'نسخ كود التضمين',
+    shareEmbedCopied: 'تم النسخ!',
+    shareNativeBtn: 'مشاركة عبر الجهاز',
+    panelCollapseAria: 'إظهار أو إخفاء اللوحة',
+
+    // Khan-Style Academy (6 Levels)
+    academyCourseMapTitle: 'خريطة المسار التعليمي',
+    academyLevelsCompleted: 'مستويات مكتملة',
+    academyPreviewModeToggle: 'معاينة جميع المستويات',
+    academyPracticeTitle: 'تحقق عملي سريع',
+    academyPracticeCheckBtn: 'تحقق من الإجابة',
+    academyPracticeCorrect: 'أحسنت! استوعبت الفكرة الأساسية.',
+    academyPracticeTryAgain: 'ليست دقيقة بعد — راجع التلميح أعلاه وحاول مجدداً.',
+    academyKeyTakeaways: 'أهم الخلاصات',
+    academyTryInExplore: 'جرّبها في الاستكشاف',
+    academyPrevSection: 'السابق',
+    academyNextSection: 'القسم التالي',
+    academyBackToMap: 'العودة لخريطة المسار',
+    academyExamTitle: 'اختبار المستوى',
+    academyResultsTitle: 'نتيجة الاختبار',
+    academyResultsPassed: 'تم اجتياز المستوى!',
+    academyResultsTryAgain: 'اقتربت كثيراً! راجع الشرح وأعد المحاولة.',
+    academyResultsScoreLabel: 'الدرجة',
+    academyResultsXpEarned: 'النقاط المكتسبة',
+    academyNextLevelBtn: 'المستوى التالي',
+    academyRetryExamBtn: 'إعادة الاختبار',
+    academyMinutesRead: 'دقائق قراءة',
+
+    // Full Game Structure (Main Menu, Map, HUD, Tutorial, Pause, Complete)
+    gameMenuPlay: 'ابدأ القصة',
+    gameMenuLevels: 'خريطة المراحل',
+    gameMenuRank: 'الرتبة والإنجازات',
+    gameMenuSettings: 'الإعدادات',
+    gameSettingsTitle: 'إعدادات اللعبة',
+    gameSettingsSoundLabel: 'المؤثرات الصوتية',
+    gameSettingsTutorialReset: 'إعادة الدليل الإرشادي',
+    gameHudScore: 'النقاط',
+    gameHudLives: 'المحاولات',
+    gameHudTimer: 'الوقت',
+    gameHudPause: 'إيقاف',
+    gameHudHelp: 'مساعدة',
+    gameHudSound: 'الصوت',
+    gameTutorialStep1Title: '1. التقط الإشارة',
+    gameTutorialStep1Body: 'اقرأ تلميح الأستاذ سبيكس وتفحص ألوان الأشعة تحت الحمراء والنجوم والزمن.',
+    gameTutorialStep2Title: '2. أنجز التحدي',
+    gameTutorialStep2Body: 'حل اللغز بدقة لتجمع حتى 3 نجوم ذهبية في كل فصل.',
+    gameTutorialStep3Title: '3. ارفع رتبتك',
+    gameTutorialStep3Body: 'كل فصل يرفع نقاط اللعب لديك ويفتح المهمة التالية على الخريطة.',
+    gamePauseTitle: 'المهمة متوقفة مؤقتاً',
+    gamePauseResume: 'استئناف المهمة',
+    gamePauseRestart: 'إعادة الفصل',
+    gamePauseBackMap: 'العودة لخريطة المراحل',
+    gameCompleteTitle: 'اكتمل الفصل بنجاح!',
+    gameCompleteStarsLabel: 'النجوم المكتسبة',
+    gameCompleteNextChapter: 'الفصل التالي',
+    gameCompleteReplay: 'إعادة اللعب',
+    gamePuzzleTitle: 'لغز ترتيب لوحة السماء',
+    gamePuzzleSubtitle: 'حرّك المربعات الثمانية لإعادة بناء إطار سبيراكس المعاير.',
+    gamePuzzleMovesLabel: 'الحركات',
+    gamePuzzleResetBtn: 'خلط المربعات',
+
+    // Community Page
+    communityTitle: 'مجتمع المستكشفين',
+    communitySubtitle: 'شارك اكتشافاتك الموثقة، وقارن الرتب الفلكية، وتابع بلاغات البيانات التالفة.',
+    communityTabFeed: 'سجل الاكتشافات',
+    communityTabRankBoard: 'لوحة الرتب',
+    communityTabFlags: 'بلاغات الجودة',
+    communityPostBtn: 'انشر اكتشافاً',
+    communityNicknameLabel: 'الاسم المستعار (2–20 حرفاً، دون بريد أو اسم حقيقي)',
+    communityTargetLabel: 'الهدف أو الإحداثيات السماوية',
+    communityNoteLabel: 'ماذا لاحظت؟',
+    communityCommentPlaceholder: 'أضف ملاحظة قصيرة (بحد أقصى 240 حرفاً)...',
+    communityCommentBtn: 'رد',
+    communityReportBtn: 'إبلاغ',
+    communityReportedLabel: 'تم الإبلاغ',
+    communityOfflineNotice: 'خادم المجتمع غير متصل حالياً — تُعرض البلاغات المحفوظة محلياً فقط.',
   },
 };

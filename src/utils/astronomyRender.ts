@@ -1,3 +1,5 @@
+import { bicubicUpsampleRgba, getCanvasDpr } from './smoothCanvas';
+
 export type StretchMode = 'asinh' | 'linear' | 'sqrt' | 'log';
 export type ColormapMode = 'diff_diverging' | 'grayscale' | 'heat' | 'infrared_warm' | 'inferno' | 'viridis';
 export type DisplayMode = 'science' | 'presentation';
@@ -223,25 +225,38 @@ export class AstronomyRenderer {
 
     const displayMode: DisplayMode = options.displayMode || 'presentation';
     const baseDisplaySize = options.renderSize || 640;
-    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
+    const dpr = getCanvasDpr();
 
-    // Create offscreen canvas for native resolution
-    const offscreen = document.createElement('canvas');
-    offscreen.width = width;
-    offscreen.height = height;
-    const offCtx = offscreen.getContext('2d');
-    if (!offCtx) return;
-
-    const imgData = offCtx.createImageData(width, height);
-    const pixelBytes = this.computePixels(data, width, height, options);
-    imgData.data.set(pixelBytes);
-    offCtx.putImageData(imgData, 0, 0);
+    const rawBytes = this.computePixels(data, width, height, options);
 
     // Target display size
     const targetSize =
       displayMode === 'presentation'
         ? baseDisplaySize
         : width * Math.max(1, Math.floor(baseDisplaySize / width));
+
+    const offscreen = document.createElement('canvas');
+    if (displayMode === 'presentation') {
+      // Smooth Catmull-Rom bicubic upsample pass so stars show smooth PSF halos instead of square detector blocks
+      const smoothW = Math.min(384, Math.max(width * 4, Math.round(targetSize / 2)));
+      const smoothH = Math.min(384, Math.max(height * 4, Math.round(targetSize / 2)));
+      const smoothBytes = bicubicUpsampleRgba(rawBytes, width, height, smoothW, smoothH);
+      offscreen.width = smoothW;
+      offscreen.height = smoothH;
+      const offCtx = offscreen.getContext('2d');
+      if (!offCtx) return;
+      const imgData = offCtx.createImageData(smoothW, smoothH);
+      imgData.data.set(smoothBytes);
+      offCtx.putImageData(imgData, 0, 0);
+    } else {
+      offscreen.width = width;
+      offscreen.height = height;
+      const offCtx = offscreen.getContext('2d');
+      if (!offCtx) return;
+      const imgData = offCtx.createImageData(width, height);
+      imgData.data.set(rawBytes);
+      offCtx.putImageData(imgData, 0, 0);
+    }
 
     canvas.width = Math.round(targetSize * dpr);
     canvas.height = Math.round(targetSize * dpr);
@@ -252,15 +267,14 @@ export class AstronomyRenderer {
     if (!destCtx) return;
 
     destCtx.save();
-    destCtx.scale(dpr, dpr);
+    destCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     if (displayMode === 'presentation') {
-      // Direct high-quality interpolation to target size (avoiding artificial downscaling bottlenecks)
       destCtx.imageSmoothingEnabled = true;
       destCtx.imageSmoothingQuality = 'high';
       destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     } else {
-      // Science mode: Native uninterpolated detector pixels with exact pixel grid
+      // Advanced Science raw-pixel mode: exact native detector pixels
       destCtx.imageSmoothingEnabled = false;
       destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     }

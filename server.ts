@@ -13,6 +13,17 @@ import {
   computeBufferSha256,
 } from './src/utils/fitsCacheManager';
 import {
+  CommunityStoreData,
+  CommunityPost,
+  CommunityComment,
+  CommunityFlagEntry,
+  createSeedCommunityStore,
+  validatePostInput,
+  validateCommentInput,
+  validateFlagInput,
+  SlidingRateLimiter,
+} from './src/community/communityValidation';
+import {
   SourceClassification,
   TapFreshness,
   FitsOrigin,
@@ -4782,6 +4793,214 @@ app.use('/assets', express.static(path.join(process.cwd(), 'public', 'assets'), 
     }
   },
 }));
+
+// Phase 4: Minimal validated nickname-only scoreboard (no free-text comments)
+interface GameScoreEntry {
+  nickname: string;
+  xp: number;
+  rank: 'Cadet' | 'Observer' | 'Navigator' | 'Analyst' | 'Discoverer';
+  updatedAt: string;
+}
+const VALID_RANKS = new Set<GameScoreEntry['rank']>([
+  'Cadet',
+  'Observer',
+  'Navigator',
+  'Analyst',
+  'Discoverer',
+]);
+const NICKNAME_PATTERN = /^[A-Za-z0-9 _-]{2,20}$/;
+const gameScoreBoard: GameScoreEntry[] = [];
+
+app.get('/api/game/scores', (_req: Request, res: Response) => {
+  const sorted = [...gameScoreBoard]
+    .sort((a, b) => b.xp - a.xp || a.updatedAt.localeCompare(b.updatedAt))
+    .slice(0, 25);
+  return res.json({ scores: sorted });
+});
+
+app.post('/api/game/scores', (req: Request, res: Response) => {
+  const rawNick = typeof req.body?.nickname === 'string' ? req.body.nickname.trim() : '';
+  const rawXp = Number(req.body?.xp);
+  const rawRank = req.body?.rank;
+
+  if (!NICKNAME_PATTERN.test(rawNick)) {
+    return res.status(400).json({
+      error: 'Nickname must be 2–20 alphanumeric characters, spaces, underscores, or hyphens.',
+    });
+  }
+  if (!Number.isFinite(rawXp) || rawXp < 0 || rawXp > 100000) {
+    return res.status(400).json({ error: 'XP must be a finite number between 0 and 100000.' });
+  }
+  const cleanRank: GameScoreEntry['rank'] = VALID_RANKS.has(rawRank) ? rawRank : 'Cadet';
+  const entry: GameScoreEntry = {
+    nickname: rawNick,
+    xp: Math.floor(rawXp),
+    rank: cleanRank,
+    updatedAt: new Date().toISOString(),
+  };
+
+  const existingIdx = gameScoreBoard.findIndex(
+    (item) => item.nickname.toLowerCase() === rawNick.toLowerCase()
+  );
+  if (existingIdx >= 0) {
+    if (entry.xp >= gameScoreBoard[existingIdx].xp) {
+      gameScoreBoard[existingIdx] = entry;
+    }
+  } else {
+    gameScoreBoard.push(entry);
+    if (gameScoreBoard.length > 50) {
+      gameScoreBoard.sort((a, b) => b.xp - a.xp);
+      gameScoreBoard.length = 50;
+    }
+  }
+
+  const sorted = [...gameScoreBoard]
+    .sort((a, b) => b.xp - a.xp || a.updatedAt.localeCompare(b.updatedAt))
+    .slice(0, 25);
+  return res.status(201).json({ entry, scores: sorted });
+});
+
+// Phase 5: Community Notes, Comments, Moderation Reports & Bad-Data Flags (JSON persisted on disk)
+const COMMUNITY_STORE_PATH = path.join(process.cwd(), 'data', 'community_store.json');
+const communityRateLimiter = new SlidingRateLimiter();
+
+function loadCommunityStore(): CommunityStoreData {
+  try {
+    if (fs.existsSync(COMMUNITY_STORE_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(COMMUNITY_STORE_PATH, 'utf8'));
+      if (parsed && Array.isArray(parsed.posts) && Array.isArray(parsed.flags)) {
+        return {
+          version: 1,
+          posts: parsed.posts,
+          flags: parsed.flags,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('[Community] Could not read community_store.json, falling back to seeds:', err);
+  }
+  const seeded = createSeedCommunityStore();
+  saveCommunityStore(seeded);
+  return seeded;
+}
+
+function saveCommunityStore(store: CommunityStoreData): void {
+  try {
+    fs.mkdirSync(path.dirname(COMMUNITY_STORE_PATH), { recursive: true });
+    atomicWriteFileSync(COMMUNITY_STORE_PATH, Buffer.from(JSON.stringify(store, null, 2), 'utf8'));
+  } catch (err) {
+    console.warn('[Community] Unable to write community_store.json:', err);
+  }
+}
+
+let communityStore: CommunityStoreData = loadCommunityStore();
+
+app.get('/api/community/posts', (_req: Request, res: Response) => {
+  const visible = communityStore.posts
+    .filter((p) => (p.reports || 0) < 5)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 60);
+  return res.json({ posts: visible, totalCount: visible.length });
+});
+
+app.post('/api/community/posts', (req: Request, res: Response) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+  if (!communityRateLimiter.checkAndRecord(clientIp, 8, 60_000)) {
+    return res.status(429).json({ error: 'Too many posts right now. Please wait a minute.' });
+  }
+  const validated = validatePostInput((req.body || {}) as Record<string, unknown>);
+  if (!validated.ok) {
+    return res.status(400).json({ error: validated.error });
+  }
+  const newPost: CommunityPost = {
+    id: `post-${crypto.randomBytes(4).toString('hex')}`,
+    ...validated.post,
+    createdAt: new Date().toISOString(),
+    reports: 0,
+    comments: [],
+  };
+  communityStore.posts.unshift(newPost);
+  if (communityStore.posts.length > 200) {
+    communityStore.posts.length = 200;
+  }
+  saveCommunityStore(communityStore);
+  return res.status(201).json({ post: newPost });
+});
+
+app.get('/api/community/posts/:id/comments', (req: Request, res: Response) => {
+  const post = communityStore.posts.find((p) => p.id === req.params.id);
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found.' });
+  }
+  return res.json({ comments: post.comments || [] });
+});
+
+app.post('/api/community/posts/:id/comments', (req: Request, res: Response) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+  if (!communityRateLimiter.checkAndRecord(`comment:${clientIp}`, 15, 60_000)) {
+    return res.status(429).json({ error: 'Too many comments right now. Please wait a minute.' });
+  }
+  const post = communityStore.posts.find((p) => p.id === req.params.id);
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found.' });
+  }
+  const validated = validateCommentInput((req.body || {}) as Record<string, unknown>);
+  if (!validated.ok) {
+    return res.status(400).json({ error: validated.error });
+  }
+  const comment: CommunityComment = {
+    id: `cmt-${crypto.randomBytes(4).toString('hex')}`,
+    nickname: validated.nickname,
+    text: validated.text,
+    createdAt: new Date().toISOString(),
+  };
+  post.comments = [...(post.comments || []), comment].slice(-50);
+  saveCommunityStore(communityStore);
+  return res.status(201).json({ comment });
+});
+
+app.post('/api/community/posts/:id/report', (req: Request, res: Response) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+  if (!communityRateLimiter.checkAndRecord(`report:${clientIp}:${req.params.id}`, 1, 300_000)) {
+    return res.status(429).json({ error: 'You already reported this note.' });
+  }
+  const post = communityStore.posts.find((p) => p.id === req.params.id);
+  if (!post) {
+    return res.status(404).json({ error: 'Post not found.' });
+  }
+  post.reports = (post.reports || 0) + 1;
+  saveCommunityStore(communityStore);
+  return res.json({ ok: true, reports: post.reports });
+});
+
+app.get('/api/community/flags', (_req: Request, res: Response) => {
+  const flags = [...communityStore.flags]
+    .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+    .slice(0, 100);
+  return res.json({ flags });
+});
+
+app.post('/api/community/flags', (req: Request, res: Response) => {
+  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+  if (!communityRateLimiter.checkAndRecord(`flag:${clientIp}`, 20, 60_000)) {
+    return res.status(429).json({ error: 'Rate limit exceeded for bad-data reports.' });
+  }
+  const validated = validateFlagInput((req.body || {}) as Record<string, unknown>);
+  if (!validated.ok) {
+    return res.status(400).json({ error: validated.error });
+  }
+  const entry: CommunityFlagEntry = {
+    id: `flag-${crypto.randomBytes(4).toString('hex')}`,
+    ...validated.flag,
+    reportedAt: new Date().toISOString(),
+  };
+  communityStore.flags.unshift(entry);
+  if (communityStore.flags.length > 200) {
+    communityStore.flags.length = 200;
+  }
+  saveCommunityStore(communityStore);
+  return res.status(201).json({ flag: entry });
+});
 
 // Ensure all unmatched API requests return JSON rather than falling through to Vite HTML
 app.all('/api/*', (req: Request, res: Response) => {

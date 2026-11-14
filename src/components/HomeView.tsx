@@ -12,21 +12,26 @@ import {
   Play,
   Eye,
   CheckCircle2,
+  GraduationCap,
+  Users,
 } from 'lucide-react';
-import { Button } from '../design/components/Button';
 import { Badge } from '../design/components/Badge';
 import { Language, translations } from '../utils/translations';
 import { SpexPortrait } from '../spex/SpexPortrait';
 import { usePrefersReducedMotion } from '../design/motionKit';
 import { gameAudio } from '../game/utils/gameAudio';
 import { FlyToSearch, FlyTargetSelection } from '../ui/FlyToSearch';
+import { drawPsfStar, getCanvasDpr } from '../utils/smoothCanvas';
 
 interface HomeViewProps {
+  onStartAcademy: () => void;
   onStartExplore: (caseId?: string) => void;
+  onQuickDemoWise: () => void;
   onFlySelection?: (selection: FlyTargetSelection) => void;
   onOpenAbout: () => void;
   onOpenCases: () => void;
   onPlayGame?: () => void;
+  onOpenCommunity?: () => void;
   cases?: Array<{ id: string; title: string; category?: string; ra: number; dec: number }>;
   language: Language;
 }
@@ -44,9 +49,12 @@ interface CreatureTargetCard {
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
+  onStartAcademy,
   onStartExplore,
+  onQuickDemoWise,
   onFlySelection,
   onPlayGame,
+  onOpenCommunity,
   language,
 }) => {
   const t = translations[language];
@@ -78,14 +86,14 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const handlePointerMove = (e: PointerEvent) => {
       const nx = (e.clientX / window.innerWidth - 0.5) * 2;
       const ny = (e.clientY / window.innerHeight - 0.5) * 2;
-      targetOffsetRef.current = { x: nx * 28, y: ny * 22 };
+      targetOffsetRef.current = { x: nx * 24, y: ny * 18 };
     };
 
     const handleOrientation = (e: DeviceOrientationEvent) => {
       if (e.gamma == null || e.beta == null) return;
       const nx = Math.max(-1, Math.min(1, e.gamma / 30));
       const ny = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
-      targetOffsetRef.current = { x: nx * 24, y: ny * 18 };
+      targetOffsetRef.current = { x: nx * 20, y: ny * 14 };
     };
 
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
@@ -96,7 +104,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     };
   }, [reducedMotion]);
 
-  // Interactive parallax starfield + nebula + shooting stars
+  // High-DPR smooth PSF starfield + soft infrared nebula backdrop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -104,25 +112,32 @@ export const HomeView: React.FC<HomeViewProps> = ({
     if (!ctx) return;
 
     let animId = 0;
-    let width = (canvas.width = window.innerWidth);
-    let height = (canvas.height = window.innerHeight);
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    let dpr = getCanvasDpr();
 
-    const handleResize = () => {
-      if (!canvas) return;
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
+    const syncCanvasSize = () => {
+      dpr = getCanvasDpr();
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
     };
-    window.addEventListener('resize', handleResize);
+    syncCanvasSize();
+    window.addEventListener('resize', syncCanvasSize);
 
-    const starCount = Math.min(200, Math.floor((width * height) / 7200));
+    const starCount = Math.min(180, Math.floor((width * height) / 7600));
     const stars = Array.from({ length: starCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
       depth: 0.25 + Math.random() * 1.15,
-      size: Math.random() * 1.6 + 0.45,
+      radius: Math.random() * 2.1 + 0.9,
       alpha: Math.random() * 0.65 + 0.25,
       twinkle: Math.random() * Math.PI * 2,
-      warm: Math.random() > 0.72,
+      warm: Math.random() > 0.7,
     }));
 
     const shootingStars: Array<{
@@ -142,20 +157,19 @@ export const HomeView: React.FC<HomeViewProps> = ({
       ctx.fillStyle = '#040711';
       ctx.fillRect(0, 0, width, height);
 
-      // Subtle infrared nebula glow
       const px = pointerOffsetRef.current.x;
       const py = pointerOffsetRef.current.y;
 
       const grad1 = ctx.createRadialGradient(
-        width * 0.65 + px * 0.4,
-        height * 0.34 + py * 0.4,
+        width * 0.68 + px * 0.4,
+        height * 0.32 + py * 0.4,
         40,
-        width * 0.65 + px * 0.4,
-        height * 0.34 + py * 0.4,
-        width * 0.55
+        width * 0.68 + px * 0.4,
+        height * 0.32 + py * 0.4,
+        width * 0.58
       );
-      grad1.addColorStop(0, 'rgba(56, 189, 248, 0.09)');
-      grad1.addColorStop(0.45, 'rgba(245, 158, 11, 0.045)');
+      grad1.addColorStop(0, 'rgba(56, 189, 248, 0.1)');
+      grad1.addColorStop(0.45, 'rgba(245, 158, 11, 0.05)');
       grad1.addColorStop(1, 'rgba(4, 7, 17, 0)');
       ctx.fillStyle = grad1;
       ctx.fillRect(0, 0, width, height);
@@ -164,18 +178,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
       for (const s of stars) {
         const twinkle = reducedMotion ? 1 : 0.72 + 0.28 * Math.sin(tSec * 1.8 + s.twinkle);
         const sx = (s.x + px * s.depth + width) % width;
-        const sy = (s.y + py * s.depth + (reducedMotion ? 0 : tSec * 3.5 * s.depth) + height) % height;
+        const sy = (s.y + py * s.depth + (reducedMotion ? 0 : tSec * 3.0 * s.depth) + height) % height;
         const alpha = Math.min(1, s.alpha * twinkle);
-        ctx.fillStyle = s.warm
-          ? `rgba(253, 224, 155, ${alpha.toFixed(2)})`
-          : `rgba(226, 232, 240, ${alpha.toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
-        ctx.fill();
+        drawPsfStar(ctx, sx, sy, s.radius, s.warm ? '253, 224, 155' : '226, 232, 240', alpha);
       }
 
-      // Occasional shooting star
-      if (!reducedMotion && now - lastShootTime > 3800 && shootingStars.length < 2) {
+      if (!reducedMotion && now - lastShootTime > 4200 && shootingStars.length < 2) {
         lastShootTime = now;
         shootingStars.push({
           x: Math.random() * width * 0.75,
@@ -198,7 +206,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
         gradLine.addColorStop(0, `rgba(245, 158, 11, ${op.toFixed(2)})`);
         gradLine.addColorStop(1, 'rgba(56, 189, 248, 0)');
         ctx.strokeStyle = gradLine;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.8;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(st.x, st.y);
         ctx.lineTo(st.x - st.vx * 8, st.y - st.vy * 8);
@@ -215,7 +224,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     animId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(animId);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', syncCanvasSize);
     };
   }, [reducedMotion]);
 
@@ -277,7 +286,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
     },
   ];
 
-  // Fly-through zoom dive transition into target sky
   const handleFlyToTarget = (caseId: string) => {
     gameAudio.playClick();
     setSpexMood('happy');
@@ -289,7 +297,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     setTimeout(() => {
       setFlyTargetId(null);
       onStartExplore(caseId);
-    }, 320);
+    }, 300);
   };
 
   return (
@@ -299,56 +307,92 @@ export const HomeView: React.FC<HomeViewProps> = ({
       } ${isRtl ? 'font-cairo' : 'font-sans'}`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Interactive Starfield Canvas */}
+      {/* Interactive High-DPR Smooth Starfield Canvas */}
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none -z-10 w-full h-full"
         aria-hidden="true"
       />
 
-      {/* HERO SCENE: 10-Second Story + Live Interactive Sky Cutout Preview */}
-      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-8 sm:pt-12 pb-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
-          {/* Left / Main Story Copy */}
-          <div className="lg:col-span-7 space-y-6 text-start">
-            <p className="text-xs font-mono tracking-wider uppercase text-sky-400 font-semibold">
-              NASA SPHEREx · <span className="normal-case">0.75–5.0 µm</span> · {isRtl ? '102 لوناً خفياً' : '102 Infrared Bands'}
-            </p>
+      {/* HERO SCENE: Immediate 60-second clarity + 3 Action Cards + Live Blink Preview */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-7 sm:pt-10 pb-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          {/* Left Story + Search + Mascot */}
+          <div className="lg:col-span-7 space-y-5 text-start">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/25 text-xs font-mono text-sky-300 font-semibold">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>{t.homePlainHeroTag}</span>
+            </div>
 
-            <h1 className="font-display text-3xl sm:text-5xl lg:text-[3.35rem] font-extrabold tracking-tight text-slate-50 leading-[1.08] text-balance">
+            <h1 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-50 leading-[1.08] text-balance">
               {t.heroHeadline}
             </h1>
 
-            <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
-              {t.heroSubcopy}
+            <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
+              {t.homePlainSubtitle}
             </p>
 
-            {/* Primary & Secondary CTAs */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
-              <Button
-                variant="primary"
-                size="lg"
-                icon={<Compass className="w-5 h-5" />}
-                onClick={() => handleFlyToTarget('case-barnards-star')}
-                className="min-h-[50px] px-7 text-base shadow-[0_0_28px_rgba(245,158,11,0.35)]"
+            {/* 3 Clear Primary Destination Cards (Start Academy, Explore the Sky, Play) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <button
+                type="button"
+                data-testid="home-btn-academy"
+                onClick={() => {
+                  gameAudio.playClick();
+                  onStartAcademy();
+                }}
+                className="group text-start rounded-2xl border border-amber-400/30 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-amber-400/70 p-4 flex flex-col justify-between gap-2.5 transition-all cursor-pointer min-h-[120px]"
               >
-                {t.homeBtnOpenExplorer}
-              </Button>
+                <div className="flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300">
+                    <GraduationCap className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className={`w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
+                </div>
+                <div>
+                  <div className="font-display text-sm font-bold text-slate-50">{t.homeBtnStartAcademy}</div>
+                  <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{t.homeCardAcademyDesc}</p>
+                </div>
+              </button>
 
-              {onPlayGame && (
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  icon={<Gamepad2 className="w-5 h-5 text-sky-400" />}
-                  onClick={() => {
-                    gameAudio.playClick();
-                    onPlayGame();
-                  }}
-                  className="min-h-[50px]"
-                >
-                  {t.homeBtnPlayCase}
-                </Button>
-              )}
+              <button
+                type="button"
+                data-testid="home-btn-explore"
+                onClick={() => handleFlyToTarget('case-barnards-star')}
+                className="group text-start rounded-2xl border border-sky-400/50 bg-gradient-to-br from-sky-500/20 to-[#0B1222] hover:border-sky-300 p-4 flex flex-col justify-between gap-2.5 shadow-[0_0_24px_rgba(56,189,248,0.18)] transition-all cursor-pointer min-h-[120px]"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-xl bg-sky-500/25 border border-sky-400/40 flex items-center justify-center text-sky-300">
+                    <Compass className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className={`w-4 h-4 text-sky-300 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
+                </div>
+                <div>
+                  <div className="font-display text-sm font-bold text-white">{t.homeBtnExploreSky}</div>
+                  <p className="text-[11px] text-slate-200 mt-0.5 leading-snug">{t.homeCardExploreDesc}</p>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-testid="home-btn-play"
+                onClick={() => {
+                  gameAudio.playClick();
+                  onPlayGame?.();
+                }}
+                className="group text-start rounded-2xl border border-white/15 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-emerald-400/60 p-4 flex flex-col justify-between gap-2.5 transition-all cursor-pointer min-h-[120px]"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                    <Gamepad2 className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className={`w-4 h-4 text-emerald-300 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
+                </div>
+                <div>
+                  <div className="font-display text-sm font-bold text-slate-50">{t.homeBtnPlaySimple}</div>
+                  <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{t.homeCardPlayDesc}</p>
+                </div>
+              </button>
             </div>
 
             {/* Single Centered "Fly me to..." Search */}
@@ -366,30 +410,45 @@ export const HomeView: React.FC<HomeViewProps> = ({
               className="pt-1"
             />
 
-            {/* Reactive SPEX Mascot Greeting Card */}
-            <div className="flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-[#0B1120]/85 border border-white/10 backdrop-blur-xl max-w-xl">
-              <SpexPortrait
-                mood={spexMood}
-                size={62}
-                interactive
-                onClick={() => setSpexMood((m) => (m === 'greeting' ? 'curious' : 'greeting'))}
-                alt="SPEX Cat Guide"
-                className="shrink-0 rounded-xl bg-amber-500/10 border border-amber-500/25 p-1"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider mb-0.5">
-                  SPEX · {isRtl ? 'مرشدك الفلكي' : 'Your Space Guide'}
+            {/* Reactive SPEX Mascot Greeting Card + Community Shortcut */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0B1120]/85 border border-white/10 backdrop-blur-xl max-w-2xl">
+              <div className="flex items-center gap-3 min-w-0">
+                <SpexPortrait
+                  mood={spexMood}
+                  size={56}
+                  interactive
+                  onClick={() => setSpexMood((m) => (m === 'greeting' ? 'curious' : 'greeting'))}
+                  alt="SPEX Cat Guide"
+                  className="shrink-0 rounded-xl bg-amber-500/10 border border-amber-500/25 p-1"
+                />
+                <div className="min-w-0">
+                  <div className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wider mb-0.5">
+                    SPEX · {isRtl ? 'مرشدك الفلكي' : 'Your Space Guide'}
+                  </div>
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    {t.homeCatGreeting}
+                  </p>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-                  {t.homeCatGreeting}
-                </p>
               </div>
+              {onOpenCommunity && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    onOpenCommunity();
+                  }}
+                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-xs font-semibold transition cursor-pointer"
+                >
+                  <Users className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.navCommunity}</span>
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Right: Big Interactive Sky Cutout Preview (30-second wow teaser) */}
+          {/* Right: Smooth Interactive Sky Cutout Preview + Quick Demo: WISE 0855 */}
           <div className="lg:col-span-5">
-            <div className="relative rounded-3xl border border-sky-400/25 bg-[#090F1E]/90 p-4 sm:p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+            <div className="relative rounded-3xl border border-sky-400/25 bg-[#090F1E]/92 p-4 sm:p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl">
               <div className="flex items-center justify-between gap-2 mb-3">
                 <div className="flex items-center gap-2 text-xs font-mono text-sky-300 font-semibold">
                   <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
@@ -400,7 +459,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </span>
               </div>
 
-              {/* Animated Cutout Viewport */}
+              {/* Soft PSF Animated Cutout Viewport */}
               <div
                 onClick={() => handleFlyToTarget('case-barnards-star')}
                 role="button"
@@ -412,46 +471,51 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   }
                 }}
                 aria-label={isRtl ? 'افتح معاينة نجم بارنارد في المستكشف' : "Open Barnard's Star preview in Explorer"}
-                className="relative w-full aspect-square max-h-[300px] mx-auto rounded-2xl bg-[#040711] border border-white/15 overflow-hidden cursor-pointer group"
+                className="relative w-full aspect-square max-h-[300px] mx-auto rounded-2xl bg-[radial-gradient(circle_at_center,#0b1328_0%,#040711_75%)] border border-white/15 overflow-hidden cursor-pointer group"
               >
-                <div className="absolute inset-0 detector-grid opacity-40" />
-                <div className="crop-mark-tl" />
-                <div className="crop-mark-tr" />
-                <div className="crop-mark-bl" />
-                <div className="crop-mark-br" />
-
-                {/* Background fixed stars (fade in diff mode) */}
-                <div className={`transition-opacity duration-300 ${showDiffPreview ? 'opacity-20' : 'opacity-100'}`}>
-                  <span className="absolute top-[18%] left-[22%] w-2 h-2 rounded-full bg-slate-200/80 shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
-                  <span className="absolute top-[28%] right-[20%] w-1.5 h-1.5 rounded-full bg-slate-300/70" />
-                  <span className="absolute bottom-[24%] left-[28%] w-2.5 h-2.5 rounded-full bg-amber-100/75 shadow-[0_0_8px_rgba(253,230,138,0.5)]" />
-                  <span className="absolute bottom-[18%] right-[25%] w-1.5 h-1.5 rounded-full bg-slate-400/75" />
-                  <span className="absolute top-[64%] left-[68%] w-1 h-1 rounded-full bg-slate-400/70" />
-                </div>
-
-                {/* Self-drawing trail vector when "Show changes" preview is enabled */}
+                {/* Soft Background PSF Stars (no sharp squares) */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                  <defs>
+                    <radialGradient id="preview-psf-white">
+                      <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
+                      <stop offset="40%" stopColor="#bae6fd" stopOpacity="0.6" />
+                      <stop offset="100%" stopColor="#0ea5e9" stopOpacity="0" />
+                    </radialGradient>
+                    <radialGradient id="preview-psf-amber">
+                      <stop offset="0%" stopColor="#fffbeb" stopOpacity="1" />
+                      <stop offset="35%" stopColor="#fbbf24" stopOpacity="0.85" />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                    </radialGradient>
+                  </defs>
+
+                  <g className={`transition-opacity duration-300 ${showDiffPreview ? 'opacity-20' : 'opacity-100'}`}>
+                    <circle cx="22" cy="18" r="2.8" fill="url(#preview-psf-white)" />
+                    <circle cx="78" cy="27" r="2.2" fill="url(#preview-psf-white)" />
+                    <circle cx="28" cy="76" r="3.4" fill="url(#preview-psf-amber)" />
+                    <circle cx="75" cy="82" r="2.4" fill="url(#preview-psf-white)" />
+                    <circle cx="68" cy="64" r="1.8" fill="url(#preview-psf-white)" />
+                  </g>
+
                   {showDiffPreview && (
-                    <line
-                      x1="40"
-                      y1="56"
-                      x2="62"
-                      y2="38"
-                      stroke="#38BDF8"
-                      strokeWidth="1.4"
-                      strokeDasharray="240"
-                      className="spex-trail-path"
-                    />
-                  )}
-                  {/* Dipole / Epoch 1 ghost marker in diff view */}
-                  {showDiffPreview && (
-                    <circle cx="40" cy="56" r="4.5" fill="rgba(56, 189, 248, 0.25)" stroke="#38BDF8" strokeWidth="1.2" />
+                    <>
+                      <line
+                        x1="40"
+                        y1="56"
+                        x2="62"
+                        y2="38"
+                        stroke="#38BDF8"
+                        strokeWidth="1.4"
+                        strokeDasharray="240"
+                        className="spex-trail-path"
+                      />
+                      <circle cx="40" cy="56" r="4.5" fill="rgba(56, 189, 248, 0.22)" stroke="#38BDF8" strokeWidth="1.2" />
+                    </>
                   )}
                 </svg>
 
-                {/* Moving Star + Pulsing Highlight Ring */}
+                {/* Moving Star PSF Halo */}
                 <div
-                  className="absolute transition-all duration-300 ease-out"
+                  className="absolute transition-all duration-300 ease-out pointer-events-none"
                   style={{
                     left: showDiffPreview || blinkEpoch === 1 ? '62%' : '40%',
                     top: showDiffPreview || blinkEpoch === 1 ? '38%' : '56%',
@@ -459,12 +523,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   }}
                 >
                   {showDiffPreview && (
-                    <span className="spex-target-ring absolute left-1/2 top-1/2 w-11 h-11 rounded-full border-2 border-amber-400 pointer-events-none" />
+                    <span className="spex-target-ring absolute left-1/2 top-1/2 w-11 h-11 rounded-full border-2 border-amber-400" />
                   )}
-                  <span className="block w-4 h-4 rounded-full bg-amber-400 shadow-[0_0_18px_#F59E0B,0_0_6px_#FFF]" />
+                  <span className="block w-8 h-8 rounded-full bg-[radial-gradient(circle,#fffbeb_0%,#fbbf24_35%,rgba(245,158,11,0)_72%)]" />
                 </div>
 
-                {/* Hover Action Pill inside preview */}
+                {/* Hover Action Overlay */}
                 <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-[11px] font-mono bg-black/75 border border-white/10 rounded-xl px-3 py-1.5 backdrop-blur-md">
                   <span className="text-slate-200">
                     {showDiffPreview ? (isRtl ? 'شاهد القفزة!' : 'Motion highlighted!') : (isRtl ? 'وميض الزمن' : 'Flipping epochs')}
@@ -476,7 +540,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </div>
               </div>
 
-              {/* Interactive preview toggle buttons */}
+              {/* Blink toggle + Quick Demo: loads WISE 0855 & auto-plays */}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -496,11 +560,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleFlyToTarget('case-barnards-star')}
-                  className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                  data-testid="home-quick-demo-wise"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    onQuickDemoWise();
+                  }}
+                  className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.3)]"
                 >
                   <Play className="w-4 h-4 fill-current shrink-0" />
-                  <span>{t.explorerBtnPlaySky}</span>
+                  <span>{t.homeBtnQuickDemo}</span>
                 </button>
               </div>
             </div>
@@ -508,9 +576,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </section>
 
-      {/* 5 TARGET CARDS AS FRIENDLY "CREATURES TO FIND" */}
-      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-12">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-5">
+      {/* 5 OFFICIAL BENCHMARK TARGETS */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-10">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-4">
           <div>
             <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-50">
               {t.heroCreaturesTitle}
@@ -543,7 +611,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 key={card.caseId}
                 type="button"
                 onClick={() => handleFlyToTarget(card.caseId)}
-                className="group relative text-start rounded-2xl border border-white/12 bg-[#0B1120]/85 hover:bg-[#10192E] p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:border-sky-400/50 hover:shadow-[0_14px_30px_rgba(0,0,0,0.45)] cursor-pointer min-h-[172px]"
+                className="group relative text-start rounded-2xl border border-white/12 bg-[#0B1120]/85 hover:bg-[#10192E] p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:border-sky-400/50 hover:shadow-[0_14px_30px_rgba(0,0,0,0.45)] cursor-pointer min-h-[168px]"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
@@ -570,14 +638,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     <h3 className="font-display text-base font-bold text-slate-50 group-hover:text-amber-300 transition-colors">
                       {card.name}
                     </h3>
-                    {isRtl && (
-                      <div className="text-xs text-slate-400">{card.nameAr}</div>
-                    )}
+                    {isRtl && <div className="text-xs text-slate-400">{card.nameAr}</div>}
                   </div>
 
-                  <p className="text-xs text-slate-300 leading-snug">
-                    {card.hook}
-                  </p>
+                  <p className="text-xs text-slate-300 leading-snug">{card.hook}</p>
                 </div>
 
                 <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-slate-400 tabular-nums">
@@ -594,8 +658,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
       </section>
 
       {/* Honest Data Provenance Footer Strip */}
-      <section className="relative z-10 px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto w-full">
-        <div className="rounded-2xl bg-[#0B1120]/80 border border-white/10 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <section className="relative z-10 px-4 sm:px-6 lg:px-8 pb-10 max-w-7xl mx-auto w-full">
+        <div className="rounded-2xl bg-[#0B1120]/80 border border-white/10 p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />

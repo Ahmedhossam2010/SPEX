@@ -62,6 +62,8 @@ export interface UseSkyGesturesOptions {
   onCommitDetector: (detector: string) => void;
   zoom: number;
   onZoomChange: (zoom: number) => void;
+  pan?: { x: number; y: number };
+  onPanChange?: (pan: { x: number; y: number }) => void;
   onResetView: () => void;
   onTapPoint?: (clientX: number, clientY: number) => void;
   isRtl?: boolean;
@@ -70,7 +72,7 @@ export interface UseSkyGesturesOptions {
 
 export interface UseSkyGesturesResult {
   viewportRef: React.RefObject<HTMLDivElement | null>;
-  activeGesture: 'idle' | 'time' | 'wavelength' | 'pinch';
+  activeGesture: 'idle' | 'pan' | 'time' | 'wavelength' | 'pinch';
   scrubDeltaFrames: number;
   handlers: {
     onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
@@ -93,13 +95,15 @@ export function useSkyGestures({
   onCommitDetector,
   zoom,
   onZoomChange,
+  pan,
+  onPanChange,
   onResetView,
   onTapPoint,
   isRtl = false,
   reducedMotion = false,
 }: UseSkyGesturesOptions): UseSkyGesturesResult {
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [activeGesture, setActiveGesture] = useState<'idle' | 'time' | 'wavelength' | 'pinch'>('idle');
+  const [activeGesture, setActiveGesture] = useState<'idle' | 'pan' | 'time' | 'wavelength' | 'pinch'>('idle');
   const [scrubDeltaFrames, setScrubDeltaFrames] = useState<number>(0);
 
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -109,7 +113,9 @@ export function useSkyGestures({
     time: number;
     startFrameIdx: number;
     startUm: number;
-    axis: 'undecided' | 'time' | 'wavelength' | 'pinch';
+    startPanX: number;
+    startPanY: number;
+    axis: 'undecided' | 'pan' | 'time' | 'wavelength' | 'pinch';
     lastX: number;
     lastTime: number;
     vxPxPerMs: number;
@@ -196,6 +202,8 @@ export function useSkyGestures({
         time: performance.now(),
         startFrameIdx: currentFrameIdx,
         startUm,
+        startPanX: pan?.x ?? 0,
+        startPanY: pan?.y ?? 0,
         axis: 'undecided',
         lastX: e.clientX,
         lastTime: performance.now(),
@@ -205,7 +213,7 @@ export function useSkyGestures({
       };
       setScrubDeltaFrames(0);
     },
-    [enabled, stopInertia, zoom, currentWavelengthUm, currentDetector, ranges, currentFrameIdx]
+    [enabled, stopInertia, zoom, pan?.x, pan?.y, currentWavelengthUm, currentDetector, ranges, currentFrameIdx]
   );
 
   const onPointerMove = useCallback(
@@ -231,16 +239,25 @@ export function useSkyGestures({
       const dist = Math.hypot(dx, dy);
 
       if (g.axis === 'undecided') {
-        if (dist < 8) return;
+        if (dist < 6) return;
         onUserInteractStart?.();
-        g.axis = Math.abs(dx) >= Math.abs(dy) ? 'time' : 'wavelength';
+        if (onPanChange) {
+          g.axis = 'pan';
+        } else {
+          g.axis = Math.abs(dx) >= Math.abs(dy) ? 'time' : 'wavelength';
+        }
         setActiveGesture(g.axis);
       }
 
       const now = performance.now();
       const dt = Math.max(1, now - g.lastTime);
 
-      if (g.axis === 'time' && totalFrames > 1) {
+      if (g.axis === 'pan' && onPanChange) {
+        const maxPan = Math.max(160, zoom * 120);
+        const nx = Math.max(-maxPan, Math.min(maxPan, g.startPanX + dx));
+        const ny = Math.max(-maxPan, Math.min(maxPan, g.startPanY + dy));
+        onPanChange({ x: nx, y: ny });
+      } else if (g.axis === 'time' && totalFrames > 1) {
         const instV = (e.clientX - g.lastX) / dt;
         g.vxPxPerMs = g.vxPxPerMs * 0.55 + instV * 0.45;
         g.lastX = e.clientX;
@@ -268,7 +285,9 @@ export function useSkyGestures({
     },
     [
       enabled,
+      zoom,
       onZoomChange,
+      onPanChange,
       onUserInteractStart,
       totalFrames,
       isRtl,

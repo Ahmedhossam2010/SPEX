@@ -223,6 +223,11 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
       if (!ctx) return;
       ctx.save();
       ctx.scale(dpr, dpr);
+      const isSmooth = displayMode !== 'science';
+      ctx.imageSmoothingEnabled = isSmooth;
+      if (isSmooth) {
+        ctx.imageSmoothingQuality = 'high';
+      }
 
       const splitPx = curtainSplit * renderSize;
 
