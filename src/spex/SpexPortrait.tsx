@@ -36,14 +36,13 @@ export interface SpexPortraitProps {
   className?: string;
   showFullBody?: boolean;
   alt?: string;
+  interactive?: boolean;
+  onClick?: () => void;
 }
 
 /**
  * Authentic SPEX Egyptian Mechanical Cat Guardian
- * Uses the genuine original character artwork across all states:
- * - Full body hero poses (standing / waving)
- * - Focused investigator and warm greeting expression portraits
- * - Natural image proportions, crisp transparency, and graceful fallback
+ * Uses the genuine 16 SVG character artwork poses with idle breathe/blink motion.
  */
 export const SpexPortrait: React.FC<SpexPortraitProps> = ({
   mood,
@@ -52,23 +51,27 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
   className = '',
   showFullBody = false,
   alt = 'SPEX Mechanical Cat Guardian',
+  interactive = false,
+  onClick,
 }) => {
   const [hasError, setHasError] = useState(false);
+  const [clickBurst, setClickBurst] = useState(false);
   const m = (expression || mood || 'greeting').toLowerCase();
 
-  // Pick authentic asset path based on full body vs avatar portrait & mood
+  const effectiveMood = clickBurst ? 'curious' : m;
+
   let assetPath: string;
   if (showFullBody) {
-    if (m === 'greeting' || m === 'happy' || m === 'joking' || m === 'laughter') {
+    if (effectiveMood === 'greeting' || effectiveMood === 'happy' || effectiveMood === 'joking' || effectiveMood === 'laughter') {
       assetPath = SPEX_WAVING_HERO;
     } else {
       assetPath = SPEX_HERO_IMAGE;
     }
   } else {
-    const asset = SPEX_ASSETS[m as SPEXMood];
+    const asset = SPEX_ASSETS[effectiveMood as SPEXMood];
     if (asset) {
       assetPath = asset.imagePath;
-    } else if (m === 'happy' || m === 'greeting' || m === 'proud' || m === 'success') {
+    } else if (effectiveMood === 'happy' || effectiveMood === 'greeting' || effectiveMood === 'proud' || effectiveMood === 'success') {
       assetPath = SPEX_AVATAR_GREETING;
     } else {
       assetPath = SPEX_AVATAR_INVESTIGATOR;
@@ -79,6 +82,14 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
     typeof size === 'number'
       ? { width: `${size}px`, height: showFullBody ? 'auto' : `${size}px`, maxHeight: showFullBody ? `${size * 1.5}px` : undefined }
       : { width: size, height: showFullBody ? 'auto' : size };
+
+  const handleTap = () => {
+    if (interactive) {
+      setClickBurst(true);
+      setTimeout(() => setClickBurst(false), 900);
+    }
+    onClick?.();
+  };
 
   if (hasError) {
     return (
@@ -91,9 +102,16 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
     );
   }
 
+  const Wrapper = interactive || onClick ? 'button' : 'div';
+
   return (
-    <div
-      className={`inline-flex items-center justify-center overflow-hidden transition-transform duration-200 select-none ${className}`}
+    <Wrapper
+      type={interactive || onClick ? 'button' : undefined}
+      onClick={interactive || onClick ? handleTap : undefined}
+      aria-label={interactive || onClick ? alt : undefined}
+      className={`relative inline-flex items-center justify-center overflow-hidden transition-transform duration-200 select-none spex-mascot-idle ${
+        interactive || onClick ? 'cursor-pointer hover:scale-105 active:scale-95 focus-visible:outline-2 focus-visible:outline-sky-400 rounded-2xl' : ''
+      } ${m === 'eureka' || m === 'happy' || m === 'success' ? 'drop-shadow-[0_0_16px_rgba(245,158,11,0.35)]' : ''} ${className}`}
       style={dimensionStyle}
     >
       <img
@@ -103,6 +121,11 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
         onError={() => setHasError(true)}
         loading="eager"
       />
-    </div>
+      {/* Subtle periodic eye-blink glint overlay */}
+      <span
+        aria-hidden="true"
+        className="spex-mascot-eyelid pointer-events-none absolute top-[34%] left-[26%] right-[26%] h-[8%] rounded-full bg-amber-300/20 blur-[1px]"
+      />
+    </Wrapper>
   );
 };

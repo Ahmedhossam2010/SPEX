@@ -3,6 +3,7 @@ import { X, Send, Sparkles, MapPin, Trash2, Info } from 'lucide-react';
 import { Language, translations } from '../../utils/translations';
 import { SpexPortrait } from '../../spex/SpexPortrait';
 import { ScienceTerm } from '../ScienceTerm';
+import { gameAudio } from '../../game/utils/gameAudio';
 import {
   SpexExplainContext,
   SpexExplainLevel,
@@ -77,7 +78,6 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
       const effLevel = opts?.levelOverride ?? level;
       const effSpot = opts?.spotOverride !== undefined ? opts.spotOverride : selectedSpot;
 
-      // Clear previous highlights on next question
       onHighlightsChange([]);
       onSpexAsked?.();
 
@@ -112,6 +112,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
             data.modeLabel || (isRtl ? 'سبيكس في الوضع غير المتصل' : 'SPEX offline mode')
           );
           onHighlightsChange(Array.isArray(data.highlights) ? data.highlights : []);
+          gameAudio.playClueUnlocked();
           setMessages((prev) => [
             ...prev,
             {
@@ -164,7 +165,6 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
     [level, selectedSpot, context, language, isRtl, onHighlightsChange, onSpexAsked]
   );
 
-  // Trigger explanation automatically when user taps a spot on canvas or clicks "Explain this spot"
   useEffect(() => {
     if (!isOpen || autoAskToken === 0 || autoAskToken === lastHandledTokenRef.current) return;
     lastHandledTokenRef.current = autoAskToken;
@@ -209,23 +209,23 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
       dir={isRtl ? 'rtl' : 'ltr'}
       className={`fixed z-40 inset-x-0 bottom-0 max-h-[82vh] rounded-t-3xl md:inset-x-auto md:bottom-4 ${
         isRtl ? 'md:left-4' : 'md:right-4'
-      } md:w-[400px] md:max-h-[640px] md:rounded-2xl bg-[#0B101C]/98 backdrop-blur-xl border border-cyan-500/30 shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-slate-100`}
+      } md:w-[400px] md:max-h-[640px] md:rounded-2xl bg-[#0B1120]/98 backdrop-blur-xl border border-sky-400/35 shadow-[0_20px_60px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden text-slate-100 animate-slide-up`}
     >
       {/* Header */}
-      <div className="shrink-0 px-4 py-3 border-b border-white/10 bg-[#0F1627]/95 flex items-center justify-between gap-2">
+      <div className="shrink-0 px-4 py-3 border-b border-white/10 bg-[#0F172A]/95 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-full bg-amber-500/15 border border-amber-400/40 flex items-center justify-center shrink-0 overflow-hidden">
-            <SpexPortrait mood={loading ? 'thinking' : 'explaining'} size={32} />
+          <div className="w-10 h-10 rounded-full bg-amber-500/15 border border-amber-400/40 flex items-center justify-center shrink-0 overflow-hidden">
+            <SpexPortrait mood={loading ? 'thinking' : messages.length > 0 ? 'eureka' : 'explaining'} size={36} />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-sm text-white">SPEX</span>
+              <span className="font-display font-bold text-sm text-white">SPEX</span>
               {offlineModeActive && (
                 <span
                   data-testid="spex-offline-badge"
-                  className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-200 text-[10px] font-semibold"
+                  className="text-[11px] font-mono text-amber-300 font-semibold"
                 >
-                  {offlineLabel || t.spexOfflineModeLabel}
+                  · {offlineLabel || t.spexOfflineModeLabel}
                 </span>
               )}
             </div>
@@ -239,7 +239,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
           type="button"
           onClick={onClose}
           aria-label={isRtl ? 'إغلاق سبيكس' : 'Close SPEX'}
-          className="p-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition cursor-pointer"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white transition cursor-pointer"
         >
           <X className="w-4 h-4" />
         </button>
@@ -248,16 +248,16 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
       {/* Level Switch + Source-of-truth disclaimer */}
       <div className="shrink-0 px-4 py-2 border-b border-white/10 bg-black/30 flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-1 text-[11px] bg-black/50 p-0.5 rounded-lg border border-white/10">
+          <div className="flex items-center gap-1 text-[11px] bg-black/50 p-1 rounded-xl border border-white/10">
             {(['kid', 'beginner', 'scientist'] as SpexExplainLevel[]).map((lvl) => (
               <button
                 key={lvl}
                 type="button"
                 onClick={() => setLevel(lvl)}
-                className={`px-2 py-0.5 rounded-md font-medium transition cursor-pointer ${
+                className={`min-h-[30px] px-2.5 py-1 rounded-lg font-medium transition cursor-pointer ${
                   level === lvl
                     ? 'bg-amber-400 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
+                    : 'text-slate-300 hover:text-white'
                 }`}
               >
                 {lvl === 'kid'
@@ -270,7 +270,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
           </div>
 
           {selectedSpot && (
-            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/40 text-cyan-200 text-[10px] font-mono">
+            <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/15 border border-sky-400/40 text-sky-200 text-[11px] font-mono tabular-nums">
               <MapPin className="w-3 h-3 shrink-0" />
               <span>
                 ({selectedSpot.x.toFixed(0)}, {selectedSpot.y.toFixed(0)})
@@ -279,7 +279,8 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
                 type="button"
                 onClick={onClearSpot}
                 title={isRtl ? 'إلغاء تحديد النقطة' : 'Clear spot'}
-                className="hover:text-white cursor-pointer"
+                aria-label={isRtl ? 'إلغاء تحديد النقطة' : 'Clear spot'}
+                className="hover:text-white cursor-pointer p-0.5"
               >
                 <Trash2 className="w-3 h-3" />
               </button>
@@ -288,7 +289,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-          <Info className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+          <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" />
           <span>{t.spexAiSourceTruthNote}</span>
         </div>
       </div>
@@ -314,7 +315,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
             <div
               className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed ${
                 msg.role === 'user'
-                  ? 'bg-cyan-500 text-slate-950 font-medium'
+                  ? 'bg-sky-400 text-slate-950 font-semibold'
                   : 'bg-white/[0.06] border border-white/10 text-slate-100'
               }`}
             >
@@ -346,7 +347,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
                     type="button"
                     disabled={loading}
                     onClick={() => askSpex(fq)}
-                    className="px-2.5 py-1 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 text-cyan-200 text-[11px] transition cursor-pointer disabled:opacity-50"
+                    className="min-h-[34px] px-2.5 py-1 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 text-sky-200 text-[11px] transition cursor-pointer disabled:opacity-50"
                   >
                     {fq}
                   </button>
@@ -375,7 +376,7 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
               if (chip.levelOverride) setLevel(chip.levelOverride);
               askSpex(chip.query, { levelOverride: chip.levelOverride });
             }}
-            className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 text-[11px] transition cursor-pointer disabled:opacity-50"
+            className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 text-[11px] transition cursor-pointer disabled:opacity-50"
           >
             {chip.label}
           </button>
@@ -392,15 +393,15 @@ export const SpexGuidePanel: React.FC<SpexGuidePanelProps> = ({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={t.spexGuideInputPlaceholder}
-          className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-cyan-400 outline-none text-xs sm:text-sm text-white placeholder:text-slate-500"
+          className="flex-1 min-w-0 min-h-[44px] px-3 py-2 rounded-xl bg-black/60 border border-white/15 focus:border-sky-400 outline-none text-xs sm:text-sm text-white placeholder:text-slate-400"
         />
         <button
           type="submit"
           disabled={loading || !input.trim()}
           aria-label={t.spexSendButton}
-          className="px-3 py-2 rounded-xl bg-[#FFB900] hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+          className="min-h-[44px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer"
         >
-          <Send className="w-3.5 h-3.5" />
+          <Send className={`w-4 h-4 ${isRtl ? 'rotate-180' : ''}`} />
           <span className="hidden sm:inline">{t.spexSendButton}</span>
         </button>
       </form>

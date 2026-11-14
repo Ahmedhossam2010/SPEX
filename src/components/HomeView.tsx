@@ -1,13 +1,29 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Compass, Gamepad2, Sparkles, Eye, ShieldCheck, Waves, CheckCircle2 } from 'lucide-react';
+import {
+  Compass,
+  Gamepad2,
+  Sparkles,
+  Flame,
+  Snowflake,
+  Orbit,
+  Activity,
+  Star,
+  ArrowRight,
+  Play,
+  Eye,
+  CheckCircle2,
+} from 'lucide-react';
 import { Button } from '../design/components/Button';
 import { Badge } from '../design/components/Badge';
-import { GlassPanel } from '../design/components/GlassPanel';
 import { Language, translations } from '../utils/translations';
-import { SPEX_HERO_IMAGE, SPEX_ASSETS } from '../spex/spexAssets';
+import { SpexPortrait } from '../spex/SpexPortrait';
+import { usePrefersReducedMotion } from '../design/motionKit';
+import { gameAudio } from '../game/utils/gameAudio';
+import { FlyToSearch, FlyTargetSelection } from '../ui/FlyToSearch';
 
 interface HomeViewProps {
   onStartExplore: (caseId?: string) => void;
+  onFlySelection?: (selection: FlyTargetSelection) => void;
   onOpenAbout: () => void;
   onOpenCases: () => void;
   onPlayGame?: () => void;
@@ -15,45 +31,79 @@ interface HomeViewProps {
   language: Language;
 }
 
+interface CreatureTargetCard {
+  caseId: string;
+  name: string;
+  nameAr: string;
+  nickname: string;
+  hook: string;
+  difficulty: 1 | 2 | 3;
+  accent: 'amber' | 'cyan' | 'emerald' | 'rose' | 'sky';
+  metric: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
 export const HomeView: React.FC<HomeViewProps> = ({
   onStartExplore,
-  onOpenAbout,
-  onOpenCases,
+  onFlySelection,
   onPlayGame,
   language,
 }) => {
   const t = translations[language];
   const isRtl = language === 'ar';
+  const reducedMotion = usePrefersReducedMotion();
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pointerOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const targetOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Collapsible SPEX guide card state (non-blocking)
-  const [spexMinimized, setSpexMinimized] = useState<boolean>(false);
-
-  // Card 1 mini-blink state
   const [blinkEpoch, setBlinkEpoch] = useState<0 | 1>(0);
+  const [showDiffPreview, setShowDiffPreview] = useState<boolean>(false);
+  const [flyTargetId, setFlyTargetId] = useState<string | null>(null);
+  const [spexMood, setSpexMood] = useState<'greeting' | 'curious' | 'happy'>('greeting');
+
+  // Hero sky cutout preview loop
   useEffect(() => {
+    if (reducedMotion) return;
     const interval = setInterval(() => {
       setBlinkEpoch((prev) => (prev === 0 ? 1 : 0));
-    }, 900);
+    }, 850);
     return () => clearInterval(interval);
-  }, []);
+  }, [reducedMotion]);
 
-  const homePresets = [
-    { caseId: 'case-barnards-star', label: "Barnard's Star", sub: '10.4″/yr' },
-    { caseId: 'case-epsilon-indi', label: 'Epsilon Indi', sub: 'T1+T6' },
-    { caseId: 'case-wise-0855', label: 'WISE 0855', sub: '8.15″/yr' },
-    { caseId: 'case-rw-aur', label: 'RW Aurigae', sub: 'YSO' },
-    { caseId: 'case-r-dra', label: 'R Draconis', sub: 'Mira' },
-  ];
+  // Pointer & device tilt parallax listener
+  useEffect(() => {
+    if (reducedMotion) return;
 
-  // Parallax Starfield Canvas with slow drifting camera
+    const handlePointerMove = (e: PointerEvent) => {
+      const nx = (e.clientX / window.innerWidth - 0.5) * 2;
+      const ny = (e.clientY / window.innerHeight - 0.5) * 2;
+      targetOffsetRef.current = { x: nx * 28, y: ny * 22 };
+    };
+
+    const handleOrientation = (e: DeviceOrientationEvent) => {
+      if (e.gamma == null || e.beta == null) return;
+      const nx = Math.max(-1, Math.min(1, e.gamma / 30));
+      const ny = Math.max(-1, Math.min(1, (e.beta - 45) / 30));
+      targetOffsetRef.current = { x: nx * 24, y: ny * 18 };
+    };
+
+    window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    window.addEventListener('deviceorientation', handleOrientation, { passive: true });
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('deviceorientation', handleOrientation);
+    };
+  }, [reducedMotion]);
+
+  // Interactive parallax starfield + nebula + shooting stars
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animId: number;
+    let animId = 0;
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
 
@@ -64,344 +114,500 @@ export const HomeView: React.FC<HomeViewProps> = ({
     };
     window.addEventListener('resize', handleResize);
 
-    // Star generation
-    const starCount = Math.min(180, Math.floor((width * height) / 8000));
+    const starCount = Math.min(200, Math.floor((width * height) / 7200));
     const stars = Array.from({ length: starCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      size: Math.random() * 1.5 + 0.5,
-      alpha: Math.random() * 0.7 + 0.3,
-      speed: (Math.random() * 0.15 + 0.05) * (Math.random() > 0.5 ? 1 : -1),
+      depth: 0.25 + Math.random() * 1.15,
+      size: Math.random() * 1.6 + 0.45,
+      alpha: Math.random() * 0.65 + 0.25,
       twinkle: Math.random() * Math.PI * 2,
+      warm: Math.random() > 0.72,
     }));
 
-    let driftOffset = 0;
+    const shootingStars: Array<{
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      life: number;
+      maxLife: number;
+    }> = [];
+    let lastShootTime = performance.now();
 
-    const render = () => {
-      driftOffset += 0.08;
-      ctx.fillStyle = '#02040A';
+    const render = (now: number) => {
+      pointerOffsetRef.current.x += (targetOffsetRef.current.x - pointerOffsetRef.current.x) * 0.06;
+      pointerOffsetRef.current.y += (targetOffsetRef.current.y - pointerOffsetRef.current.y) * 0.06;
+
+      ctx.fillStyle = '#040711';
       ctx.fillRect(0, 0, width, height);
 
-      // Faint infrared nebula gradient
-      const grad = ctx.createRadialGradient(
-        width * 0.55,
-        height * 0.38,
-        50,
-        width * 0.55,
-        height * 0.38,
-        width * 0.65
+      // Subtle infrared nebula glow
+      const px = pointerOffsetRef.current.x;
+      const py = pointerOffsetRef.current.y;
+
+      const grad1 = ctx.createRadialGradient(
+        width * 0.65 + px * 0.4,
+        height * 0.34 + py * 0.4,
+        40,
+        width * 0.65 + px * 0.4,
+        height * 0.34 + py * 0.4,
+        width * 0.55
       );
-      grad.addColorStop(0, 'rgba(255, 185, 0, 0.045)');
-      grad.addColorStop(0.35, 'rgba(0, 211, 243, 0.03)');
-      grad.addColorStop(0.7, 'rgba(251, 150, 0, 0.015)');
-      grad.addColorStop(1, 'rgba(2, 4, 10, 0)');
-      ctx.fillStyle = grad;
+      grad1.addColorStop(0, 'rgba(56, 189, 248, 0.09)');
+      grad1.addColorStop(0.45, 'rgba(245, 158, 11, 0.045)');
+      grad1.addColorStop(1, 'rgba(4, 7, 17, 0)');
+      ctx.fillStyle = grad1;
       ctx.fillRect(0, 0, width, height);
 
-      // Render stars
+      const tSec = now * 0.001;
       for (const s of stars) {
-        s.twinkle += 0.02;
-        const currentAlpha = Math.max(0.1, s.alpha + Math.sin(s.twinkle) * 0.2);
-        const curY = (s.y + driftOffset * s.speed * 0.5) % height;
-        const finalY = curY < 0 ? curY + height : curY;
-
-        ctx.fillStyle = `rgba(241, 245, 249, ${currentAlpha.toFixed(2)})`;
+        const twinkle = reducedMotion ? 1 : 0.72 + 0.28 * Math.sin(tSec * 1.8 + s.twinkle);
+        const sx = (s.x + px * s.depth + width) % width;
+        const sy = (s.y + py * s.depth + (reducedMotion ? 0 : tSec * 3.5 * s.depth) + height) % height;
+        const alpha = Math.min(1, s.alpha * twinkle);
+        ctx.fillStyle = s.warm
+          ? `rgba(253, 224, 155, ${alpha.toFixed(2)})`
+          : `rgba(226, 232, 240, ${alpha.toFixed(2)})`;
         ctx.beginPath();
-        ctx.arc(s.x, finalY, s.size, 0, Math.PI * 2);
+        ctx.arc(sx, sy, s.size, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      animId = requestAnimationFrame(render);
+      // Occasional shooting star
+      if (!reducedMotion && now - lastShootTime > 3800 && shootingStars.length < 2) {
+        lastShootTime = now;
+        shootingStars.push({
+          x: Math.random() * width * 0.75,
+          y: Math.random() * height * 0.45,
+          vx: 7.5 + Math.random() * 4,
+          vy: 3.2 + Math.random() * 2.5,
+          life: 0,
+          maxLife: 34,
+        });
+      }
+
+      for (let i = shootingStars.length - 1; i >= 0; i--) {
+        const st = shootingStars[i];
+        st.x += st.vx;
+        st.y += st.vy;
+        st.life += 1;
+        const p = st.life / st.maxLife;
+        const op = Math.sin(p * Math.PI) * 0.85;
+        const gradLine = ctx.createLinearGradient(st.x, st.y, st.x - st.vx * 8, st.y - st.vy * 8);
+        gradLine.addColorStop(0, `rgba(245, 158, 11, ${op.toFixed(2)})`);
+        gradLine.addColorStop(1, 'rgba(56, 189, 248, 0)');
+        ctx.strokeStyle = gradLine;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(st.x, st.y);
+        ctx.lineTo(st.x - st.vx * 8, st.y - st.vy * 8);
+        ctx.stroke();
+
+        if (st.life >= st.maxLife) shootingStars.splice(i, 1);
+      }
+
+      if (!reducedMotion) {
+        animId = requestAnimationFrame(render);
+      }
     };
 
-    render();
-
+    animId = requestAnimationFrame(render);
     return () => {
       cancelAnimationFrame(animId);
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [reducedMotion]);
+
+  const creatureTargets: CreatureTargetCard[] = [
+    {
+      caseId: 'case-barnards-star',
+      name: "Barnard's Star",
+      nameAr: 'نجم بارنارد',
+      nickname: t.creatureTagBarnard,
+      hook: t.explorerHookBarnard,
+      difficulty: 1,
+      accent: 'amber',
+      metric: '10.4″/yr',
+      icon: Flame,
+    },
+    {
+      caseId: 'case-wise-0855',
+      name: 'WISE 0855',
+      nameAr: 'قزم WISE 0855',
+      nickname: t.creatureTagWise0855,
+      hook: t.explorerHookWise0855,
+      difficulty: 3,
+      accent: 'cyan',
+      metric: '8.15″/yr',
+      icon: Snowflake,
+    },
+    {
+      caseId: 'case-epsilon-indi',
+      name: 'Epsilon Indi B',
+      nameAr: 'إبسيلون الهندي B',
+      nickname: t.creatureTagEpsilonIndi,
+      hook: t.explorerHookEpsilonIndi,
+      difficulty: 2,
+      accent: 'sky',
+      metric: 'T1 + T6',
+      icon: Orbit,
+    },
+    {
+      caseId: 'case-rw-aur',
+      name: 'RW Aurigae',
+      nameAr: 'نجم RW ممسك الأعنة',
+      nickname: t.creatureTagRwAur,
+      hook: t.explorerHookRwAur,
+      difficulty: 2,
+      accent: 'emerald',
+      metric: 'YSO Disk',
+      icon: Sparkles,
+    },
+    {
+      caseId: 'case-r-dra',
+      name: 'R Draconis',
+      nameAr: 'نجم R التنين',
+      nickname: t.creatureTagRDra,
+      hook: t.explorerHookRDra,
+      difficulty: 1,
+      accent: 'rose',
+      metric: 'Mira Pulse',
+      icon: Activity,
+    },
+  ];
+
+  // Fly-through zoom dive transition into target sky
+  const handleFlyToTarget = (caseId: string) => {
+    gameAudio.playClick();
+    setSpexMood('happy');
+    if (reducedMotion) {
+      onStartExplore(caseId);
+      return;
+    }
+    setFlyTargetId(caseId);
+    setTimeout(() => {
+      setFlyTargetId(null);
+      onStartExplore(caseId);
+    }, 320);
+  };
 
   return (
     <div
-      className={`relative min-h-[calc(100vh-4rem)] flex flex-col justify-between overflow-x-hidden ${
-        isRtl ? 'font-cairo' : 'font-sans'
-      }`}
+      className={`relative min-h-[calc(100vh-4rem)] flex flex-col justify-between overflow-x-hidden transition-transform duration-300 ${
+        flyTargetId ? 'scale-105 opacity-70' : 'scale-100 opacity-100'
+      } ${isRtl ? 'font-cairo' : 'font-sans'}`}
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Background Starfield Canvas */}
+      {/* Interactive Starfield Canvas */}
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none -z-10 w-full h-full"
         aria-hidden="true"
       />
 
-      {/* Hero Section */}
-      <section className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-4 sm:px-6 lg:px-8 pt-12 pb-16 max-w-5xl mx-auto w-full">
-        {/* Real Ticker of SPHEREx specs */}
-        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/[0.04] border border-white/10 text-xs text-[#00D3F3] font-mono tracking-wider mb-8 shadow-[0_0_15px_rgba(0,211,243,0.15)] animate-in fade-in duration-500">
-          <span className="w-2 h-2 rounded-full bg-[#00D3F3] animate-pulse" />
-          <span>{t.homeLiveTicker}</span>
-        </div>
+      {/* HERO SCENE: 10-Second Story + Live Interactive Sky Cutout Preview */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-8 sm:pt-12 pb-10">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+          {/* Left / Main Story Copy */}
+          <div className="lg:col-span-7 space-y-6 text-start">
+            <p className="text-xs font-mono tracking-wider uppercase text-sky-400 font-semibold">
+              NASA SPHEREx · <span className="normal-case">0.75–5.0 µm</span> · {isRtl ? '102 لوناً خفياً' : '102 Infrared Bands'}
+            </p>
 
-        {/* 10-Second Hook Headline in Playfair Display */}
-        <h1
-          className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-serif-hero font-bold tracking-tight text-[#F1F5F9] leading-[1.05] mb-4 select-none max-w-4xl text-balance"
-          style={{ textShadow: '0 0 40px rgba(255, 185, 0, 0.2)' }}
-        >
-          {t.homeHeroPlayfair}
-        </h1>
+            <h1 className="font-display text-3xl sm:text-5xl lg:text-[3.35rem] font-extrabold tracking-tight text-slate-50 leading-[1.08] text-balance">
+              {t.heroHeadline}
+            </h1>
 
-        {/* Subline in Inter */}
-        <p className="text-lg sm:text-2xl text-[#94A3B8] font-sans font-light tracking-wide max-w-2xl mb-10 text-balance">
-          {t.homeHeroInter}
-        </p>
+            <p className="text-base sm:text-lg text-slate-300 max-w-2xl leading-relaxed">
+              {t.heroSubcopy}
+            </p>
 
-        {/* CTA Buttons */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 w-full sm:w-auto mb-8">
-          <Button
-            variant="primary"
-            size="lg"
-            icon={<Compass className="w-5 h-5" />}
-            onClick={() => onStartExplore('case-wise-0855')}
-            className="w-full sm:w-auto shadow-[0_0_30px_rgba(255,185,0,0.35)]"
-          >
-            {t.homeBtnOpenExplorer}
-          </Button>
-
-          {onPlayGame && (
-            <Button
-              variant="secondary"
-              size="lg"
-              icon={<Gamepad2 className="w-5 h-5 text-[#00D3F3]" />}
-              onClick={onPlayGame}
-              className="w-full sm:w-auto"
-            >
-              {t.homeBtnPlayCase}
-            </Button>
-          )}
-        </div>
-
-        {/* Compact Row of 5 Challenge Presets (One-Click Demo) */}
-        <div className="w-full max-w-3xl mx-auto mb-10">
-          <div className="text-[11px] font-mono uppercase tracking-wider text-[#94A3B8] mb-2.5">
-            {t.homePresetsHeading}
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            {homePresets.map((preset) => (
-              <button
-                key={preset.caseId}
-                type="button"
-                onClick={() => onStartExplore(preset.caseId)}
-                className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-[#FFB900]/15 border border-white/10 hover:border-[#FFB900]/45 text-xs text-[#F1F5F9] hover:text-[#FFB900] transition flex items-center gap-1.5 cursor-pointer"
+            {/* Primary & Secondary CTAs */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+              <Button
+                variant="primary"
+                size="lg"
+                icon={<Compass className="w-5 h-5" />}
+                onClick={() => handleFlyToTarget('case-barnards-star')}
+                className="min-h-[50px] px-7 text-base shadow-[0_0_28px_rgba(245,158,11,0.35)]"
               >
-                <span className="font-semibold">{preset.label}</span>
-                <span className="font-mono text-[10px] text-[#00D3F3]">{preset.sub}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+                {t.homeBtnOpenExplorer}
+              </Button>
 
-        {/* SPEX Cat Guide Greeting Peek-in Card (Collapsible & Non-blocking) */}
-        <div className="w-full max-w-2xl mx-auto">
-          <GlassPanel hasCropMarks glow className="p-4 sm:p-5 flex items-center gap-4 text-left">
-            <div className="shrink-0 relative w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-amber-500/10 border border-[#FFB900]/30 overflow-hidden flex items-center justify-center shadow-[0_0_15px_rgba(255,185,0,0.2)]">
-              <img
-                src={SPEX_HERO_IMAGE}
-                alt="SPEX Cat Guide"
-                className="w-full h-full object-contain p-1"
-                referrerPolicy="no-referrer"
-              />
-              <span className="absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full bg-[#00D3F3] ring-2 ring-slate-950" />
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2 mb-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-[#FFB900]">
-                    SPEX AI COMPANION
-                  </span>
-                  <span className="text-[10px] text-[#94A3B8] font-mono">· ASTROPHYSICAL GUIDE</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSpexMinimized((v) => !v)}
-                  aria-expanded={!spexMinimized}
-                  className="text-[10px] font-mono text-[#94A3B8] hover:text-white underline cursor-pointer"
+              {onPlayGame && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  icon={<Gamepad2 className="w-5 h-5 text-sky-400" />}
+                  onClick={() => {
+                    gameAudio.playClick();
+                    onPlayGame();
+                  }}
+                  className="min-h-[50px]"
                 >
-                  {spexMinimized ? (isRtl ? 'عرض' : 'Show') : (isRtl ? 'طي' : 'Collapse')}
-                </button>
-              </div>
-              {!spexMinimized && (
-                <p className="text-xs sm:text-sm text-[#F1F5F9] leading-relaxed font-sans">
-                  {t.homeCatGreeting}
-                </p>
+                  {t.homeBtnPlayCase}
+                </Button>
               )}
             </div>
-          </GlassPanel>
+
+            {/* Single Centered "Fly me to..." Search */}
+            <FlyToSearch
+              language={language}
+              onFlyToTarget={(selection) => {
+                if (onFlySelection) {
+                  onFlySelection(selection);
+                } else if (selection.caseId) {
+                  handleFlyToTarget(selection.caseId);
+                } else {
+                  handleFlyToTarget('case-barnards-star');
+                }
+              }}
+              className="pt-1"
+            />
+
+            {/* Reactive SPEX Mascot Greeting Card */}
+            <div className="flex items-center gap-3.5 p-3.5 sm:p-4 rounded-2xl bg-[#0B1120]/85 border border-white/10 backdrop-blur-xl max-w-xl">
+              <SpexPortrait
+                mood={spexMood}
+                size={62}
+                interactive
+                onClick={() => setSpexMood((m) => (m === 'greeting' ? 'curious' : 'greeting'))}
+                alt="SPEX Cat Guide"
+                className="shrink-0 rounded-xl bg-amber-500/10 border border-amber-500/25 p-1"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider mb-0.5">
+                  SPEX · {isRtl ? 'مرشدك الفلكي' : 'Your Space Guide'}
+                </div>
+                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                  {t.homeCatGreeting}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Big Interactive Sky Cutout Preview (30-second wow teaser) */}
+          <div className="lg:col-span-5">
+            <div className="relative rounded-3xl border border-sky-400/25 bg-[#090F1E]/90 p-4 sm:p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2 text-xs font-mono text-sky-300 font-semibold">
+                  <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{t.heroPreviewLabel}</span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                  {isRtl ? 'نجم بارنارد · لقطة' : "Barnard's Star ·"} {blinkEpoch + 1}/2
+                </span>
+              </div>
+
+              {/* Animated Cutout Viewport */}
+              <div
+                onClick={() => handleFlyToTarget('case-barnards-star')}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleFlyToTarget('case-barnards-star');
+                  }
+                }}
+                aria-label={isRtl ? 'افتح معاينة نجم بارنارد في المستكشف' : "Open Barnard's Star preview in Explorer"}
+                className="relative w-full aspect-square max-h-[300px] mx-auto rounded-2xl bg-[#040711] border border-white/15 overflow-hidden cursor-pointer group"
+              >
+                <div className="absolute inset-0 detector-grid opacity-40" />
+                <div className="crop-mark-tl" />
+                <div className="crop-mark-tr" />
+                <div className="crop-mark-bl" />
+                <div className="crop-mark-br" />
+
+                {/* Background fixed stars (fade in diff mode) */}
+                <div className={`transition-opacity duration-300 ${showDiffPreview ? 'opacity-20' : 'opacity-100'}`}>
+                  <span className="absolute top-[18%] left-[22%] w-2 h-2 rounded-full bg-slate-200/80 shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
+                  <span className="absolute top-[28%] right-[20%] w-1.5 h-1.5 rounded-full bg-slate-300/70" />
+                  <span className="absolute bottom-[24%] left-[28%] w-2.5 h-2.5 rounded-full bg-amber-100/75 shadow-[0_0_8px_rgba(253,230,138,0.5)]" />
+                  <span className="absolute bottom-[18%] right-[25%] w-1.5 h-1.5 rounded-full bg-slate-400/75" />
+                  <span className="absolute top-[64%] left-[68%] w-1 h-1 rounded-full bg-slate-400/70" />
+                </div>
+
+                {/* Self-drawing trail vector when "Show changes" preview is enabled */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
+                  {showDiffPreview && (
+                    <line
+                      x1="40"
+                      y1="56"
+                      x2="62"
+                      y2="38"
+                      stroke="#38BDF8"
+                      strokeWidth="1.4"
+                      strokeDasharray="240"
+                      className="spex-trail-path"
+                    />
+                  )}
+                  {/* Dipole / Epoch 1 ghost marker in diff view */}
+                  {showDiffPreview && (
+                    <circle cx="40" cy="56" r="4.5" fill="rgba(56, 189, 248, 0.25)" stroke="#38BDF8" strokeWidth="1.2" />
+                  )}
+                </svg>
+
+                {/* Moving Star + Pulsing Highlight Ring */}
+                <div
+                  className="absolute transition-all duration-300 ease-out"
+                  style={{
+                    left: showDiffPreview || blinkEpoch === 1 ? '62%' : '40%',
+                    top: showDiffPreview || blinkEpoch === 1 ? '38%' : '56%',
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  {showDiffPreview && (
+                    <span className="spex-target-ring absolute left-1/2 top-1/2 w-11 h-11 rounded-full border-2 border-amber-400 pointer-events-none" />
+                  )}
+                  <span className="block w-4 h-4 rounded-full bg-amber-400 shadow-[0_0_18px_#F59E0B,0_0_6px_#FFF]" />
+                </div>
+
+                {/* Hover Action Pill inside preview */}
+                <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-[11px] font-mono bg-black/75 border border-white/10 rounded-xl px-3 py-1.5 backdrop-blur-md">
+                  <span className="text-slate-200">
+                    {showDiffPreview ? (isRtl ? 'شاهد القفزة!' : 'Motion highlighted!') : (isRtl ? 'وميض الزمن' : 'Flipping epochs')}
+                  </span>
+                  <span className="text-amber-400 font-bold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                    <span>{isRtl ? 'افتح' : 'Open'}</span>
+                    <ArrowRight className={`w-3.5 h-3.5 ${isRtl ? 'rotate-180' : ''}`} />
+                  </span>
+                </div>
+              </div>
+
+              {/* Interactive preview toggle buttons */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    setShowDiffPreview((v) => !v);
+                  }}
+                  aria-pressed={showDiffPreview}
+                  className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    showDiffPreview
+                      ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                      : 'bg-white/[0.04] border-white/10 text-slate-200 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <Eye className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>{t.heroPreviewBlinkBtn}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFlyToTarget('case-barnards-star')}
+                  className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+                >
+                  <Play className="w-4 h-4 fill-current shrink-0" />
+                  <span>{t.explorerBtnPlaySky}</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Below the Fold: 3 Short Cards with Looping Mini-Animations */}
-      <section className="relative z-10 px-4 sm:px-6 lg:px-8 py-16 bg-[#040711]/85 border-t border-white/[0.06] backdrop-blur-md">
-        <div className="max-w-6xl mx-auto w-full">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-            {/* Card 1: See it move */}
-            <GlassPanel hasCropMarks className="p-6 flex flex-col justify-between group hover:border-[#FFB900]/30 transition-all">
-              <div>
-                <div className="relative w-full h-32 rounded-xl bg-[#080B14] border border-white/10 overflow-hidden mb-5 flex items-center justify-center">
-                  <div className="absolute inset-0 detector-grid opacity-30" />
-                  <div className="crop-mark-tl" />
-                  <div className="crop-mark-tr" />
-                  <div className="crop-mark-bl" />
-                  <div className="crop-mark-br" />
+      {/* 5 TARGET CARDS AS FRIENDLY "CREATURES TO FIND" */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-12">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-5">
+          <div>
+            <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-50">
+              {t.heroCreaturesTitle}
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
+              {t.heroCreaturesHint}
+            </p>
+          </div>
+          <span className="text-xs font-mono text-slate-400">
+            5 NASA SPHEREx {isRtl ? 'أهداف' : 'Targets'}
+          </span>
+        </div>
 
-                  {/* Looping blink animation */}
-                  <div className="relative z-10 flex flex-col items-center">
-                    <div className="w-24 h-24 relative flex items-center justify-center">
-                      {/* Fixed background stars */}
-                      <span className="absolute top-4 left-6 w-1.5 h-1.5 rounded-full bg-slate-400" />
-                      <span className="absolute bottom-5 right-7 w-1 h-1 rounded-full bg-slate-500" />
-                      <span className="absolute top-10 right-4 w-1.5 h-1.5 rounded-full bg-slate-400" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          {creatureTargets.map((card) => {
+            const Icon = card.icon;
+            const accentStyles =
+              card.accent === 'amber'
+                ? 'text-amber-400 bg-amber-500/15 border-amber-500/30 group-hover:border-amber-400'
+                : card.accent === 'cyan'
+                ? 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30 group-hover:border-cyan-400'
+                : card.accent === 'emerald'
+                ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30 group-hover:border-emerald-400'
+                : card.accent === 'rose'
+                ? 'text-rose-300 bg-rose-500/15 border-rose-500/30 group-hover:border-rose-400'
+                : 'text-sky-300 bg-sky-500/15 border-sky-500/30 group-hover:border-sky-400';
 
-                      {/* Moving source jumping between two positions */}
-                      <div
-                        className="absolute w-3 h-3 rounded-full bg-[#FFB900] shadow-[0_0_12px_#FFB900] transition-all duration-300"
-                        style={{
-                          transform: blinkEpoch === 0 ? 'translate(-14px, -10px)' : 'translate(16px, 12px)',
-                        }}
-                      />
+            return (
+              <button
+                key={card.caseId}
+                type="button"
+                onClick={() => handleFlyToTarget(card.caseId)}
+                className="group relative text-start rounded-2xl border border-white/12 bg-[#0B1120]/85 hover:bg-[#10192E] p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:border-sky-400/50 hover:shadow-[0_14px_30px_rgba(0,0,0,0.45)] cursor-pointer min-h-[172px]"
+              >
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${accentStyles}`}>
+                      <Icon className="w-5 h-5" />
                     </div>
-
-                    <span className="absolute bottom-2 font-mono text-[10px] text-[#00D3F3] bg-black/60 px-2 py-0.5 rounded">
-                      EPOCH {blinkEpoch + 1} OF 2 (BLINKING)
+                    <span
+                      className="flex items-center gap-0.5 text-amber-400"
+                      aria-label={`${t.difficultyLabel} ${card.difficulty}/3`}
+                    >
+                      {[1, 2, 3].map((s) => (
+                        <Star
+                          key={s}
+                          className={`w-3.5 h-3.5 ${s <= card.difficulty ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`}
+                        />
+                      ))}
                     </span>
                   </div>
+
+                  <div>
+                    <div className="text-[11px] font-mono text-sky-400 font-semibold">
+                      {card.nickname}
+                    </div>
+                    <h3 className="font-display text-base font-bold text-slate-50 group-hover:text-amber-300 transition-colors">
+                      {card.name}
+                    </h3>
+                    {isRtl && (
+                      <div className="text-xs text-slate-400">{card.nameAr}</div>
+                    )}
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-snug">
+                    {card.hook}
+                  </p>
                 </div>
 
-                <h3 className="text-lg font-serif font-bold text-[#F1F5F9] mb-2 flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-[#FFB900]" />
-                  <span>{t.homeCard1Title}</span>
-                </h3>
-
-                <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
-                  {t.homeCard1Desc}
-                </p>
-              </div>
-
-              <div className="mt-5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[#00D3F3] font-mono">
-                <span>INTRA-VISIT RESIDUALS</span>
-                <span className="text-slate-500">D = I₂ - I₁</span>
-              </div>
-            </GlassPanel>
-
-            {/* Card 2: Read the hidden colors */}
-            <GlassPanel hasCropMarks className="p-6 flex flex-col justify-between group hover:border-[#00D3F3]/30 transition-all">
-              <div>
-                <div className="relative w-full h-32 rounded-xl bg-[#080B14] border border-white/10 overflow-hidden mb-5 flex flex-col items-center justify-center p-3">
-                  <div className="absolute inset-0 detector-grid opacity-30" />
-                  
-                  {/* Mini spectral curve with absorption dip */}
-                  <svg className="w-full h-20 overflow-visible" viewBox="0 0 200 80">
-                    <defs>
-                      <linearGradient id="spectrumGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#00D3F3" />
-                        <stop offset="50%" stopColor="#FFB900" />
-                        <stop offset="100%" stopColor="#FF637E" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M 10 50 Q 50 20, 80 40 T 130 65 T 170 30 T 190 45"
-                      fill="none"
-                      stroke="url(#spectrumGrad)"
-                      strokeWidth="2.5"
-                    />
-                    {/* Absorption dip indicator */}
-                    <circle cx="130" cy="65" r="4" fill="#FF637E" className="animate-ping opacity-75" />
-                    <circle cx="130" cy="65" r="3" fill="#FF637E" />
-                    <text x="135" y="75" fill="#FF637E" fontSize="9" fontFamily="JetBrains Mono">
-                      CH₄ ICE (3.3 µm)
-                    </text>
-                  </svg>
-
-                  <span className="font-mono text-[10px] text-[#00D3F3] mt-1">
-                    102 SPECTRAL CHANNELS (0.75 - 5.0 µm)
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-slate-400 tabular-nums">
+                  <span>{card.metric}</span>
+                  <span className="text-amber-400 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                    <span>{isRtl ? 'ابدأ' : 'Explore'}</span>
+                    <ArrowRight className={`w-3 h-3 ${isRtl ? 'rotate-180' : ''}`} />
                   </span>
                 </div>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
-                <h3 className="text-lg font-serif font-bold text-[#F1F5F9] mb-2 flex items-center gap-2">
-                  <Waves className="w-4 h-4 text-[#00D3F3]" />
-                  <span>{t.homeCard2Title}</span>
-                </h3>
-
-                <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
-                  {t.homeCard2Desc}
-                </p>
-              </div>
-
-              <div className="mt-5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[#00D3F3] font-mono">
-                <span>R ~ 40 - 150</span>
-                <span className="text-slate-500">6 DETECTOR ARRAYS</span>
-              </div>
-            </GlassPanel>
-
-            {/* Card 3: Solve the case */}
-            <GlassPanel hasCropMarks className="p-6 flex flex-col justify-between group hover:border-[#FF637E]/30 transition-all">
-              <div>
-                <div className="relative w-full h-32 rounded-xl bg-[#080B14] border border-white/10 overflow-hidden mb-5 flex items-center justify-center p-3">
-                  <div className="absolute inset-0 detector-grid opacity-30" />
-
-                  {/* Quality Filter Visual */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400">
-                      <span className="text-[10px] font-mono">FLAG 0x01</span>
-                      <span className="text-xs font-bold">GLITCH REJECTED</span>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-500 shrink-0" />
-                    <div className="flex flex-col items-center gap-1 p-2 rounded-lg bg-[#FFB900]/10 border border-[#FFB900]/30 text-[#FFB900]">
-                      <span className="text-[10px] font-mono">GAIA DR3</span>
-                      <span className="text-xs font-bold">REAL SOURCE</span>
-                    </div>
-                  </div>
-                </div>
-
-                <h3 className="text-lg font-serif font-bold text-[#F1F5F9] mb-2 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#FF637E]" />
-                  <span>{t.homeCard3Title}</span>
-                </h3>
-
-                <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
-                  {t.homeCard3Desc}
-                </p>
-              </div>
-
-              <div className="mt-5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-xs text-[#00D3F3] font-mono">
-                <span>5.0σ THRESHOLD</span>
-                <span className="text-slate-500">CROSS-MATCHED</span>
-              </div>
-            </GlassPanel>
+      {/* Honest Data Provenance Footer Strip */}
+      <section className="relative z-10 px-4 sm:px-6 lg:px-8 pb-12 max-w-7xl mx-auto w-full">
+        <div className="rounded-2xl bg-[#0B1120]/80 border border-white/10 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1">
+              <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+              <h4 className="text-sm font-bold text-slate-100">{t.homeHonestyTitle}</h4>
+            </div>
+            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">{t.homeHonestyDesc}</p>
           </div>
-
-          {/* Data Honesty Strip */}
-          <div className="rounded-2xl bg-[#080B14] border border-white/10 p-6 sm:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2">
-                <CheckCircle2 className="w-4 h-4 text-[#00D3F3]" />
-                <h4 className="text-sm sm:text-base font-bold text-[#F1F5F9] font-sans">
-                  {t.homeHonestyTitle}
-                </h4>
-              </div>
-              <p className="text-xs sm:text-sm text-[#94A3B8] max-w-2xl leading-relaxed">
-                {t.homeHonestyDesc}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-              <Badge variant="REAL" size="sm" />
-              <Badge variant="SAVED" size="sm" />
-              <Badge variant="TRAINING" size="sm" />
-              <Badge variant="UNVERIFIED" size="sm" />
-            </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Badge variant="REAL" size="sm" />
+            <Badge variant="SAVED" size="sm" />
+            <Badge variant="TRAINING" size="sm" />
+            <Badge variant="UNVERIFIED" size="sm" />
           </div>
         </div>
       </section>

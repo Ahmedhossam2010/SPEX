@@ -397,6 +397,79 @@ export interface TranslationDictionary {
   provenanceSnapshotBanner: string;
   provenanceVerifiedCacheBanner: string;
   provenanceBlockedPassportNotice: string;
+
+  // Redesign: Hero Story, Sound, Tour & WiseView Scientist Toolbox
+  heroHeadline: string;
+  heroSubcopy: string;
+  heroPreviewLabel: string;
+  heroPreviewBlinkBtn: string;
+  heroCreaturesTitle: string;
+  heroCreaturesHint: string;
+  creatureTagBarnard: string;
+  creatureTagWise0855: string;
+  creatureTagEpsilonIndi: string;
+  creatureTagRwAur: string;
+  creatureTagRDra: string;
+  difficultyLabel: string;
+  soundMuted: string;
+  soundEnabled: string;
+  tourSkip: string;
+  tourStep1Title: string;
+  tourStep1Body: string;
+  tourStep2Title: string;
+  tourStep2Body: string;
+  tourStep3Title: string;
+  tourStep3Body: string;
+  btnCopyLink: string;
+  btnLinkCopied: string;
+  btnSavePostcard: string;
+  loadingScanningSky: string;
+  loadingFramesArriving: string;
+  sciGroupView: string;
+  sciGroupArithmetic: string;
+  sciGroupBands: string;
+  sciGroupOverlays: string;
+  sciGroupPlots: string;
+  sciInvertColors: string;
+  sciSmoothCrossfade: string;
+  sciScaleGlobal: string;
+  sciScaleFrame: string;
+  sciDiffRaw: string;
+  sciDiffEp1: string;
+  sciDiffMedian: string;
+  sciCoadd: string;
+  sciShortcutsTitle: string;
+  sciShortcutSpace: string;
+  sciShortcutArrows: string;
+  sciShortcutBlink: string;
+  sciShortcutLock: string;
+  sciShortcutQuestion: string;
+  sciMetadataDrawer: string;
+  sciToolsDrawer: string;
+  dqCleanFrame: string;
+  dqCosmicRayHint: string;
+  dqSaturatedHint: string;
+
+  // Phase 1: Gesture Viewer + "Fly me to..." Search
+  flySearchLabel: string;
+  flySearchPlaceholder: string;
+  flySearchBtn: string;
+  flySurpriseMe: string;
+  flyResolvingSimbad: string;
+  flyNoSuggestions: string;
+  flyCheckingCoverage: string;
+  flyNoCoverageHere: string;
+  flyTryNearest: string;
+  flyIntoSkyBtn: string;
+  gestureHintTitle: string;
+  gestureHintSubtitle: string;
+  gestureDragTime: string;
+  gestureDragWave: string;
+  gesturePinchReset: string;
+  gestureReplayAria: string;
+  gestureResetViewAria: string;
+  honestyDisplaySmoothingBadge: string;
+  explorerEdgeSwipeHint: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -817,6 +890,80 @@ export const translations: Record<Language, TranslationDictionary> = {
       'Using SHA-256 & header-verified local FITS cutouts paired with fresh IRSA TAP metadata.',
     provenanceBlockedPassportNotice:
       'Official Discovery Passport / Discovery Card export is blocked for non-live, stale, demo, or unverified data.',
+
+    // Redesign: Hero Story, Sound, Tour & WiseView Scientist Toolbox
+    heroHeadline: 'Watch the real sky change. Catch a moving star.',
+    heroSubcopy:
+      'Real infrared space photos stacked over time — flip through them to spot what moves, dims, or flares.',
+    heroPreviewLabel: 'Live Sky Preview',
+    heroPreviewBlinkBtn: 'Blink preview',
+    heroCreaturesTitle: 'Choose a cosmic creature to track',
+    heroCreaturesHint: 'Tap any star card to fly right into its sky.',
+    creatureTagBarnard: 'Speedy Neighbor',
+    creatureTagWise0855: 'Ice-Cold Nomad',
+    creatureTagEpsilonIndi: 'Cold Twins',
+    creatureTagRwAur: 'Dusty Newborn',
+    creatureTagRDra: 'Breathing Giant',
+    difficultyLabel: 'Difficulty',
+    soundMuted: 'Sound off',
+    soundEnabled: 'Sound on',
+    tourSkip: 'Skip guide',
+    tourStep1Title: '1. Press Play the sky',
+    tourStep1Body: 'SPHEREx takes photos weeks apart. Press Play to watch them flip like a movie!',
+    tourStep2Title: '2. Spot what moved!',
+    tourStep2Body: 'Tap "Show what changed" — unchanging stars fade away so moving objects light up.',
+    tourStep3Title: '3. You found a cosmic mover!',
+    tourStep3Body: 'Awesome! Save your Discovery Postcard or ask SPEX what this star is doing.',
+    btnCopyLink: 'Copy link',
+    btnLinkCopied: 'Link copied',
+    btnSavePostcard: 'Save postcard',
+    loadingScanningSky: 'SPHEREx is scanning this patch of sky...',
+    loadingFramesArriving: 'Receiving infrared frames',
+    sciGroupView: 'View',
+    sciGroupArithmetic: 'Arithmetic',
+    sciGroupBands: 'Bands & 102 LVF',
+    sciGroupOverlays: 'Overlays & Sky',
+    sciGroupPlots: 'Plots',
+    sciInvertColors: 'Invert',
+    sciSmoothCrossfade: 'Smooth cross-fade',
+    sciScaleGlobal: 'Per-band scale',
+    sciScaleFrame: 'Per-frame scale',
+    sciDiffRaw: 'Raw',
+    sciDiffEp1: 'Diff vs Ep1',
+    sciDiffMedian: 'Diff vs Median',
+    sciCoadd: 'Co-add',
+    sciShortcutsTitle: 'Keyboard Shortcuts',
+    sciShortcutSpace: 'Play or Pause timeline',
+    sciShortcutArrows: 'Previous / Next frame',
+    sciShortcutBlink: 'Blink Epoch 1 ↔ Last',
+    sciShortcutLock: 'Lock viewport zoom & pan',
+    sciShortcutQuestion: 'Toggle this cheat-sheet',
+    sciMetadataDrawer: 'Frame Info & Quality Flags',
+    sciToolsDrawer: 'Toolbox',
+    dqCleanFrame: 'Clean observation — no bad pixels or cosmic rays flagged.',
+    dqCosmicRayHint: 'Cosmic ray strike detected — bright single-pixel spike is NOT a real star.',
+    dqSaturatedHint: 'Bright star saturated the detector core — central flux is clipped.',
+
+    // Phase 1: Gesture Viewer + "Fly me to..." Search
+    flySearchLabel: 'Fly me to a star, coordinates, or cosmic question',
+    flySearchPlaceholder: 'Fly me to… (e.g. Barnard’s Star, Sirius, fastest star, or 269.45, 4.69)',
+    flySearchBtn: 'Preview sky',
+    flySurpriseMe: 'Surprise me',
+    flyResolvingSimbad: 'Asking SIMBAD sky catalog…',
+    flyNoSuggestions: 'Try a star name, RA/Dec coordinates, or keyword like "brown dwarf".',
+    flyCheckingCoverage: 'Checking SPHEREx sky coverage…',
+    flyNoCoverageHere: 'No SPHEREx frames here yet.',
+    flyTryNearest: 'Fly to nearest covered',
+    flyIntoSkyBtn: 'Fly there',
+    gestureHintTitle: 'Touch or drag the sky directly',
+    gestureHintSubtitle: 'Explore time and infrared colors right on the image.',
+    gestureDragTime: 'Drag left / right to scrub through time frames',
+    gestureDragWave: 'Drag up / down to sweep color bands (0.75 → 5.0 µm)',
+    gesturePinchReset: 'Pinch or scroll to zoom · Double-tap to reset',
+    gestureReplayAria: 'Show gesture guide',
+    gestureResetViewAria: 'Reset sky zoom and frame',
+    honestyDisplaySmoothingBadge: 'Display smoothing only – measurements use raw data',
+    explorerEdgeSwipeHint: 'Drag ↔ time · ↕ color',
   },
   ar: {
     // Brand & Top Navigation
@@ -1235,5 +1382,79 @@ export const translations: Record<Language, TranslationDictionary> = {
       'استخدام ملفات FITS محلية موثقة بتجزئة SHA-256 وفحص الترويسة مع بيانات TAP حديثة.',
     provenanceBlockedPassportNotice:
       'تم حظر تصدير جواز أو بطاقة الاكتشاف الرسمية للبيانات المرجعية أو القديمة أو التجريبية أو غير الموثقة.',
+
+    // Redesign: Hero Story, Sound, Tour & WiseView Scientist Toolbox
+    heroHeadline: 'شاهد السماء الحقيقية تتغير. اصطد نجماً متحركاً.',
+    heroSubcopy:
+      'صور فضائية حقيقية بالأشعة تحت الحمراء عبر الزمن — شغّلها كدفتر صور لتكتشف ما يتحرك أو يتوهج.',
+    heroPreviewLabel: 'معاينة السماء الحية',
+    heroPreviewBlinkBtn: 'معاينة الوميض',
+    heroCreaturesTitle: 'اختر هدفاً كونياً لتتبعه',
+    heroCreaturesHint: 'اضغط على أي بطاقة لتنطلق مباشرة إلى رصد السماء.',
+    creatureTagBarnard: 'الجار السريع',
+    creatureTagWise0855: 'الرحّال المتجمد',
+    creatureTagEpsilonIndi: 'التوأم البارد',
+    creatureTagRwAur: 'الرضيع المغبّر',
+    creatureTagRDra: 'العملاق المتنفس',
+    difficultyLabel: 'الصعوبة',
+    soundMuted: 'الصوت مكتوم',
+    soundEnabled: 'الصوت مفعّل',
+    tourSkip: 'تخطي الدليل',
+    tourStep1Title: '1. اضغط شغّل السماء',
+    tourStep1Body: 'يلتقط تلسكوب سبيراكس صوراً متباعدة زمنياً. اضغط تشغيل لتشاهدها كفيلم!',
+    tourStep2Title: '2. التقط ما تحرك!',
+    tourStep2Body: 'اضغط "اعرض ما تغير" فتختفي النجوم الثابتة وتظهر الأجرام المتحركة بوضوح.',
+    tourStep3Title: '3. اكتشفت جرماً متحركاً!',
+    tourStep3Body: 'رائع! احفظ بطاقة الاكتشاف أو اسأل سبيكس عن سر هذا الجرم.',
+    btnCopyLink: 'نسخ الرابط',
+    btnLinkCopied: 'تم نسخ الرابط',
+    btnSavePostcard: 'حفظ البطاقة',
+    loadingScanningSky: 'سبيراكس يمسح هذه الرقعة من السماء...',
+    loadingFramesArriving: 'جاري استلام الإطارات تحت الحمراء',
+    sciGroupView: 'العرض',
+    sciGroupArithmetic: 'الحساب الصوري',
+    sciGroupBands: 'النطاقات والطيف 102',
+    sciGroupOverlays: 'الطبقات والخريطة',
+    sciGroupPlots: 'الرسوم البيانية',
+    sciInvertColors: 'عكس الألوان',
+    sciSmoothCrossfade: 'تلاشي متدرج',
+    sciScaleGlobal: 'مقياس النطاق',
+    sciScaleFrame: 'مقياس كل إطار',
+    sciDiffRaw: 'خام',
+    sciDiffEp1: 'فرق مع الإطار 1',
+    sciDiffMedian: 'فرق مع الوسيط',
+    sciCoadd: 'تجميع متوسط',
+    sciShortcutsTitle: 'اختصارات لوحة المفاتيح',
+    sciShortcutSpace: 'تشغيل أو إيقاف التسلسل',
+    sciShortcutArrows: 'الإطار السابق / التالي',
+    sciShortcutBlink: 'وميض الإطار الأول والأخير',
+    sciShortcutLock: 'تثبيت التكبير والموقع',
+    sciShortcutQuestion: 'إظهار قائمة الاختصارات',
+    sciMetadataDrawer: 'بيانات الإطار وجودة الحساس',
+    sciToolsDrawer: 'صندوق الأدوات',
+    dqCleanFrame: 'رصد نقي — لا توجد بكسلات تالفة أو أشعة كونية مرصودة.',
+    dqCosmicRayHint: 'تم رصد ضربة أشعة كونية — الومضة ذات البكسل الواحد ليست نجماً حقيقياً.',
+    dqSaturatedHint: 'نجم ساطع جداً أشبع قلب الحساس — قد يظهر القياس المركزي مقطوعاً.',
+
+    // Phase 1: Gesture Viewer + "Fly me to..." Search
+    flySearchLabel: 'انتقل بي إلى نجم أو إحداثيات أو سؤال كوني',
+    flySearchPlaceholder: 'انتقل بي إلى… (مثلاً: نجم بارنارد، الشعرى، أسرع نجم، أو 269.45, 4.69)',
+    flySearchBtn: 'معاينة السماء',
+    flySurpriseMe: 'فاجئني',
+    flyResolvingSimbad: 'جاري البحث في كتالوج سيمباد الفلكي…',
+    flyNoSuggestions: 'جرّب اسم نجم، أو إحداثيات السماء، أو وصفاً مثل «قزم بني».',
+    flyCheckingCoverage: 'جاري فحص تغطية تلسكوب سبيراكس…',
+    flyNoCoverageHere: 'لا توجد لقطات لسبيراكس في هذه البقعة بعد.',
+    flyTryNearest: 'انتقل لأقرب هدف مغطى',
+    flyIntoSkyBtn: 'انطلق إلى هناك',
+    gestureHintTitle: 'تفاعل مباشرة مع صورة السماء',
+    gestureHintSubtitle: 'تحكّم في الزمن والألوان تحت الحمراء بسحب الصورة.',
+    gestureDragTime: 'اسحب يميناً أو يساراً للتنقل بين اللقطات الزمنية',
+    gestureDragWave: 'اسحب لأعلى أو لأسفل لتغيير الطول الموجي (0.75 → 5.0 ميكرومتر)',
+    gesturePinchReset: 'قرّب بإصبعين أو بالعجلة للتكبير · انقر مرتين لإعادة الضبط',
+    gestureReplayAria: 'عرض دليل الإيماءات',
+    gestureResetViewAria: 'إعادة ضبط التكبير والإطار',
+    honestyDisplaySmoothingBadge: 'تنعيم للعرض فقط — القياسات تستخدم البيانات الخام الأصلية',
+    explorerEdgeSwipeHint: 'اسحب ↔ الزمن · ↕ اللون',
   },
 };

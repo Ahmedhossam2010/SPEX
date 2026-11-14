@@ -1,6 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Sparkles, Compass, Share2, ArrowRight, Snowflake, Activity } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CheckCircle2,
+  Sparkles,
+  Compass,
+  Share2,
+  ArrowRight,
+  Snowflake,
+  Activity,
+  Star,
+  BookOpen,
+} from 'lucide-react';
 import { Language, translations } from '../../utils/translations';
+import { gameAudio } from '../../game/utils/gameAudio';
+import { usePrefersReducedMotion } from '../../design/motionKit';
 
 export type ExplorerMissionId = 'motion' | 'brown_dwarf' | 'noise_check';
 
@@ -17,6 +29,7 @@ export interface ExplorerMissionsProps {
   onSelectTargetCase: (caseId: string) => void;
   onOpenPostcard: () => void;
   canOpenPostcard: boolean;
+  onOpenExplorerLog?: () => void;
 }
 
 interface MissionSpec {
@@ -134,6 +147,16 @@ const MISSIONS: MissionSpec[] = [
 const MISSIONS_STORAGE_KEY = 'spex_explorer_missions';
 const MILESTONES_STORAGE_KEY = 'spex_explorer_milestones';
 
+const CONFETTI_PARTICLES = [
+  { tx: '-54px', ty: '-58px', rot: '-140deg', color: '#F59E0B' },
+  { tx: '58px', ty: '-52px', rot: '160deg', color: '#38BDF8' },
+  { tx: '-32px', ty: '-74px', rot: '110deg', color: '#34D399' },
+  { tx: '34px', ty: '-70px', rot: '-120deg', color: '#FBBF24' },
+  { tx: '-68px', ty: '-22px', rot: '-90deg', color: '#FB7185' },
+  { tx: '66px', ty: '-18px', rot: '95deg', color: '#38BDF8' },
+  { tx: '0px', ty: '-82px', rot: '200deg', color: '#F59E0B' },
+];
+
 function readStoredIds(key: string, fallback: string[] = []): string[] {
   if (typeof window === 'undefined') return fallback;
   try {
@@ -152,13 +175,17 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
   onSelectTargetCase,
   onOpenPostcard,
   canOpenPostcard,
+  onOpenExplorerLog,
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];
+  const reducedMotion = usePrefersReducedMotion();
   const [selectedMissionId, setSelectedMissionId] = useState<ExplorerMissionId>('motion');
   const [completedMissions, setCompletedMissions] = useState<ExplorerMissionId[]>(() =>
     readStoredIds(MISSIONS_STORAGE_KEY, []) as ExplorerMissionId[]
   );
+  const [celebrating, setCelebrating] = useState(false);
+  const prevDoneRef = useRef<number>(completedMissions.length);
 
   // Compute live step flags per mission from real actions on matching targets
   const missionStates = useMemo(() => {
@@ -190,7 +217,7 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
     return result;
   }, [activeCaseId, progressByCase, completedMissions]);
 
-  // Persist mission completions + sync Space Explorer's Log milestones
+  // Persist mission completions + trigger celebration confetti & optional chime
   useEffect(() => {
     const newlyCompleted = MISSIONS.filter(
       (m) => missionStates[m.id].done && !completedMissions.includes(m.id)
@@ -202,6 +229,15 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
     ) as ExplorerMissionId[];
     setCompletedMissions(nextMissions);
 
+    if (nextMissions.length > prevDoneRef.current) {
+      prevDoneRef.current = nextMissions.length;
+      gameAudio.playSuccess();
+      if (!reducedMotion) {
+        setCelebrating(true);
+        setTimeout(() => setCelebrating(false), 1200);
+      }
+    }
+
     try {
       localStorage.setItem(MISSIONS_STORAGE_KEY, JSON.stringify(nextMissions));
       const existingMilestones = readStoredIds(MILESTONES_STORAGE_KEY, ['first_look']);
@@ -211,9 +247,9 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
       localStorage.setItem(MILESTONES_STORAGE_KEY, JSON.stringify(nextMilestones));
       window.dispatchEvent(new Event('spex-missions-updated'));
     } catch {
-      // Ignore storage quota errors
+      // Ignore storage errors
     }
-  }, [missionStates, completedMissions]);
+  }, [missionStates, completedMissions, reducedMotion]);
 
   const activeMission = MISSIONS.find((m) => m.id === selectedMissionId) || MISSIONS[0];
   const activeState = missionStates[activeMission.id];
@@ -242,24 +278,73 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
     <section
       data-testid="explorer-missions-section"
       aria-label={t.missionsHeading}
-      className="obs-glass rounded-2xl p-3 sm:p-4 border border-white/10 space-y-3"
+      className="relative obs-glass rounded-2xl p-4 sm:p-5 border border-white/10 space-y-4 overflow-hidden"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
-      {/* Header */}
+      {/* Celebration Confetti Burst */}
+      {celebrating && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-1/2 top-1/2 z-30"
+        >
+          {CONFETTI_PARTICLES.map((p, idx) => (
+            <span
+              key={idx}
+              className="spex-confetti-piece absolute w-2.5 h-2.5 rounded-sm"
+              style={{
+                backgroundColor: p.color,
+                ['--tx' as string]: p.tx,
+                ['--ty' as string]: p.ty,
+                ['--rot' as string]: p.rot,
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Header + Stars Badge Count */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <Compass className="w-4 h-4 text-[#FFB900] shrink-0" />
-          <h2 className="text-sm sm:text-base font-bold text-slate-100">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Compass className="w-5 h-5 text-amber-400 shrink-0" />
+          <h2 className="font-display text-base sm:text-lg font-bold text-slate-50">
             {t.missionsHeading}
           </h2>
         </div>
-        <span className="text-xs font-mono font-semibold text-emerald-300">
-          {completedCount} / {MISSIONS.length} {t.missionsDoneLabel}
-        </span>
+
+        <div className="flex items-center gap-3">
+          {/* Star Badges Progress Path Indicator */}
+          <div className="flex items-center gap-1" aria-label={`${completedCount} / ${MISSIONS.length} ${t.missionsDoneLabel}`}>
+            {MISSIONS.map((m) => {
+              const done = missionStates[m.id].done;
+              return (
+                <Star
+                  key={m.id}
+                  className={`w-4 h-4 transition-transform ${
+                    done ? 'fill-amber-400 text-amber-400 scale-110' : 'text-slate-600'
+                  }`}
+                />
+              );
+            })}
+            <span className="ms-1 text-xs font-mono font-semibold text-emerald-300 tabular-nums">
+              {completedCount}/{MISSIONS.length} {t.missionsDoneLabel}
+            </span>
+          </div>
+
+          {onOpenExplorerLog && (
+            <button
+              type="button"
+              onClick={onOpenExplorerLog}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-semibold text-sky-300 flex items-center gap-1.5 cursor-pointer transition"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>{isRtl ? 'سجل المستكشف' : "Explorer's Log"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* 3 Mission Selector Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {/* Progress Path Connector + 3 Mission Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         {MISSIONS.map((m, idx) => {
           const IconComp = m.icon;
           const st = missionStates[m.id];
@@ -269,23 +354,26 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
               key={m.id}
               type="button"
               data-testid={`mission-tab-${m.id}`}
-              onClick={() => setSelectedMissionId(m.id)}
-              className={`p-2.5 rounded-xl border text-start transition cursor-pointer flex items-start gap-2.5 min-w-0 ${
+              onClick={() => {
+                gameAudio.playClick();
+                setSelectedMissionId(m.id);
+              }}
+              className={`min-h-[56px] p-3 rounded-xl border text-start transition cursor-pointer flex items-center gap-3 min-w-0 ${
                 isSelected
-                  ? 'bg-[#00D3F3]/15 border-[#00D3F3]/60 text-white'
+                  ? 'bg-sky-500/15 border-sky-400/70 text-white shadow-[0_0_16px_rgba(56,189,248,0.14)]'
                   : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.07]'
               }`}
             >
               <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                   st.done
                     ? 'bg-emerald-500/20 text-emerald-300'
                     : isSelected
-                    ? 'bg-[#00D3F3]/20 text-[#00D3F3]'
+                    ? 'bg-sky-500/20 text-sky-300'
                     : 'bg-white/10 text-slate-400'
                 }`}
               >
-                {st.done ? <CheckCircle2 className="w-4 h-4" /> : <IconComp className="w-4 h-4" />}
+                {st.done ? <CheckCircle2 className="w-4.5 h-4.5" /> : <IconComp className="w-4.5 h-4.5" />}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-[11px] font-mono text-slate-400">
@@ -300,11 +388,11 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
         })}
       </div>
 
-      {/* Active Mission Interactive Steps */}
-      <div className="rounded-xl bg-black/40 border border-white/10 p-3 sm:p-4 space-y-3">
+      {/* Active Mission Interactive Steps Path */}
+      <div className="rounded-xl bg-black/40 border border-white/10 p-3.5 sm:p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
-            <h3 className="text-sm sm:text-base font-bold text-slate-100">
+            <h3 className="text-sm sm:text-base font-bold text-slate-50">
               {isRtl ? activeMission.titleAr : activeMission.titleEn}
             </h3>
             <p className="text-xs text-slate-300 mt-0.5">
@@ -316,7 +404,7 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
               type="button"
               data-testid={`mission-jump-${activeMission.id}`}
               onClick={() => onSelectTargetCase(activeMission.defaultCaseId)}
-              className="px-3 py-1.5 rounded-xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
+              className="min-h-[44px] px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0"
             >
               <span>{isRtl ? activeMission.jumpLabelAr : activeMission.jumpLabelEn}</span>
               <ArrowRight className={`w-3.5 h-3.5 ${isRtl ? 'rotate-180' : ''}`} />
@@ -325,15 +413,15 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
         </div>
 
         {/* 3 Reactive Steps */}
-        <ol className="space-y-2">
+        <ol className="grid grid-cols-1 md:grid-cols-3 gap-2">
           {steps.map((step) => (
             <li
               key={step.num}
               data-testid={`mission-step-${step.num}`}
               data-complete={step.done ? 'true' : 'false'}
-              className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs sm:text-sm transition ${
+              className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs sm:text-sm transition ${
                 step.done
-                  ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-100'
+                  ? 'bg-emerald-500/15 border-emerald-500/45 text-emerald-100'
                   : 'bg-white/[0.03] border-white/10 text-slate-300'
               }`}
             >
@@ -355,7 +443,7 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
         {activeState.done && (
           <div
             data-testid="mission-learned-card"
-            className="rounded-xl bg-emerald-950/35 border border-emerald-400/40 p-3.5 space-y-2.5"
+            className="rounded-xl bg-emerald-950/40 border border-emerald-400/45 p-3.5 sm:p-4 space-y-2.5 animate-slide-up"
           >
             <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
@@ -374,7 +462,7 @@ export const ExplorerMissions: React.FC<ExplorerMissionsProps> = ({
                   type="button"
                   data-testid="mission-postcard-btn"
                   onClick={onOpenPostcard}
-                  className="px-3.5 py-2 rounded-xl bg-[#00D3F3] hover:bg-cyan-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
+                  className="min-h-[44px] px-4 py-2 rounded-xl bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer"
                 >
                   <Share2 className="w-4 h-4 shrink-0" />
                   <span>{t.missionMakePostcard}</span>

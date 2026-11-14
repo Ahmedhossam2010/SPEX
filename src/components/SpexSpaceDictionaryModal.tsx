@@ -205,7 +205,7 @@ export const SpexSpaceDictionaryModal: React.FC<SpexSpaceDictionaryModalProps> =
                   }`}
                 >
                   <span>{isRtl ? cat.nameAr : cat.nameEn}</span>
-                  <span className="opacity-70 ml-1 text-[10px]">({count})</span>
+                  <span className="opacity-70 ms-1 text-[10px]">({count})</span>
                 </button>
               );
             })}
@@ -217,7 +217,7 @@ export const SpexSpaceDictionaryModal: React.FC<SpexSpaceDictionaryModalProps> =
         {/* ================================================================= */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
           {/* LEFT COLUMN: TERMS LIST (Scrollable) */}
-          <div className="w-full md:w-72 lg:w-80 shrink-0 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto p-2 sm:p-3 space-y-1.5 max-h-48 md:max-h-none bg-[#080B12]">
+          <div className="w-full md:w-72 lg:w-80 shrink-0 border-b md:border-b-0 md:border-e border-white/10 overflow-y-auto p-2 sm:p-3 space-y-1.5 max-h-48 md:max-h-none bg-[#080B12]">
             {filteredTerms.length === 0 ? (
               <div className="text-center py-8 text-slate-500 font-mono text-xs">
                 <HelpCircle className="w-6 h-6 mx-auto mb-2 opacity-40" />
@@ -234,7 +234,7 @@ export const SpexSpaceDictionaryModal: React.FC<SpexSpaceDictionaryModalProps> =
                       setActiveTermId(term.id);
                       if (onSelectTerm) onSelectTerm(term.id);
                     }}
-                    className={`w-full p-2.5 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer select-none ${
+                    className={`w-full p-2.5 rounded-xl text-start transition flex items-center justify-between gap-2 cursor-pointer select-none ${
                       isSelected
                         ? 'bg-amber-500/15 border border-amber-500/40 text-amber-300 shadow-sm'
                         : 'bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-slate-300'
@@ -255,7 +255,7 @@ export const SpexSpaceDictionaryModal: React.FC<SpexSpaceDictionaryModalProps> =
                         {isRtl ? term.simpleNameAr : term.simpleNameEn}
                       </div>
                     </div>
-                    <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform ${isSelected ? 'text-amber-400 translate-x-0.5' : 'text-slate-600'}`} />
+                    <ChevronRight className={`w-3.5 h-3.5 shrink-0 transition-transform rtl:rotate-180 ${isSelected ? 'text-amber-400 translate-x-0.5' : 'text-slate-600'}`} />
                   </button>
                 );
               })
@@ -298,7 +298,7 @@ export const SpexSpaceDictionaryModal: React.FC<SpexSpaceDictionaryModalProps> =
 
                 {/* Explanation Levels Filter Controls */}
                 <div className="flex items-center gap-1.5 border-b border-white/10 pb-2 text-xs font-mono">
-                  <span className="text-slate-500 mr-2">{isRtl ? 'مستوى الشرح:' : 'Explanation Depth:'}</span>
+                  <span className="text-slate-500 me-2">{isRtl ? 'مستوى الشرح:' : 'Explanation Depth:'}</span>
                   <button
                     type="button"
                     onClick={() => setActiveExplanationLevel('all')}

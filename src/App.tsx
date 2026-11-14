@@ -12,6 +12,7 @@ import { Language, translations } from './utils/translations';
 import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal';
 import { FamousObjectsView } from './components/FamousObjectsView';
 import { FamousObject, getFamousObjectById } from './science/famousObjects';
+import { FlyTargetSelection } from './ui/FlyToSearch';
 
 export type AppTab = 'home' | 'explore' | 'famous' | 'game' | 'cases' | 'about';
 
@@ -147,6 +148,14 @@ export function App() {
       document.documentElement.classList.add('dark');
     }
   }, []);
+
+  // Keep document lang & dir synced for accessible RTL mirroring
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = language;
+      document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr';
+    }
+  }, [language]);
 
   const handleToggleTheme = () => {
     setTheme((prev) => {
@@ -413,12 +422,41 @@ export function App() {
     loadCase('', { ra, dec }, { sizePix });
   };
 
+  const handleFlySelection = (selection: FlyTargetSelection) => {
+    setFallbackQuery(null);
+    const sizePix = selection.sizePix || 64;
+    setActiveSizePix(sizePix);
+    const flyTarget: ChallengeTarget = {
+      id: selection.id,
+      name: selection.name,
+      ra: selection.ra,
+      dec: selection.dec,
+      constellation: '',
+      scienceType: selection.source,
+      description: selection.description,
+      qr2Coverage: selection.knownCovered ? 'covered' : 'outside_footprint',
+      angularDistanceDegToNEP: 0,
+      recommendedBenchmarkId: selection.caseId || selection.id,
+      expectedBehavior: selection.description,
+    };
+    setSelectedTarget(flyTarget);
+    setExploreScreen('hunt');
+    setActiveTab('explore');
+    if (selection.caseId) {
+      loadCase(selection.caseId, undefined, { sizePix });
+    } else {
+      loadCase('', { ra: selection.ra, dec: selection.dec }, { sizePix });
+    }
+  };
+
   const handleDetectorChange = (det: string) => {
     setActiveDetector(det);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      params.set('band', det);
-      window.history.replaceState({ ...window.history.state }, '', `${window.location.pathname}?${params.toString()}`);
+      if (det) params.set('band', det);
+      else params.delete('band');
+      const qs = params.toString();
+      window.history.replaceState({ ...window.history.state }, '', qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
     }
   };
 
@@ -507,6 +545,7 @@ export function App() {
         {activeTab === 'home' && (
           <HomeView
             onStartExplore={handleStartExplore}
+            onFlySelection={handleFlySelection}
             onOpenAbout={() => setActiveTab('about')}
             onOpenCases={() => setActiveTab('cases')}
             onPlayGame={() => setActiveTab('game')}
@@ -545,24 +584,27 @@ export function App() {
         )}
 
         {activeTab === 'explore' && exploreScreen === 'hunt' && (
-          <ExploreView
-            currentResult={currentResult}
-            isLoading={isLoading}
-            onSearchTarget={handleSearchTarget}
-            onSelectCase={handleSelectCase}
-            cases={cases}
-            language={language}
-            fallbackQuery={fallbackQuery}
-            onClearFallback={handleClearFallback}
-            onBackToSky={() => setExploreScreen('sky')}
-            isScientistMode={isScientistMode}
-            onToggleScientistMode={handleToggleScientistMode}
-            selectedTarget={selectedTarget}
-            initialDetector={activeDetector}
-            onDetectorChange={handleDetectorChange}
-            activeSizePix={activeSizePix}
-            activeCaseId={activeCaseId}
-          />
+          <div className="spex-flythrough-in">
+            <ExploreView
+              currentResult={currentResult}
+              isLoading={isLoading}
+              onSearchTarget={handleSearchTarget}
+              onFlySelection={handleFlySelection}
+              onSelectCase={handleSelectCase}
+              cases={cases}
+              language={language}
+              fallbackQuery={fallbackQuery}
+              onClearFallback={handleClearFallback}
+              onBackToSky={() => setExploreScreen('sky')}
+              isScientistMode={isScientistMode}
+              onToggleScientistMode={handleToggleScientistMode}
+              selectedTarget={selectedTarget}
+              initialDetector={activeDetector}
+              onDetectorChange={handleDetectorChange}
+              activeSizePix={activeSizePix}
+              activeCaseId={activeCaseId}
+            />
+          </div>
         )}
 
         {activeTab === 'famous' && (

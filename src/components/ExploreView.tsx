@@ -3,38 +3,29 @@ import {
   ArrowLeft,
   Sparkles,
   Share2,
-  Clock,
-  Palette,
-  ShieldCheck,
-  ShieldAlert,
-  Users,
   Compass,
-  Maximize2,
   Layers,
   Activity,
   Globe,
-  Sliders,
-  CheckCircle2,
-  AlertTriangle,
-  Info,
   Search,
   Film,
   Play,
   ChevronRight,
   ChevronDown,
-  RotateCcw,
+  X,
+  BookOpen,
+  Award,
 } from 'lucide-react';
+import { gameAudio } from '../game/utils/gameAudio';
 import {
   CandidateDetection,
   InvestigationResult,
-  SPHERExObservation,
   ChallengeTarget,
 } from '../science/types';
 import {
   normalizeSourceClassification,
   getSourceClassificationMeta,
 } from '../science/provenance';
-import { parseCoordinateInput } from '../science/challengeTargets';
 import { ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { AstronomicalSkyViewport } from './Explore/AstronomicalSkyViewport';
 import { FourLensesDock } from './Explore/FourLensesDock';
@@ -58,14 +49,21 @@ import { SpectralExplorerModal } from './SpectralExplorerModal';
 import { ObservationItem, ImageMathMode } from './Explore/ObservationTimelineSelector';
 import { LensMode } from '../design/components/LensButton';
 import { Language, translations } from '../utils/translations';
-import { BookOpen, Award } from 'lucide-react';
+import { FlyToSearch, FlyTargetSelection } from '../ui/FlyToSearch';
 
 const BENCHMARK_PRESETS = [
-  { caseId: 'case-wise-0855', targetParam: 'wise-0855', label: 'WISE 0855', sub: '8″/yr Y-Dwarf', ra: 133.81890825, dec: -7.247048 },
-  { caseId: 'case-barnards-star', targetParam: 'barnards-star', label: "Barnard's Star", sub: '10.4″/yr M4V', ra: 269.45207695, dec: 4.69336497 },
-  { caseId: 'case-epsilon-indi', targetParam: 'epsilon-indi', label: 'Epsilon Indi', sub: '4.7″/yr T1+T6', ra: 331.04414659, dec: -56.7828442 },
-  { caseId: 'case-rw-aur', targetParam: 'rw-aurigae', label: 'RW Aurigae', sub: 'YSO Accretion', ra: 76.95652603, dec: 30.40143817 },
-  { caseId: 'case-r-dra', targetParam: 'r-draconis', label: 'R Draconis', sub: 'Mira Giant', ra: 248.16761083, dec: 66.75497942 },
+  { caseId: 'case-wise-0855', targetParam: 'wise-0855', label: 'WISE 0855', labelAr: 'WISE 0855', sub: '8″/yr Y-Dwarf', ra: 133.81890825, dec: -7.247048, stars: 2, kind: 'brown_dwarf' as const },
+  { caseId: 'case-barnards-star', targetParam: 'barnards-star', label: "Barnard's Star", labelAr: 'نجم برنارد', sub: '10.4″/yr M4V', ra: 269.45207695, dec: 4.69336497, stars: 1, kind: 'fast_star' as const },
+  { caseId: 'case-epsilon-indi', targetParam: 'epsilon-indi', label: 'Epsilon Indi', labelAr: 'إبسيلون إندي', sub: '4.7″/yr T1+T6', ra: 331.04414659, dec: -56.7828442, stars: 2, kind: 'twins' as const },
+  { caseId: 'case-rw-aur', targetParam: 'rw-aurigae', label: 'RW Aurigae', labelAr: 'RW Aurigae', sub: 'YSO Accretion', ra: 76.95652603, dec: 30.40143817, stars: 3, kind: 'young_star' as const },
+  { caseId: 'case-r-dra', targetParam: 'r-draconis', label: 'R Draconis', labelAr: 'R Draconis', sub: 'Mira Giant', ra: 248.16761083, dec: 66.75497942, stars: 3, kind: 'giant' as const },
+] as const;
+
+const FOV_PRESETS = [
+  { label: "3.3'", sizePix: 32 },
+  { label: "6.6'", sizePix: 64 },
+  { label: "11.6'", sizePix: 112 },
+  { label: "16.5'", sizePix: 160 },
 ] as const;
 
 const GUIDED_DEMO_STEPS: Array<{
@@ -112,6 +110,7 @@ export interface ExploreViewProps {
   currentResult: InvestigationResult | null;
   isLoading: boolean;
   onSearchTarget: (ra: number, dec: number, sizePix?: number) => void;
+  onFlySelection?: (selection: FlyTargetSelection) => void;
   onSelectCase: (caseId: string, options?: { sizePix?: number; epochPair?: string }) => void;
   cases: Array<{ id: string; title: string; category?: string; ra: number; dec: number }>;
   language: Language;
@@ -131,11 +130,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   currentResult,
   isLoading,
   onSearchTarget,
+  onFlySelection,
   onSelectCase,
   cases,
   language,
-  fallbackQuery,
-  onClearFallback,
+  fallbackQuery: _fallbackQuery,
+  onClearFallback: _onClearFallback,
   onBackToSky,
   isScientistMode = false,
   onToggleScientistMode,
@@ -150,8 +150,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
 
   // Primary view mode: 'flipbook' (default WiseView-style P0 player + Aladin) vs 'curtain' (4-Lens Curtain Lab)
   const [viewMode, setViewMode] = useState<'flipbook' | 'curtain'>('flipbook');
-  const [coordInput, setCoordInput] = useState<string>('');
-  const [coordError, setCoordError] = useState<string | null>(null);
+  const [showFlySearchSheet, setShowFlySearchSheet] = useState<boolean>(false);
   const [guidedDemoStep, setGuidedDemoStep] = useState<number | null>(null);
   const [showCompanion, setShowCompanion] = useState<boolean>(isScientistMode);
   const [spexGuideOpen, setSpexGuideOpen] = useState<boolean>(false);
@@ -485,18 +484,25 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     activePresetCoords?.dec ??
     -7.245146;
 
-  const handleCoordinateSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = parseCoordinateInput(coordInput);
-    if (!parsed) {
-      setCoordError(isRtl ? 'صيغة غير صالحة (مثال: 133.795, -7.245 أو 08h55m10.8s -07d14m42.5s)' : 'Enter decimal (133.795, -7.245) or sexagesimal (08h55m10.8s -07d14m42.5s)');
-      return;
-    }
-    setCoordError(null);
-    setGuidedDemoStep(null);
-    setPendingTarget({ ra: parsed.ra, dec: parsed.dec });
-    onSearchTarget(parsed.ra, parsed.dec, currentSizePix);
-  };
+  const handleFlyFromExplore = useCallback(
+    (selection: FlyTargetSelection) => {
+      setGuidedDemoStep(null);
+      setShowFlySearchSheet(false);
+      setPendingTarget({
+        ra: selection.ra,
+        dec: selection.dec,
+        caseId: selection.caseId,
+      });
+      if (onFlySelection) {
+        onFlySelection(selection);
+      } else if (selection.caseId) {
+        onSelectCase(selection.caseId, { sizePix: selection.sizePix || currentSizePix });
+      } else {
+        onSearchTarget(selection.ra, selection.dec, selection.sizePix || currentSizePix);
+      }
+    },
+    [onFlySelection, onSelectCase, onSearchTarget, currentSizePix]
+  );
 
   const handleStartGuidedDemo = () => {
     setViewMode('flipbook');
@@ -516,6 +522,156 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       onSearchTarget(queryRa, queryDec, sizePix);
     }
   };
+
+  const effectivePostcardResult = useMemo<InvestigationResult | null>(() => {
+    if (currentResult) return currentResult;
+    if (!latestTimeSeriesMeta || !latestTimeSeriesMeta.frames?.length) return null;
+    const f0 = latestTimeSeriesMeta.frames[0];
+    const fLast = latestTimeSeriesMeta.frames[latestTimeSeriesMeta.frames.length - 1] || f0;
+    const w = f0.width || latestTimeSeriesMeta.sizePix || 64;
+    const h = f0.height || latestTimeSeriesMeta.sizePix || 64;
+    const baseStats = { min: 0, max: 1, mean: 0.1, median: 0.05, std: 0.1, robustNoise: 0.05 };
+    const defaultWcs = latestTimeSeriesMeta.referenceWcs || f0.wcs || {
+      crval1: latestTimeSeriesMeta.targetCoords.ra,
+      crval2: latestTimeSeriesMeta.targetCoords.dec,
+      crpix1: w / 2,
+      crpix2: h / 2,
+      cdelt1: -6.2 / 3600,
+      cdelt2: 6.2 / 3600,
+      cd1_1: -6.2 / 3600,
+      cd1_2: 0,
+      cd2_1: 0,
+      cd2_2: 6.2 / 3600,
+      ctype1: 'RA---TAN',
+      ctype2: 'DEC--TAN',
+      equinox: 2000,
+      radesys: 'ICRS',
+      pixelScaleArcsec: 6.2,
+    };
+    return {
+      caseId: activePresetId,
+      sourceMode: latestTimeSeriesMeta.sourceMode,
+      title: targetDisplayName,
+      description:
+        latestTimeSeriesMeta.astrometrySummary?.motionVerdict ||
+        'Multi-epoch SPHEREx infrared time-series inspection.',
+      targetCoords: latestTimeSeriesMeta.targetCoords,
+      fovArcmin: latestTimeSeriesMeta.fovArcmin || 6.6,
+      sizePix: w,
+      epoch1: {
+        metadata: {
+          obs_id: f0.obsId,
+          s_ra: latestTimeSeriesMeta.targetCoords.ra,
+          s_dec: latestTimeSeriesMeta.targetCoords.dec,
+          t_min: f0.mjd,
+          t_max: f0.mjd,
+          date_obs: f0.dateObs,
+          wavelength_um: f0.wavelengthUm,
+          em_min: (f0.wavelengthUm || 1) * 1e-6,
+          em_max: (f0.wavelengthUm || 1) * 1e-6,
+          dataproduct_type: 'image',
+          access_url: '',
+          fits_url: '',
+          access_format: 'application/fits',
+        },
+        width: w,
+        height: h,
+        flux: f0.flux,
+        bunit: 'MJy/sr',
+        stats: baseStats,
+        wcs: defaultWcs,
+      },
+      epoch2: {
+        metadata: {
+          obs_id: fLast.obsId,
+          s_ra: latestTimeSeriesMeta.targetCoords.ra,
+          s_dec: latestTimeSeriesMeta.targetCoords.dec,
+          t_min: fLast.mjd,
+          t_max: fLast.mjd,
+          date_obs: fLast.dateObs,
+          wavelength_um: fLast.wavelengthUm,
+          em_min: (fLast.wavelengthUm || 1) * 1e-6,
+          em_max: (fLast.wavelengthUm || 1) * 1e-6,
+          dataproduct_type: 'image',
+          access_url: '',
+          fits_url: '',
+          access_format: 'application/fits',
+        },
+        width: w,
+        height: h,
+        flux: fLast.flux,
+        bunit: 'MJy/sr',
+        stats: baseStats,
+        wcs: defaultWcs,
+      },
+      difference: {
+        width: w,
+        height: h,
+        diff: [],
+        variance: [],
+        significance: [],
+        stats: { min: 0, max: 0, std: 0, noiseSigma: 1 },
+      },
+      compatibility: {
+        isCompatible: true,
+        timeBaselineDays: latestTimeSeriesMeta.dateRange?.spanDays ?? 0,
+        wavelengthDiffUm: Math.abs((fLast.wavelengthUm || 0) - (f0.wavelengthUm || 0)),
+      },
+      registration: {
+        dxPixels: 0,
+        dyPixels: 0,
+        method: 'WCS_REPROJECT',
+        quality: 'PASS',
+      },
+      candidates: [],
+      evidence: {
+        maxSignificance: latestTimeSeriesMeta.astrometrySummary?.sigma ?? 0,
+      } as any,
+      provenance: {
+        caseId: activePresetId,
+        sourceMode: latestTimeSeriesMeta.sourceMode || 'saved_benchmark',
+        sourceClassification: latestTimeSeriesMeta.sourceClassification,
+        discoveryEligible: latestTimeSeriesMeta.discoveryEligible,
+        discoveryEligibilityReason: latestTimeSeriesMeta.discoveryEligibilityReason,
+        tapFreshness: latestTimeSeriesMeta.tapFreshness,
+        fitsOrigin: latestTimeSeriesMeta.fitsOrigin,
+        cacheIntegrityVerified: latestTimeSeriesMeta.cacheIntegrityVerified,
+        snapshotTakenAt: latestTimeSeriesMeta.snapshotTakenAt,
+        cachedAt: latestTimeSeriesMeta.cachedAt,
+        timestamp: new Date().toISOString(),
+        irsaArchiveSource: 'NASA/IPAC IRSA SPHEREx',
+        obsId1: f0.obsId,
+        obsId2: fLast.obsId,
+        fitsUrl1: '',
+        fitsUrl2: '',
+        fitsChecksum1: latestTimeSeriesMeta.fitsChecksums?.[0]?.sha256 || '',
+        fitsChecksum2: latestTimeSeriesMeta.fitsChecksums?.[1]?.sha256 || '',
+        fitsChecksums: latestTimeSeriesMeta.fitsChecksums,
+        dataRelease: latestTimeSeriesMeta.activeRelease || 'public',
+        pipelineVersion: latestTimeSeriesMeta.activeVersion || '1.0',
+        algorithms: {
+          fitsParser: 'SPHEREx FITS',
+          wcsReprojection: 'TAN-SIP',
+          differenceMethod: 'WCS Diff',
+          noiseEstimation: 'Variance + MAD',
+          photometry: 'Aperture/PSF',
+          artifactFilter: 'BITMASK',
+          catalogMatcher: 'Gaia DR3 + AllWISE',
+        },
+      },
+      observationIds: latestTimeSeriesMeta.observationIds,
+      sourceClassification: latestTimeSeriesMeta.sourceClassification,
+      discoveryEligible: latestTimeSeriesMeta.discoveryEligible,
+      discoveryEligibilityReason: latestTimeSeriesMeta.discoveryEligibilityReason,
+      tapFreshness: latestTimeSeriesMeta.tapFreshness,
+      tapCachedAt: latestTimeSeriesMeta.tapCachedAt,
+      fitsOrigin: latestTimeSeriesMeta.fitsOrigin,
+      cacheIntegrityVerified: latestTimeSeriesMeta.cacheIntegrityVerified,
+      snapshotTakenAt: latestTimeSeriesMeta.snapshotTakenAt,
+      cachedAt: latestTimeSeriesMeta.cachedAt,
+      isSimulated: latestTimeSeriesMeta.isDemoCopy,
+    };
+  }, [currentResult, latestTimeSeriesMeta, activePresetId, targetDisplayName]);
 
   return (
     <div
@@ -555,7 +711,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
 
         {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-full flex-wrap">
           {isScientistMode && (
             <>
               {/* SPEX Space Dictionary Trigger */}
@@ -627,7 +783,20 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             </>
           )}
 
-          {/* Space Explorer's Log Trigger */}
+          {/* Space Explorer's Log Trigger & Optional On-Demand Fly Search */}
+          {!isScientistMode && (
+            <button
+              type="button"
+              data-testid="explore-fly-toggle-btn"
+              onClick={() => setShowFlySearchSheet((v) => !v)}
+              aria-expanded={showFlySearchSheet}
+              className="min-h-[36px] flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 transition cursor-pointer text-xs font-semibold"
+              title={t.flySearchLabel}
+            >
+              <Search className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden sm:inline">{t.flySearchBtn}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowExplorerLog(true)}
@@ -705,61 +874,38 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       </header>
 
       {/* ==================================================================== */}
-      {/* TARGET SELECTOR: FRIENDLY CARDS (EXPLORER) vs BENCHMARK BAR (SCIENTIST) */}
+      {/* EXPLORER: ZERO TOOLBAR (Optional On-Demand Fly Drawer Only)          */}
+      {/* SCIENTIST: BENCHMARK BAR + UNIFIED FLY-ME-TO SEARCH                  */}
       {/* ==================================================================== */}
       {!isScientistMode ? (
-        <section
-          data-tour="explore_targets"
-          aria-label={t.explorerTargetsTitle}
-          className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-3"
-        >
-          <div className="max-w-[1200px] mx-auto">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-              {t.explorerTargetsTitle}
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-              {[
-                { preset: BENCHMARK_PRESETS[1], hook: t.explorerHookBarnard },
-                { preset: BENCHMARK_PRESETS[0], hook: t.explorerHookWise0855 },
-                { preset: BENCHMARK_PRESETS[2], hook: t.explorerHookEpsilonIndi },
-                { preset: BENCHMARK_PRESETS[3], hook: t.explorerHookRwAur },
-                { preset: BENCHMARK_PRESETS[4], hook: t.explorerHookRDra },
-              ].map(({ preset, hook }) => {
-                const isActive = activePresetId === preset.caseId;
-                return (
-                  <button
-                    key={preset.caseId}
-                    type="button"
-                    data-testid={`explorer-card-${preset.targetParam}`}
-                    onClick={() => {
-                      setGuidedDemoStep(null);
-                      setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
-                      onSelectCase(preset.caseId, { sizePix: currentSizePix });
-                    }}
-                    className={`w-full px-3 py-2.5 rounded-xl border text-start transition cursor-pointer flex flex-col gap-0.5 ${
-                      isActive
-                        ? 'bg-amber-500/20 border-amber-400 text-amber-100 shadow-sm'
-                        : 'bg-white/[0.03] border-white/10 text-slate-200 hover:bg-white/[0.08] hover:border-white/25'
-                    }`}
-                  >
-                    <span className="text-sm font-bold leading-tight">{preset.label}</span>
-                    <span className={`text-xs leading-snug ${isActive ? 'text-amber-200/90' : 'text-slate-400'}`}>
-                      {hook}
-                    </span>
-                  </button>
-                );
-              })}
+        showFlySearchSheet ? (
+          <div className="relative z-25 bg-[#070B14]/95 border-b border-sky-400/25 px-3 sm:px-5 py-3 animate-slide-up">
+            <div className="max-w-2xl mx-auto flex items-start gap-2">
+              <FlyToSearch
+                language={language}
+                onFlyToTarget={handleFlyFromExplore}
+                compact
+                className="flex-1"
+              />
+              <button
+                type="button"
+                onClick={() => setShowFlySearchSheet(false)}
+                aria-label={t.searchModalClose}
+                className="min-h-[44px] min-w-[44px] rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-300 flex items-center justify-center cursor-pointer shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
-        </section>
+        ) : null
       ) : (
       <div
         data-tour="explore_targets"
-        className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2"
+        className="relative z-20 shrink-0 bg-[#070A12] border-b border-white/10 px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2.5"
       >
         {/* 5 Official Benchmark Target Presets */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 mr-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 me-1">
             {isRtl ? 'الأهداف المرجعية:' : 'Targets:'}
           </span>
           {BENCHMARK_PRESETS.map((preset) => {
@@ -769,11 +915,12 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 key={preset.caseId}
                 type="button"
                 onClick={() => {
+                  gameAudio.playClick();
                   setGuidedDemoStep(null);
                   setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
                   onSelectCase(preset.caseId, { sizePix: currentSizePix });
                 }}
-                className={`px-2.5 py-1 rounded-xl border text-left transition cursor-pointer flex items-center gap-1.5 ${
+                className={`min-h-[36px] px-2.5 py-1 rounded-xl border text-start transition cursor-pointer flex items-center gap-1.5 ${
                   isActive
                     ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-xs'
                     : 'bg-white/[0.03] border-white/10 text-slate-300 hover:bg-white/[0.08] hover:text-white'
@@ -786,36 +933,47 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           })}
         </div>
 
-        {/* Right Controls: RA/Dec Search, Mode Tabs, 60s Guided Demo */}
-        <div className="flex flex-wrap items-center gap-2">
-          <form onSubmit={handleCoordinateSubmit} className="flex items-center gap-1">
-            <div className="relative flex items-center">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
-              <input
-                type="text"
-                value={coordInput}
-                onChange={(e) => setCoordInput(e.target.value)}
-                placeholder="RA, Dec (e.g. 133.795, -7.245)"
-                aria-label="Enter sky coordinates RA and Dec"
-                className="w-48 sm:w-56 pl-8 pr-2 py-1 rounded-xl bg-black/60 border border-white/15 focus:border-cyan-400 outline-none text-xs font-mono text-slate-100 placeholder:text-slate-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-mono font-bold text-xs transition cursor-pointer"
-            >
-              Go
-            </button>
-          </form>
+        {/* Right Controls: Unified Fly-To Search, FOV Selector, Mode Tabs, 60s Guided Demo */}
+        <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+          <FlyToSearch
+            language={language}
+            onFlyToTarget={handleFlyFromExplore}
+            compact
+            className="w-full sm:w-[460px] lg:w-[490px]"
+          />
+
+          {/* FOV Selector */}
+          <div
+            role="group"
+            aria-label="Field of View selector"
+            className="flex items-center gap-0.5 p-0.5 rounded-xl bg-black/60 border border-white/15 text-[11px] font-mono"
+          >
+            <span className="px-1.5 text-slate-400 hidden sm:inline">FOV</span>
+            {FOV_PRESETS.map((fov) => (
+              <button
+                key={fov.sizePix}
+                type="button"
+                onClick={() => handleSelectFovSize(fov.sizePix)}
+                aria-pressed={currentSizePix === fov.sizePix}
+                className={`min-h-[32px] px-2 py-1 rounded-lg transition cursor-pointer tabular-nums ${
+                  currentSizePix === fov.sizePix
+                    ? 'bg-amber-400 text-slate-950 font-bold'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {fov.label}
+              </button>
+            ))}
+          </div>
 
           {/* View Mode: Flipbook vs Curtain Lab */}
           <div className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15 text-xs font-mono">
             <button
               type="button"
               onClick={() => setViewMode('flipbook')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+              className={`min-h-[32px] flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 viewMode === 'flipbook'
-                  ? 'bg-cyan-500 text-slate-950 font-bold'
+                  ? 'bg-sky-400 text-slate-950 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -825,9 +983,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('curtain')}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
+              className={`min-h-[32px] flex items-center gap-1 px-2.5 py-1 rounded-lg transition cursor-pointer ${
                 viewMode === 'curtain'
-                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  ? 'bg-amber-400 text-slate-950 font-bold'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
@@ -840,22 +998,13 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           <button
             type="button"
             onClick={handleStartGuidedDemo}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-mono font-bold transition cursor-pointer"
+            className="min-h-[36px] flex items-center gap-1 px-2.5 py-1 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-mono font-bold transition cursor-pointer"
           >
             <Play className="w-3 h-3 fill-current" />
             <span>60s Demo</span>
           </button>
         </div>
       </div>
-      )}
-
-      {coordError && (
-        <div className="px-4 py-1.5 bg-rose-950/80 border-b border-rose-500/30 text-xs font-mono text-rose-200 flex items-center justify-between">
-          <span>{coordError}</span>
-          <button type="button" onClick={() => setCoordError(null)} className="underline cursor-pointer">
-            Dismiss
-          </button>
-        </div>
       )}
 
       {/* Interactive 60s Guided Demo Stepper Banner */}
@@ -917,8 +1066,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {viewMode === 'flipbook' ? (
           <main
             className={`flex-1 w-full ${
-              isScientistMode ? 'max-w-[1600px] xl:grid-cols-12' : 'max-w-[1000px]'
-            } mx-auto p-3 sm:p-4 grid grid-cols-1 gap-4 items-start`}
+              isScientistMode ? 'max-w-[1600px] xl:grid-cols-12 p-3 sm:p-4' : 'max-w-[1180px] px-2 py-2 sm:px-4 sm:py-3'
+            } mx-auto grid grid-cols-1 gap-4 items-start`}
           >
             {/* Primary Time-Series Flipbook Player */}
             <div className={isScientistMode ? 'xl:col-span-8 min-w-0' : 'w-full min-w-0'}>
@@ -947,9 +1096,14 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   setSpexGuideOpen(true);
                   setSpexAutoAskToken((n) => n + 1);
                 }}
-                onExplorerPlay={() => markTargetAction(activePresetId, 'played')}
+                onExplorerPlay={() => {
+                  markTargetAction(activePresetId, 'played');
+                }}
                 onExplorerToggleDiff={(diffActive) => {
-                  if (diffActive) markTargetAction(activePresetId, 'diffShown');
+                  if (diffActive) {
+                    markTargetAction(activePresetId, 'diffShown');
+                    gameAudio.playSuccess();
+                  }
                 }}
                 onCanvasReady={setCanvasInstance}
                 onOpenDictionary={(termId) => {
@@ -986,7 +1140,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                       }
                     }}
                     onOpenPostcard={() => setShowPostcard(true)}
-                    canOpenPostcard={Boolean(currentResult)}
+                    canOpenPostcard={Boolean(effectivePostcardResult)}
+                    onOpenExplorerLog={() => setShowExplorerLog(true)}
                   />
                 </div>
               )}
@@ -1168,7 +1323,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         {/* PART 6: STRUCTURED SCIENTIST INVESTIGATION WORKSPACE PANEL */}
         {/* ================================================================== */}
         {isScientistMode && currentResult && (
-          <aside className="relative z-20 w-full lg:w-[420px] xl:w-[460px] shrink-0 h-full p-2 sm:p-3 overflow-hidden animate-slide-left border-l border-white/10 bg-[#0C0E14]/95 backdrop-blur-xl">
+          <aside className="relative z-20 w-full lg:w-[420px] xl:w-[460px] shrink-0 h-full p-2 sm:p-3 overflow-hidden animate-slide-left border-s border-white/10 bg-[#0C0E14]/95 backdrop-blur-xl">
             <ScientistInvestigationPanel
               currentResult={currentResult}
               language={language}
@@ -1262,11 +1417,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       />
 
       {/* DISCOVERY POSTCARD MODAL (Renders Actual Canvas Image) */}
-      {currentResult && (
+      {effectivePostcardResult && (
         <PostcardModal
           isOpen={showPostcard}
           onClose={() => setShowPostcard(false)}
-          result={currentResult}
+          result={effectivePostcardResult}
           candidate={selectedCandidate}
           language={language}
           sourceCanvas={canvasInstance}

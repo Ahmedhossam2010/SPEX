@@ -306,7 +306,7 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
         {/* ================================================================= */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden">
           {/* Milestones List */}
-          <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-white/10 overflow-y-auto p-2 sm:p-3 space-y-1.5 max-h-48 md:max-h-none bg-[#080B12]">
+          <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-e border-white/10 overflow-y-auto p-2 sm:p-3 space-y-1.5 max-h-48 md:max-h-none bg-[#080B12]">
             {SPACE_MILESTONES.map((m) => {
               const isSelected = m.id === activeMilestoneId;
               const isDone = completedMilestones.includes(m.id);
@@ -316,7 +316,7 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
                   key={m.id}
                   type="button"
                   onClick={() => setActiveMilestoneId(m.id)}
-                  className={`w-full p-2.5 rounded-xl text-left transition flex items-center justify-between gap-2 cursor-pointer select-none ${
+                  className={`w-full p-2.5 rounded-xl text-start transition flex items-center justify-between gap-2 cursor-pointer select-none ${
                     isSelected
                       ? 'bg-[#00D3F3]/15 border border-[#00D3F3]/40 text-[#00D3F3] shadow-sm'
                       : 'bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-slate-300'
@@ -338,7 +338,7 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
                       {isRtl ? m.titleAr : m.titleEn}
                     </span>
                   </div>
-                  <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#00D3F3]' : 'text-slate-600'}`} />
+                  <ChevronRight className={`w-3.5 h-3.5 shrink-0 rtl:rotate-180 ${isSelected ? 'text-[#00D3F3]' : 'text-slate-600'}`} />
                 </button>
               );
             })}
@@ -390,7 +390,7 @@ export const SpaceExplorerLogModal: React.FC<SpaceExplorerLogModalProps> = ({
 
             {/* Depth Selector Tabs */}
             <div className="flex items-center gap-2 border-b border-white/10 pb-2 text-xs font-mono">
-              <span className="text-slate-500 mr-2">{isRtl ? 'مستوى العمق العلمي:' : 'Learning Level:'}</span>
+              <span className="text-slate-500 me-2">{isRtl ? 'مستوى العمق العلمي:' : 'Learning Level:'}</span>
               <button
                 type="button"
                 onClick={() => setActiveDepth('level1')}

@@ -15,7 +15,7 @@ export const AboutView: React.FC<AboutViewProps> = ({ language }) => {
   return (
     <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-12 select-none" dir={isRtl ? 'rtl' : 'ltr'}>
       {/* Hero Header */}
-      <div className="text-left pb-6 border-b border-obs-border">
+      <div className="text-start pb-6 border-b border-obs-border">
         <div className="flex items-center gap-2 text-xs font-mono tracking-widest text-obs-amber uppercase mb-2 font-bold">
           <Sparkles className="w-4 h-4" />
           <span>NASA Space Apps Challenge 2024–2026</span>

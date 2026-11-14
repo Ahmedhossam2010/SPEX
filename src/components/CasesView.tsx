@@ -64,7 +64,7 @@ export const CasesView: React.FC<CasesViewProps> = ({ cases, onSelectCase, langu
 
       {/* Category Filter Pills */}
       <div className="flex flex-wrap items-center gap-2 mb-6 font-mono text-xs">
-        <span className="text-slate-500 mr-1 flex items-center gap-1">
+        <span className="text-slate-500 me-1 flex items-center gap-1">
           <Filter className="w-3.5 h-3.5" />
           {isRtl ? 'تصفية القضايا:' : 'Filter:'}
         </span>
