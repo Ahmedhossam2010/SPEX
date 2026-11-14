@@ -57,7 +57,7 @@ export function App() {
   }, []);
 
   // Process a case by ID
-  const loadCase = async (caseId: string, customCoords?: { ra: number; dec: number }) => {
+  const loadCase = async (caseId: string, customCoords?: { ra: number; dec: number }, sizePix: number = 64) => {
     setIsLoading(true);
     setErrorMsg(null);
     setFailedQuery(null);
@@ -65,7 +65,7 @@ export function App() {
       const res = await fetch('/api/spherex/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caseId, customCoords }),
+        body: JSON.stringify({ caseId, customCoords, sizePix }),
       });
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
@@ -73,6 +73,21 @@ export function App() {
       }
       const data: InvestigationResult = await res.json();
       setCurrentResult(data);
+
+      // Deep-linking URL synchronization (NASA Space Apps Consideration)
+      const params = new URLSearchParams(window.location.search);
+      if (customCoords) {
+        params.set('ra', customCoords.ra.toFixed(4));
+        params.set('dec', customCoords.dec.toFixed(4));
+        params.delete('case');
+      } else if (caseId) {
+        params.set('case', caseId);
+      }
+      if (sizePix !== 64) {
+        params.set('fov', String(sizePix));
+      }
+      const newQuery = params.toString();
+      window.history.replaceState(null, '', `${window.location.pathname}${newQuery ? `?${newQuery}` : ''}`);
     } catch (err: any) {
       console.error('Case processing failed:', err);
       setErrorMsg('Failed to process SPHEREx observation: ' + err.message);
@@ -94,8 +109,8 @@ export function App() {
     setActiveTab('explore');
   };
 
-  const handleSearchTarget = (ra: number, dec: number) => {
-    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
+  const handleSearchTarget = (ra: number, dec: number, sizePix: number = 64) => {
+    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec }, sizePix);
   };
 
   const handleToggleLanguage = () => {

@@ -5,6 +5,8 @@ import { ScientificPipeline } from './pipeline';
 import { FITSReader } from './fitsReader';
 import { CatalogMatcher } from './catalogMatcher';
 import { WCSParams, SPHERExObservation } from './types';
+import { NASA_TEST_OBJECTS, findMatchingTestObject } from './testObjects';
+import { SPHEREX_ARRAYS, SPHEREX_BANDS, ALL_CONFIGURED_CHANNELS, ONE_PER_ARRAY_CHANNELS } from './bandData';
 
 test('WCS: converts pixel to celestial coordinates and back with high precision', () => {
   const wcs: WCSParams = {
@@ -746,6 +748,60 @@ test('Integration Test: End-to-end multi-extension FITS generation, WCS ingestio
   assert.ok(topCand.catalogMatches.some((m) => m.catalog === 'Gaia DR3'));
   assert.ok(topCand.catalogMatches.some((m) => m.catalog === 'AllWISE'));
 });
+
+test('NASA Test Targets: defines all 5 required challenge objects with verified coordinates and metadata', () => {
+  assert.equal(NASA_TEST_OBJECTS.length, 5, 'Must contain all 5 challenge test objects');
+
+  const names = NASA_TEST_OBJECTS.map((o) => o.name);
+  assert.ok(names.includes("Barnard's Star"));
+  assert.ok(names.includes('WISE 0855-0714'));
+  assert.ok(names.includes('Epsilon Indi B'));
+  assert.ok(names.includes('RW Aurigae'));
+  assert.ok(names.includes('R Draconis'));
+
+  // Test coordinate matching and lookup helper
+  const barnard = findMatchingTestObject(269.4521, 4.6933, 0.05);
+  assert.ok(barnard, "Must resolve Barnard's Star near (269.4521, 4.6933)");
+  assert.equal(barnard?.type, 'star');
+  assert.equal(barnard?.icon, '🌟');
+
+  const wise0855 = findMatchingTestObject(133.7951, -7.2451, 0.05);
+  assert.ok(wise0855, 'Must resolve WISE 0855-0714 near (133.7951, -7.2451)');
+  assert.equal(wise0855?.type, 'brown_dwarf');
+  assert.equal(wise0855?.icon, '🪐');
+
+  const epsIndiB = findMatchingTestObject(330.84, -56.785, 0.05);
+  assert.ok(epsIndiB, 'Must resolve Epsilon Indi B near (330.84, -56.785)');
+
+  const rwAur = findMatchingTestObject(76.8283, 30.4003, 0.05);
+  assert.ok(rwAur, 'Must resolve RW Aurigae near (76.8283, 30.4003)');
+  assert.equal(rwAur?.type, 'variable_star');
+
+  const rDra = findMatchingTestObject(245.0, 66.7458, 0.05);
+  assert.ok(rDra, 'Must resolve R Draconis near (245.0, 66.7458)');
+  assert.equal(rDra?.type, 'variable_star');
+});
+
+test('Band Explorer: verifies 6 SPHEREx detector arrays, color specs, and channel mappings', () => {
+  assert.equal(SPHEREX_ARRAYS.length, 6, 'Must define 6 SPHEREx detector arrays');
+
+  const expectedColors = ['#64b5f6', '#4caf50', '#ff9400', '#9b59b6', '#e74c3c', '#ff6b6b'];
+  SPHEREX_ARRAYS.forEach((arr, idx) => {
+    assert.equal(arr.id, idx);
+    assert.equal(arr.color, expectedColors[idx]);
+    assert.ok(arr.channels.length > 0);
+  });
+
+  // Array 0: channels 16-19 (0.75–1.1 µm)
+  assert.deepEqual(SPHEREX_ARRAYS[0].channels, [16, 17, 18, 19]);
+  // Array 5: channels 36-39 (4.2–5.0 µm)
+  assert.deepEqual(SPHEREX_ARRAYS[5].channels, [36, 37, 38, 39]);
+
+  assert.equal(ALL_CONFIGURED_CHANNELS.length, 24);
+  assert.equal(ONE_PER_ARRAY_CHANNELS.length, 6);
+  assert.ok(SPHEREX_BANDS.length >= 24);
+});
+
 
 
 

@@ -47,6 +47,42 @@ const KNOWN_BENCHMARK_GAIA_SOURCES: Array<{
     gMag: 13.75,
     objectType: 'Field Star / Optical Counterpart',
   },
+  // NASA Space Apps Challenge 2025: Pre-Configured Benchmark Objects
+  {
+    ra: 269.45210,
+    dec: 4.69330,
+    identifier: 'Gaia DR3 4472832130942585856',
+    gMag: 9.51,
+    objectType: "Barnard's Star (High-Proper-Motion M-Dwarf)",
+  },
+  {
+    ra: 133.79510,
+    dec: -7.24510,
+    identifier: 'Gaia DR3 5683933924719293440',
+    gMag: 22.10,
+    objectType: 'WISE 0855-0714 (Sub-stellar Cold Brown Dwarf)',
+  },
+  {
+    ra: 330.84000,
+    dec: -56.78500,
+    identifier: 'Gaia DR3 6412571477755331456',
+    gMag: 21.40,
+    objectType: 'Epsilon Indi B (Brown Dwarf Binary Pair)',
+  },
+  {
+    ra: 76.82830,
+    dec: 30.40030,
+    identifier: 'Gaia DR3 162985338128330752',
+    gMag: 10.42,
+    objectType: 'RW Aurigae (T Tauri Pre-Main-Sequence Variable)',
+  },
+  {
+    ra: 245.00000,
+    dec: 66.74580,
+    identifier: 'Gaia DR3 1650390141641014528',
+    gMag: 7.60,
+    objectType: 'R Draconis (Mira-Type Pulsating Variable Star)',
+  },
 ];
 
 const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
@@ -88,6 +124,47 @@ const KNOWN_BENCHMARK_WISE_SOURCES: Array<{
     w1Mag: 12.95,
     w2Mag: 12.90,
     objectType: 'Infrared Field Counterpart',
+  },
+  // NASA Space Apps Challenge 2025: AllWISE Counterparts
+  {
+    ra: 269.45210,
+    dec: 4.69330,
+    identifier: 'AllWISE J175748.49+044136.2',
+    w1Mag: 7.78,
+    w2Mag: 7.55,
+    objectType: "Barnard's Star (Infrared Counterpart)",
+  },
+  {
+    ra: 133.79510,
+    dec: -7.24510,
+    identifier: 'AllWISE J085510.83-071442.5',
+    w1Mag: 17.50,
+    w2Mag: 13.90,
+    objectType: 'WISE 0855-0714 (Cold Infrared Y-Dwarf)',
+  },
+  {
+    ra: 330.84000,
+    dec: -56.78500,
+    identifier: 'AllWISE J220410.51-564657.8',
+    w1Mag: 11.20,
+    w2Mag: 10.95,
+    objectType: 'Epsilon Indi B (Infrared Binary Counterpart)',
+  },
+  {
+    ra: 76.82830,
+    dec: 30.40030,
+    identifier: 'AllWISE J050749.53+302405.0',
+    w1Mag: 7.20,
+    w2Mag: 6.85,
+    objectType: 'RW Aurigae (Circumstellar Disk Infrared Source)',
+  },
+  {
+    ra: 245.00000,
+    dec: 66.74580,
+    identifier: 'AllWISE J162000.17+664445.4',
+    w1Mag: 2.45,
+    w2Mag: 1.80,
+    objectType: 'R Draconis (Infrared Pulsating Giant Source)',
   },
 ];
 

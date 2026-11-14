@@ -31,28 +31,38 @@ import {
   Calendar,
   Eye,
   SlidersHorizontal,
+  Target,
+  Activity,
+  Share2,
 } from 'lucide-react';
 import {
   CandidateDetection,
   InvestigationResult,
   SPHERExObservation,
+  TestObject,
 } from '../science/types';
 import { AstronomyRenderer, ColormapMode, DisplayMode, StretchMode } from '../utils/astronomyRender';
 import { WCS } from '../science/wcs';
 import { ProvenanceModal } from './ProvenanceModal';
 import { SpexPopup } from './SpexPopup';
+import { BandSelector } from './BandSelector';
+import { TestObjectsPanel } from './TestObjectsPanel';
+import { SpectrumViewer } from './SpectrumViewer';
+import { ShareModal } from './ShareModal';
+import { NASA_TEST_OBJECTS, findMatchingTestObject } from '../science/testObjects';
+import { ALL_CONFIGURED_CHANNELS } from '../science/bandData';
 import { Language, translations } from '../utils/translations';
 
 interface ExploreViewProps {
   currentResult: InvestigationResult | null;
   isLoading: boolean;
-  onSearchTarget: (ra: number, dec: number) => void;
+  onSearchTarget: (ra: number, dec: number, sizePix?: number) => void;
   onSelectCase: (caseId: string) => void;
   cases: Array<{ id: string; title: string; category?: string; ra: number; dec: number }>;
   language: Language;
 }
 
-export type ViewMode = 'difference' | 'significance' | 'epoch1' | 'epoch2' | 'split' | 'blink';
+export type ViewMode = 'difference' | 'coadd' | 'significance' | 'epoch1' | 'epoch2' | 'split' | 'blink';
 export type CandidateFilter = 'all' | 'candidates' | 'known' | 'artifacts';
 export type CandidateSort = 'significance' | 'aperture' | 'flux';
 
@@ -118,6 +128,37 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [tapError, setTapError] = useState<string | null>(null);
   const [tapQueryExecuted, setTapQueryExecuted] = useState<boolean>(false);
 
+  // 102-Band Infrared Selector state
+  const [showBandSelector, setShowBandSelector] = useState<boolean>(false);
+  const [selectedChannels, setSelectedChannels] = useState<number[]>([...ALL_CONFIGURED_CHANNELS]);
+
+  // NASA Space Apps 2025 Test Objects state
+  const [showTestObjectsPanel, setShowTestObjectsPanel] = useState<boolean>(false);
+  const [selectedTestObjectId, setSelectedTestObjectId] = useState<string | null>(null);
+
+  // Advanced NASA Considerations states (Spectrum, Share/Embed, Overlays, FOV)
+  const [showSpectrumViewer, setShowSpectrumViewer] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+  const [cutoutSizePix, setCutoutSizePix] = useState<number>(64);
+  const [showGaiaOverlay, setShowGaiaOverlay] = useState<boolean>(true);
+  const [showWiseOverlay, setShowWiseOverlay] = useState<boolean>(true);
+  const [showMotionVectors, setShowMotionVectors] = useState<boolean>(true);
+
+  // Synchronize matching NASA test object on coordinate/result change
+  useEffect(() => {
+    if (currentResult?.targetCoords) {
+      const match = findMatchingTestObject(currentResult.targetCoords.ra, currentResult.targetCoords.dec);
+      setSelectedTestObjectId(match ? match.id : null);
+    }
+  }, [currentResult?.targetCoords]);
+
+  const handleSelectTestObject = (obj: TestObject) => {
+    setSelectedTestObjectId(obj.id);
+    setCustomRa(obj.ra.toFixed(4));
+    setCustomDec(obj.dec.toFixed(4));
+    onSearchTarget(obj.ra, obj.dec);
+  };
+
   // Canvas refs
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -171,6 +212,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
     } else if (viewMode === 'difference') {
       dataToRender = currentResult.difference.diff;
       cm = 'diff_diverging';
+    } else if (viewMode === 'coadd') {
+      // Co-add / Add Together images taken at different times (NASA Challenge objective)
+      const w = currentResult.epoch1.width;
+      const h = currentResult.epoch1.height;
+      const composite = new Float32Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        composite[i] = (currentResult.epoch1.flux[i] + currentResult.epoch2.flux[i]) * 0.5;
+      }
+      dataToRender = Array.from(composite);
+      if (cm === 'diff_diverging') cm = 'grayscale';
     } else if (viewMode === 'significance') {
       dataToRender = currentResult.difference.significance;
       cm = 'diff_diverging';
@@ -606,6 +657,17 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             >
               {language === 'ar' ? 'ستارة' : 'Split'}
             </button>
+            <button
+              onClick={() => handleViewModeChange('coadd')}
+              className={`px-2 py-1 rounded-full transition-all ${
+                viewMode === 'coadd'
+                  ? 'bg-purple-500/20 text-purple-200 border border-purple-400/30 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+              title="Co-add: average both epochs together to improve signal-to-noise ratio"
+            >
+              {language === 'ar' ? 'جمع' : 'Co-add'}
+            </button>
           </div>
 
           {/* Right: Candidates Drawer, Search Sky & Provenance Action Buttons */}
@@ -627,6 +689,40 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               </span>
             </button>
 
+            {/* NASA Space Apps 2025 Test Objects Trigger */}
+            <button
+              onClick={() => setShowTestObjectsPanel(!showTestObjectsPanel)}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border backdrop-blur-2xl text-[11px] sm:text-xs font-mono transition-all ${
+                showTestObjectsPanel || selectedTestObjectId
+                  ? 'border-amber-400/60 bg-amber-500/25 text-amber-200 font-bold shadow-[0_0_12px_rgba(245,158,11,0.2)]'
+                  : 'border-white/15 bg-[#030712]/85 hover:bg-white/10 text-slate-300'
+              }`}
+              title="NASA Space Apps 2025: 5 Pre-Configured Test Targets"
+            >
+              <Target className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+              <span className="hidden xs:inline">{language === 'ar' ? 'أهداف ناسا' : 'Test Targets'}</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-bold">
+                5
+              </span>
+            </button>
+
+            {/* 102-Band Infrared Selector Trigger */}
+            <button
+              onClick={() => setShowBandSelector(!showBandSelector)}
+              className={`flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[36px] rounded-full border backdrop-blur-2xl text-[11px] sm:text-xs font-mono transition-all ${
+                showBandSelector
+                  ? 'border-sky-400/60 bg-sky-500/25 text-sky-200 font-bold shadow-[0_0_12px_rgba(56,189,248,0.2)]'
+                  : 'border-white/15 bg-[#030712]/85 hover:bg-white/10 text-slate-300'
+              }`}
+              title="SPHEREx 102-Band Infrared Spectrum & Array Explorer"
+            >
+              <Radio className="h-3.5 w-3.5 text-sky-400 flex-shrink-0" />
+              <span className="hidden xs:inline">{language === 'ar' ? 'الأطياف' : '102 Bands'}</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-sky-400/20 text-sky-300 border border-sky-400/30 text-[10px] font-bold">
+                {selectedChannels.length}
+              </span>
+            </button>
+
             {/* Search Sky Modal Trigger */}
             <button
               onClick={() => setIsSearchOpen(true)}
@@ -635,6 +731,28 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             >
               <Search className="h-3.5 w-3.5 text-amber-400" />
               <span className="hidden sm:inline">{language === 'ar' ? 'إحداثيات' : 'Search Sky'}</span>
+            </button>
+
+            {/* On-The-Fly Spectrum Generator */}
+            <button
+              onClick={() => setShowSpectrumViewer(true)}
+              className={`p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border backdrop-blur-2xl transition-colors shadow-md ${
+                showSpectrumViewer
+                  ? 'border-amber-400/60 bg-amber-500/25 text-amber-300'
+                  : 'border-white/15 bg-[#030712]/85 hover:bg-white/10 text-slate-300 hover:text-amber-400'
+              }`}
+              title="Generate 102-Band On-The-Fly Infrared Spectrum (Extra Kudos)"
+            >
+              <Activity className="h-4 w-4 text-amber-400" />
+            </button>
+
+            {/* Share / Embed */}
+            <button
+              onClick={() => setShowShareModal(true)}
+              className="p-2 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full border border-white/15 bg-[#030712]/85 hover:bg-white/10 backdrop-blur-2xl text-slate-300 hover:text-sky-400 transition-colors shadow-md"
+              title="Share & embed this sky view by coordinates URL"
+            >
+              <Share2 className="h-4 w-4 text-sky-400" />
             </button>
 
             {/* Provenance Audit Trigger */}
@@ -710,6 +828,48 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           >
             Split
           </button>
+          <button
+            onClick={() => handleViewModeChange('coadd')}
+            className={`px-2 py-1 rounded-full whitespace-nowrap transition-all ${
+              viewMode === 'coadd'
+                ? 'bg-purple-500/20 text-purple-200 border border-purple-400/30 font-semibold'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            Co-add
+          </button>
+        </div>
+      </div>
+
+      {/* =========================================================================
+          NASA SPACE APPS 2025: 5 PRE-CONFIGURED TEST OBJECTS QUICK ACCESS STRIP
+          ========================================================================= */}
+      <div className="absolute top-16 sm:top-14 inset-x-2 sm:inset-x-4 pointer-events-none z-20 flex justify-center">
+        <div className="pointer-events-auto flex items-center gap-1.5 p-1 rounded-2xl border border-white/10 bg-[#030712]/85 backdrop-blur-xl shadow-lg max-w-full overflow-x-auto scrollbar-none">
+          <div className="flex items-center gap-1 px-2 text-[10px] font-mono text-amber-400 font-bold whitespace-nowrap border-r border-white/10 hidden sm:flex">
+            <Target className="h-3 w-3 text-amber-400" />
+            <span>NASA Targets:</span>
+          </div>
+          {NASA_TEST_OBJECTS.map((obj) => {
+            const isSelected = selectedTestObjectId === obj.id;
+            return (
+              <button
+                key={obj.id}
+                type="button"
+                onClick={() => handleSelectTestObject(obj)}
+                className={`px-2.5 py-1 rounded-xl text-left transition-all flex items-center gap-1.5 whitespace-nowrap text-[11px] font-mono active:scale-95 ${
+                  isSelected
+                    ? 'bg-amber-500/25 border border-amber-400/50 text-amber-200 font-bold shadow-[0_0_10px_rgba(245,158,11,0.25)]'
+                    : 'bg-white/[0.03] border border-white/5 text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                title={`${obj.name}: ${obj.description} (RA ${obj.ra.toFixed(4)}°, Dec ${obj.dec >= 0 ? '+' : ''}${obj.dec.toFixed(4)}°)`}
+              >
+                <span>{obj.icon}</span>
+                <span className="font-semibold">{obj.name}</span>
+                <span className="text-[9px] text-slate-400 hidden lg:inline">({obj.typeLabel})</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1325,6 +1485,37 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         />
       )}
 
+      {/* NASA Space Apps 2025 Test Objects Modal */}
+      {showTestObjectsPanel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <TestObjectsPanel
+              selectedObjectId={selectedTestObjectId}
+              onSelectObject={(obj) => {
+                handleSelectTestObject(obj);
+                setShowTestObjectsPanel(false);
+              }}
+              onClose={() => setShowTestObjectsPanel(false)}
+              language={language}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 102-Band Infrared Selector Modal */}
+      {showBandSelector && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-150">
+          <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <BandSelector
+              selectedChannels={selectedChannels}
+              onChangeSelectedChannels={setSelectedChannels}
+              onClose={() => setShowBandSelector(false)}
+              language={language}
+            />
+          </div>
+        </div>
+      )}
+
       {/* =========================================================================
           8. SEARCH SKY / EXPLORE MORE DIALOG
           ========================================================================= */}
@@ -1369,6 +1560,42 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               >
                 Query TAP Catalog
               </button>
+            </div>
+
+            {/* NASA Space Apps 2025 Test Objects Presets */}
+            <div className="mb-4">
+              <span className="text-[10px] uppercase font-mono text-amber-400 block mb-1.5 font-bold flex items-center gap-1.5">
+                <Target className="h-3 w-3 text-amber-400" />
+                <span>NASA Space Apps 2025 Required Test Targets:</span>
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] font-mono">
+                {NASA_TEST_OBJECTS.map((obj) => (
+                  <button
+                    key={obj.id}
+                    type="button"
+                    onClick={() => {
+                      handleSelectTestObject(obj);
+                      setIsSearchOpen(false);
+                    }}
+                    className={`p-2 rounded-xl text-left transition-all flex items-center justify-between border ${
+                      selectedTestObjectId === obj.id
+                        ? 'bg-amber-500/20 border-amber-400/50 text-amber-200 font-bold'
+                        : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/10 text-slate-300 hover:text-amber-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <span>{obj.icon}</span>
+                        <span>{obj.name}</span>
+                      </div>
+                      <div className="text-[9px] text-slate-400">{obj.typeLabel}</div>
+                    </div>
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      {obj.ra.toFixed(1)}°, {obj.dec >= 0 ? '+' : ''}{obj.dec.toFixed(1)}°
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Presets Strip */}
@@ -1566,6 +1793,37 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             )}
           </div>
         </div>
+      )}
+
+      {/* =========================================================================
+          SPECTRUM VIEWER — On-The-Fly 102-Band Infrared Spectrum Generator
+          NASA Space Apps 2025 Consideration: "Extra kudos if your tool can
+          generate spectra on the fly."
+          ========================================================================= */}
+      <SpectrumViewer
+        isOpen={showSpectrumViewer}
+        onClose={() => setShowSpectrumViewer(false)}
+        currentResult={currentResult}
+        selectedCandidate={selectedCandidate}
+        cursorCoords={cursorPos?.ra != null && cursorPos?.dec != null ? { ra: cursorPos.ra, dec: cursorPos.dec, val: cursorPos.val } : null}
+        language={language}
+      />
+
+      {/* =========================================================================
+          SHARE MODAL — Deep-linkable URL and iframe embed
+          NASA Space Apps 2025 Consideration: "If you make it possible to query
+          your tool by including coordinates in the URL, users will be able to
+          easily embed it in other websites and projects."
+          ========================================================================= */}
+      {currentResult && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          ra={currentResult.targetCoords.ra}
+          dec={currentResult.targetCoords.dec}
+          caseId={currentResult.caseId}
+          targetName={currentResult.title}
+        />
       )}
     </div>
   );

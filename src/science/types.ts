@@ -162,6 +162,34 @@ export interface ProvenanceRecord {
   };
 }
 
+export interface BandInfo {
+  channel: number;
+  wavelength_um: number;
+  arrayId: number;
+}
+
+export interface ArrayInfo {
+  id: number;
+  label: string;
+  wavelengthRange: string;
+  channels: number[];
+  color: string;
+}
+
+export interface TestObject {
+  id: string;
+  name: string;
+  type: 'star' | 'brown_dwarf' | 'variable_star';
+  typeLabel: string;
+  ra: number;
+  dec: number;
+  raHms: string;
+  decDms: string;
+  description: string;
+  icon: string;
+  category: string;
+}
+
 export interface InvestigationResult {
   caseId: string;
   sourceMode?: 'live' | 'saved_benchmark';
