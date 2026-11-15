@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   SPEXMood,
   SPEX_ASSETS,
@@ -56,7 +56,14 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
 }) => {
   const [hasError, setHasError] = useState(false);
   const [clickBurst, setClickBurst] = useState(false);
+  const burstTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const m = (expression || mood || 'greeting').toLowerCase();
+
+  useEffect(() => {
+    return () => {
+      if (burstTimerRef.current) clearTimeout(burstTimerRef.current);
+    };
+  }, []);
 
   const effectiveMood = clickBurst ? 'curious' : m;
 
@@ -86,7 +93,8 @@ export const SpexPortrait: React.FC<SpexPortraitProps> = ({
   const handleTap = () => {
     if (interactive) {
       setClickBurst(true);
-      setTimeout(() => setClickBurst(false), 900);
+      if (burstTimerRef.current) clearTimeout(burstTimerRef.current);
+      burstTimerRef.current = setTimeout(() => setClickBurst(false), 900);
     }
     onClick?.();
   };

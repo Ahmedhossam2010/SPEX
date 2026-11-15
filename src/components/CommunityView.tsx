@@ -303,6 +303,15 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         </div>
       </section>
 
+      <div
+        role="note"
+        data-testid="community-ephemeral-notice"
+        className="rounded-xl bg-[#070B16] border border-white/10 px-4 py-2.5 flex items-center gap-2.5 text-xs text-slate-300"
+      >
+        <AlertTriangle className="w-4 h-4 text-sky-400 shrink-0" />
+        <span>{t.communityEphemeralNotice}</span>
+      </div>
+
       {offline && (
         <div
           role="status"

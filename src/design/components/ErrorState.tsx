@@ -7,8 +7,10 @@ export interface ErrorStateProps {
   error?: string;
   canRetry?: boolean;
   onRetry?: () => void;
+  retryLabel?: string;
   hasSavedCopy?: boolean;
   onUseSavedCopy?: () => void;
+  savedCopyLabel?: string;
   className?: string;
 }
 
@@ -17,8 +19,10 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
   error = 'Could not establish connection to the NASA/IPAC IRSA TAP endpoint. Outbound network may be offline or rate-limited.',
   canRetry = true,
   onRetry,
+  retryLabel = 'Retry Connection',
   hasSavedCopy = true,
   onUseSavedCopy,
+  savedCopyLabel = 'Use Saved Copy (Offline)',
   className = '',
 }) => {
   return (
@@ -47,7 +51,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
             icon={<RotateCcw className="w-4 h-4" />}
             onClick={onRetry}
           >
-            Retry Connection
+            {retryLabel}
           </Button>
         )}
 
@@ -58,7 +62,7 @@ export const ErrorState: React.FC<ErrorStateProps> = ({
             icon={<Database className="w-4 h-4" />}
             onClick={onUseSavedCopy}
           >
-            Use Saved Copy (Offline)
+            {savedCopyLabel}
           </Button>
         )}
       </div>

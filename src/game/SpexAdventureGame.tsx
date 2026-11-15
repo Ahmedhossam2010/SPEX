@@ -1,5 +1,4 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { SpexTaskStationGame } from './SpexTaskStationGame';
 import { CosmicDetectiveGame } from './CosmicDetectiveGame';
 import { ConstellationDotsGame } from './minigames/ConstellationDotsGame';
 import { SpectrumMatchGame } from './minigames/SpectrumMatchGame';
@@ -45,7 +44,7 @@ interface SpexAdventureGameProps {
   onBackToHome: () => void;
 }
 
-type GameScreenMode = 'menu' | 'map' | 'playing' | 'minigames' | '3d' | '2d' | 'cases';
+type GameScreenMode = 'menu' | 'map' | 'playing' | 'minigames' | '3d' | 'cases';
 type MiniGameId = 'constellation' | 'spectrum_match' | 'sliding_puzzle' | 'spot_difference';
 
 const TUTORIAL_STORAGE_KEY = 'spex_game_tutorial_seen_v1';
@@ -103,6 +102,7 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
   const [tutorialStep, setTutorialStep] = useState<number>(0);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
   const [rankModalOpen, setRankModalOpen] = useState<boolean>(false);
+  const [gameOver, setGameOver] = useState<boolean>(false);
   const [completionState, setCompletionState] = useState<{
     chapterNumber: number;
     stars: number;
@@ -128,12 +128,14 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
 
   // Timer tick during active gameplay
   useEffect(() => {
-    if (viewMode !== 'playing' || paused || tutorialOpen || completionState !== null) return;
+    if (viewMode !== 'playing' || paused || tutorialOpen || gameOver || completionState !== null) {
+      return;
+    }
     const id = setInterval(() => {
       setElapsedSeconds((s) => s + 1);
     }, 1000);
     return () => clearInterval(id);
-  }, [viewMode, paused, tutorialOpen, completionState]);
+  }, [viewMode, paused, tutorialOpen, gameOver, completionState]);
 
   const formatTimer = (secs: number): string => {
     const mm = Math.floor(secs / 60)
@@ -150,6 +152,7 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
     setLives(3);
     setElapsedSeconds(0);
     setPaused(false);
+    setGameOver(false);
     setCompletionState(null);
     setAttemptNonce((n) => n + 1);
 
@@ -186,7 +189,8 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
     xpReward: number,
     starsEarned = 3
   ) => {
-    const lifeAdjustedStars = Math.max(1, Math.min(starsEarned, lives));
+    if (viewMode === 'playing' && gameOver) return;
+    const lifeAdjustedStars = Math.max(1, Math.min(starsEarned, Math.max(1, lives)));
     completeMiniGame(gameId, xpReward);
 
     if (viewMode === 'playing') {
@@ -209,7 +213,13 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
   };
 
   const handleAttemptWrong = () => {
-    setLives((prev) => (prev > 1 ? prev - 1 : 3));
+    setLives((prev) => {
+      const next = Math.max(0, prev - 1);
+      if (next === 0) {
+        setGameOver(true);
+      }
+      return next;
+    });
   };
 
   const dismissTutorial = () => {
@@ -227,21 +237,10 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
       }`}
       dir={isAr ? 'rtl' : 'ltr'}
     >
-      {/* Top Game Navigation Strip */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#070C18] p-2.5 rounded-2xl border border-white/10">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onBackToHome}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white text-xs font-mono transition border border-slate-700 cursor-pointer whitespace-nowrap"
-          >
-            <BackIcon className="w-3.5 h-3.5" />
-            <span>{isAr ? 'الرئيسية' : 'Home'}</span>
-          </button>
-
-          <div className="h-4 w-px bg-slate-800 hidden sm:block" />
-
-          <div className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+      {/* Top Game Navigation Strip (hidden on main Menu so Menu stays purely Play / Levels / Rank / Settings) */}
+      {viewMode !== 'menu' && (
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-[#070C18] p-2.5 rounded-2xl border border-white/10">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               data-testid="game-tab-menu"
@@ -249,109 +248,110 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
                 gameAudio.playClick();
                 setViewMode('menu');
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                viewMode === 'menu'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-200 hover:text-white text-xs font-mono transition border border-slate-700 cursor-pointer whitespace-nowrap"
             >
-              <Play className="w-3.5 h-3.5" />
+              <BackIcon className="w-3.5 h-3.5" />
               <span>{isAr ? 'القائمة' : 'Menu'}</span>
             </button>
 
+            <div className="h-4 w-px bg-slate-800 hidden sm:block" />
+
+            <div className="flex flex-wrap items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+              <button
+                type="button"
+                data-testid="game-tab-story"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setViewMode('map');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  viewMode === 'map' || viewMode === 'playing'
+                    ? 'bg-sky-400 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Map className="w-3.5 h-3.5" />
+                <span>{t.gameMenuLevels}</span>
+              </button>
+
+              <button
+                type="button"
+                data-testid="game-tab-minigames"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setViewMode('minigames');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  viewMode === 'minigames'
+                    ? 'bg-emerald-400 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Gamepad2 className="w-3.5 h-3.5" />
+                <span>{t.gameMiniGamesTab}</span>
+              </button>
+
+              <button
+                type="button"
+                data-testid="game-tab-3d"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setViewMode('3d');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  viewMode === '3d'
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Box className="w-3.5 h-3.5" />
+                <span>{t.gameStation3dTab}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setViewMode('cases');
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
+                  viewMode === 'cases'
+                    ? 'bg-cyan-400 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>{isAr ? 'ملفات القضايا' : 'Cases'}</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              data-testid="game-tab-story"
               onClick={() => {
-                gameAudio.playClick();
-                setViewMode('map');
+                const next = gameAudio.toggle();
+                setSoundEnabled(next);
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                viewMode === 'map' || viewMode === 'playing'
-                  ? 'bg-sky-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              aria-label={t.gameHudSound}
+              title={t.gameHudSound}
+              className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 flex items-center justify-center cursor-pointer transition"
             >
-              <Map className="w-3.5 h-3.5" />
-              <span>{t.gameMenuLevels}</span>
+              {soundEnabled ? <Volume2 className="w-4 h-4 text-sky-400" /> : <VolumeX className="w-4 h-4" />}
             </button>
 
-            <button
+            <Button
               type="button"
-              data-testid="game-tab-minigames"
-              onClick={() => {
-                gameAudio.playClick();
-                setViewMode('minigames');
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                viewMode === 'minigames'
-                  ? 'bg-emerald-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              variant="primary"
+              size="sm"
+              icon={<Compass className="w-3.5 h-3.5" />}
+              onClick={() => onExitToExplore()}
             >
-              <Gamepad2 className="w-3.5 h-3.5" />
-              <span>{t.gameMiniGamesTab}</span>
-            </button>
-
-            <button
-              type="button"
-              data-testid="game-tab-3d"
-              onClick={() => {
-                gameAudio.playClick();
-                setViewMode('3d');
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                viewMode === '3d'
-                  ? 'bg-amber-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <Box className="w-3.5 h-3.5" />
-              <span>{t.gameStation3dTab}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                gameAudio.playClick();
-                setViewMode('cases');
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap ${
-                viewMode === 'cases'
-                  ? 'bg-cyan-400 text-slate-950'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>{isAr ? 'ملفات القضايا' : 'Cases'}</span>
-            </button>
+              {isAr ? 'العارض الحقيقي' : 'Real Sky Lab'}
+            </Button>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              const next = gameAudio.toggle();
-              setSoundEnabled(next);
-            }}
-            aria-label={t.gameHudSound}
-            className="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 flex items-center justify-center cursor-pointer transition"
-          >
-            {soundEnabled ? <Volume2 className="w-4 h-4 text-sky-400" /> : <VolumeX className="w-4 h-4" />}
-          </button>
-
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            icon={<Compass className="w-3.5 h-3.5" />}
-            onClick={() => onExitToExplore()}
-          >
-            {isAr ? 'العارض الحقيقي' : 'Real Sky Lab'}
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* SCREEN 1: GAME MAIN MENU */}
       {viewMode === 'menu' && (
@@ -629,6 +629,24 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
             </div>
           </div>
 
+          {/* Consistent Mr. SPEX Faint-Signal Mission Strip */}
+          <div className="rounded-2xl bg-[#080E1C] border border-amber-400/20 px-4 py-2.5 flex items-center gap-3">
+            <SpexPortrait
+              mood={lives <= 1 ? 'serious' : 'curious'}
+              size={42}
+              alt="Mr. SPEX"
+              className="shrink-0 rounded-lg bg-amber-500/10 border border-amber-400/30 p-0.5"
+            />
+            <div className="min-w-0">
+              <div className="text-[11px] font-mono text-amber-300 font-semibold">
+                {t.gameStoryBannerTitle}
+              </div>
+              <p className="text-xs text-slate-300 truncate sm:whitespace-normal">
+                {isAr ? activeChapter.spexQuoteAr : activeChapter.spexQuote}
+              </p>
+            </div>
+          </div>
+
           {/* Active Mini-Game Surface */}
           <div key={`${activeChapter.chapterNumber}-${attemptNonce}`}>
             {activeMiniGame === 'constellation' && (
@@ -775,14 +793,6 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
         </Suspense>
       )}
 
-      {viewMode === '2d' && (
-        <SpexTaskStationGame
-          language={language}
-          onExitToExplore={onExitToExplore}
-          onBackToHome={onBackToHome}
-        />
-      )}
-
       {viewMode === 'cases' && (
         <CosmicDetectiveGame
           language={language}
@@ -895,6 +905,50 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
         </div>
       </Modal>
 
+      {/* GAME OVER MODAL (LIVES REACHED 0) */}
+      <Modal
+        isOpen={gameOver}
+        onClose={() => {
+          setGameOver(false);
+          setViewMode('map');
+        }}
+        title={t.gameOverTitle}
+        maxWidthClass="max-w-sm"
+        isRtl={isAr}
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <SpexPortrait mood="sad" size={56} className="shrink-0" alt="Mr. SPEX" />
+            <p className="text-sm text-slate-300 leading-relaxed">{t.gameOverDesc}</p>
+          </div>
+          <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              data-testid="game-over-retry"
+              icon={<RotateCcw className="w-4 h-4" />}
+              onClick={() => launchChapter(activeChapter)}
+            >
+              {t.gameOverRetryBtn}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="md"
+              data-testid="game-over-back-map"
+              icon={<Map className="w-4 h-4" />}
+              onClick={() => {
+                setGameOver(false);
+                setViewMode('map');
+              }}
+            >
+              {t.gamePauseBackMap}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* LEVEL COMPLETE MODAL */}
       <Modal
         isOpen={completionState !== null}
@@ -905,6 +959,15 @@ export const SpexAdventureGame: React.FC<SpexAdventureGameProps> = ({
       >
         {completionState && (
           <div className="space-y-4">
+            <div className="flex items-center gap-3 rounded-xl bg-emerald-500/10 border border-emerald-400/20 px-3 py-2.5">
+              <SpexPortrait mood="happy" size={44} className="shrink-0" alt="Mr. SPEX" />
+              <p className="text-xs text-emerald-100 leading-relaxed">
+                {isAr
+                  ? 'أحسنت! استعاد الأستاذ سبيكس الإشارة الخافتة وأصبح أقرب إلى تتبع الجرم.'
+                  : 'Signal locked! Mr. SPEX recovered the faint trace and is one step closer to the moving object.'}
+              </p>
+            </div>
+
             <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div>
                 <div className="text-xs font-mono text-slate-400">{t.gameCompleteStarsLabel}</div>

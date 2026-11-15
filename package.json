@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --platform=node --format=esm --outfile=server.js --bundle --packages=external",
@@ -10,6 +13,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "check": "npm run lint && npm run build",
     "test": "tsx --test src/science/science.test.ts src/science/acceptanceAudit.test.ts src/science/archiveAdapter.test.ts src/science/surveyPasses.test.ts src/progress/progressStore.test.ts src/utils/astronomyRender.test.ts src/utils/translations.test.ts src/utils/productionHardening.test.ts src/utils/provenanceIntegrity.test.ts src/game/game.test.ts src/game/minigames/slidingPuzzleLogic.test.ts src/community/communityValidation.test.ts",
     "validate-release": "tsx src/science/releaseValidator.ts",
     "data-drop-check": "tsx scripts/data_drop_check.ts"
@@ -22,7 +26,6 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
-    "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "three": "^0.187.0",
@@ -33,8 +36,7 @@
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "esbuild": "^0.28.0",
     "playwright-core": "^1.65.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",

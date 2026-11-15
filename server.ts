@@ -2780,10 +2780,14 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       return sendJsonOrStream(200, cachedTs.body);
     }
 
-    const snapshotAvailable = !liveOnly && !cleanDet ? loadSnapshotResponse() : null;
-    if (process.env.SPHEREX_OFFLINE === '1' && snapshotAvailable) {
-      return sendJsonOrStream(200, snapshotAvailable);
+    const rawSnapshot = !liveOnly ? loadSnapshotResponse() : null;
+    if ((req.query.offline === '1' || process.env.SPHEREX_OFFLINE === '1') && rawSnapshot) {
+      return sendJsonOrStream(200, rawSnapshot);
     }
+    const snapshotAvailable =
+      rawSnapshot && (!cleanDet || rawSnapshot.selectedDetector === cleanDet)
+        ? rawSnapshot
+        : null;
 
     const runLivePipeline = async (
       pipelineSignal?: AbortSignal,
@@ -4208,7 +4212,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
 
     if (snapshotAvailable) {
       let liveResult: { statusCode: number; body: Record<string, any> } | null = null;
-      const entry = startOrJoinLivePipeline(Date.now() + 25000);
+      const entry = startOrJoinLivePipeline(Date.now() + 12000);
       let releasedWaiter = false;
       const releaseWaiter = (abortIfEmpty: boolean) => {
         if (releasedWaiter) return;
@@ -4225,7 +4229,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       try {
         liveResult = await Promise.race([
           entry.promise,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 25000)),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 12000)),
         ]);
       } catch {
         liveResult = null;
@@ -4236,7 +4240,7 @@ app.all('/api/spherex/timeseries', async (req: Request, res: Response) => {
       if (liveResult && liveResult.statusCode === 200 && liveResult.body?.state === 'OK') {
         return sendJsonOrStream(200, liveResult.body);
       }
-      console.log(`[Snapshot] Serving verified archive snapshot for ${caseId || `${ra},${dec}`} (live query exceeded 25s or unavailable).`);
+      console.log(`[Snapshot] Serving verified archive snapshot for ${caseId || `${ra},${dec}`} (live query exceeded 12s or unavailable).`);
       return sendJsonOrStream(200, snapshotAvailable);
     }
 

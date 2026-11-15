@@ -1,21 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { Header, AppTab } from './components/Header';
 import { HomeView } from './components/HomeView';
-import { AcademyView } from './components/AcademyView';
-import { ExploreView } from './components/ExploreView';
-import { CasesView } from './components/CasesView';
-import { AboutView } from './components/AboutView';
-import { SpexAdventureGame } from './game/SpexAdventureGame';
-import { Screen1Sky } from './components/Screen1Sky';
-import { AchievementsModal } from './components/AchievementsModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { InvestigationResult, ChallengeTarget } from './science/types';
 import { parseCoordinateInput } from './science/challengeTargets';
 import { Language, translations } from './utils/translations';
-import { SpexSpaceDictionaryModal } from './components/SpexSpaceDictionaryModal';
-import { FamousObjectsView } from './components/FamousObjectsView';
 import { FamousObject, getFamousObjectById } from './science/famousObjects';
 import { FlyTargetSelection } from './ui/FlyToSearch';
-import { CommunityView } from './components/CommunityView';
+
+const AcademyView = lazy(() =>
+  import('./components/AcademyView').then((m) => ({ default: m.AcademyView }))
+);
+const ExploreView = lazy(() =>
+  import('./components/ExploreView').then((m) => ({ default: m.ExploreView }))
+);
+const CasesView = lazy(() =>
+  import('./components/CasesView').then((m) => ({ default: m.CasesView }))
+);
+const AboutView = lazy(() =>
+  import('./components/AboutView').then((m) => ({ default: m.AboutView }))
+);
+const SpexAdventureGame = lazy(() =>
+  import('./game/SpexAdventureGame').then((m) => ({ default: m.SpexAdventureGame }))
+);
+const Screen1Sky = lazy(() =>
+  import('./components/Screen1Sky').then((m) => ({ default: m.Screen1Sky }))
+);
+const AchievementsModal = lazy(() =>
+  import('./components/AchievementsModal').then((m) => ({ default: m.AchievementsModal }))
+);
+const SpexSpaceDictionaryModal = lazy(() =>
+  import('./components/SpexSpaceDictionaryModal').then((m) => ({ default: m.SpexSpaceDictionaryModal }))
+);
+const FamousObjectsView = lazy(() =>
+  import('./components/FamousObjectsView').then((m) => ({ default: m.FamousObjectsView }))
+);
+const CommunityView = lazy(() =>
+  import('./components/CommunityView').then((m) => ({ default: m.CommunityView }))
+);
 
 export type { AppTab };
 
@@ -136,6 +158,10 @@ export function App() {
   const [globalDictionaryTermId, setGlobalDictionaryTermId] = useState<string | null>(null);
   const [achievementsOpen, setAchievementsOpen] = useState(false);
   const [autoPlayExplore, setAutoPlayExplore] = useState(false);
+  const [exploreResetKey, setExploreResetKey] = useState(0);
+  const [academyResetKey, setAcademyResetKey] = useState(0);
+  const [exploreFromAcademy, setExploreFromAcademy] = useState(false);
+  const loadCaseAbortRef = useRef<AbortController | null>(null);
 
   // Global listener for dictionary requests from anywhere in the app
   useEffect(() => {
@@ -263,15 +289,22 @@ export function App() {
       })
       .then((data) => {
         setCases(data);
+        const targetId =
+          caseParam && data.some((c: any) => c.id === caseParam)
+            ? caseParam
+            : targetCaseFromSlug && data.some((c: any) => c.id === targetCaseFromSlug)
+            ? targetCaseFromSlug
+            : data.find((c: any) => c.id === 'case-wise-0855')?.id || data[0]?.id || 'case-wise-0855';
         if (parsedCoords) {
-          loadCase(targetCaseFromSlug || data[0]?.id || 'case-wise-0855', parsedCoords, { sizePix: sizePixParam, epochPair });
-        } else if (caseParam && data.some((c: any) => c.id === caseParam)) {
-          loadCase(caseParam, undefined, { sizePix: sizePixParam, epochPair });
-        } else if (targetCaseFromSlug && data.some((c: any) => c.id === targetCaseFromSlug)) {
-          loadCase(targetCaseFromSlug, undefined, { sizePix: sizePixParam, epochPair });
-        } else if (data && data.length > 0) {
-          const wiseDefault = data.find((c: any) => c.id === 'case-wise-0855')?.id || data[0].id;
-          loadCase(wiseDefault, undefined, { sizePix: sizePixParam, epochPair });
+          if (isScientistMode) {
+            loadCase(targetCaseFromSlug || targetId, parsedCoords, { sizePix: sizePixParam, epochPair });
+          } else if (targetCaseFromSlug) {
+            setActiveCaseId(targetCaseFromSlug);
+          }
+        } else if (isScientistMode) {
+          loadCase(targetId, undefined, { sizePix: sizePixParam, epochPair });
+        } else {
+          setActiveCaseId(targetId);
         }
       })
       .catch((err) => {
@@ -285,6 +318,18 @@ export function App() {
     customCoords?: { ra: number; dec: number },
     options?: { sizePix?: number; epochPair?: string; mode?: string; detector?: string }
   ) => {
+    if (loadCaseAbortRef.current) {
+      loadCaseAbortRef.current.abort();
+      loadCaseAbortRef.current = null;
+    }
+    const controller = new AbortController();
+    loadCaseAbortRef.current = controller;
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 15000);
+
     if (!customCoords && caseId) setActiveCaseId(caseId);
     else if (customCoords) setActiveCaseId(null);
     setIsLoading(true);
@@ -295,6 +340,7 @@ export function App() {
       const res = await fetch('/api/spherex/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           caseId,
           customCoords,
@@ -307,7 +353,6 @@ export function App() {
       if (!contentType.includes('application/json')) {
         const text = await res.text().catch(() => '');
         console.warn(`[SPEX] Non-JSON response received from /api/spherex/process (HTTP ${res.status}):`, text.slice(0, 100));
-        setErrorMsg('Data service temporarily unavailable or returned unexpected response. Please retry.');
         setFailedQuery({ caseId, customCoords });
         return;
       }
@@ -359,20 +404,56 @@ export function App() {
         window.history.replaceState({ ...window.history.state }, '', newUrl);
       }
     } catch (err: any) {
-      const msg = err.message || 'Failed to process SPHEREx observation';
+      if (err?.name === 'AbortError' && !timedOut) {
+        return;
+      }
+      const isKnownPreset = Boolean(
+        !customCoords &&
+          ['case-wise-0855', 'case-barnards-star', 'case-epsilon-indi', 'case-rw-aur', 'case-r-dra'].includes(caseId)
+      );
+      if (isKnownPreset) {
+        // FramePlayer automatically handles saved snapshot fallback for the 5 benchmark targets
+        return;
+      }
+      const msg = timedOut
+        ? 'Live archive metadata timed out — viewer will fall back to saved data if available.'
+        : err.message || 'Failed to process SPHEREx observation';
       console.error('Case processing failed:', err);
       setErrorMsg(msg);
       setFailedQuery({ caseId, customCoords });
     } finally {
-      setIsLoading(false);
+      clearTimeout(timeoutId);
+      if (loadCaseAbortRef.current === controller) {
+        loadCaseAbortRef.current = null;
+        setIsLoading(false);
+      }
     }
   };
 
   const handleStartExplore = (caseId?: string) => {
     setFallbackQuery(null);
     setExploreScreen('hunt');
+    setExploreFromAcademy(false);
     if (caseId) {
-      loadCase(caseId);
+      if (isScientistMode) {
+        loadCase(caseId);
+      } else {
+        setActiveCaseId(caseId);
+      }
+    }
+    setActiveTab('explore');
+  };
+
+  const handleOpenExploreFromAcademy = (caseId: string) => {
+    setFallbackQuery(null);
+    setExploreScreen('hunt');
+    setExploreFromAcademy(true);
+    if (caseId) {
+      if (isScientistMode) {
+        loadCase(caseId);
+      } else {
+        setActiveCaseId(caseId);
+      }
     }
     setActiveTab('explore');
   };
@@ -504,21 +585,22 @@ export function App() {
   };
 
   const handleToggleScientistMode = () => {
-    setIsScientistMode((prev) => {
-      const next = !prev;
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('spherex_explore_mode', next ? 'scientist' : 'explorer');
-        } catch {}
-        const params = new URLSearchParams(window.location.search);
-        if (next) params.set('mode', 'scientist');
-        else params.delete('mode');
-        const qs = params.toString();
-        const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-        window.history.replaceState({ ...window.history.state }, '', newUrl);
-      }
-      return next;
-    });
+    const next = !isScientistMode;
+    setIsScientistMode(next);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('spherex_explore_mode', next ? 'scientist' : 'explorer');
+      } catch {}
+      const params = new URLSearchParams(window.location.search);
+      if (next) params.set('mode', 'scientist');
+      else params.delete('mode');
+      const qs = params.toString();
+      const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+      window.history.replaceState({ ...window.history.state }, '', newUrl);
+    }
+    if (next && !currentResult && !isLoading) {
+      loadCase(activeCaseId || 'case-wise-0855', undefined, { sizePix: activeSizePix });
+    }
   };
 
   const t = translations[language];
@@ -578,116 +660,182 @@ export function App() {
           </div>
         )}
 
-        {activeTab === 'home' && (
-          <HomeView
-            onStartAcademy={() => setActiveTab('academy')}
-            onStartExplore={handleStartExplore}
-            onQuickDemoWise={handleQuickDemoWise}
-            onFlySelection={handleFlySelection}
-            onOpenAbout={() => setActiveTab('about')}
-            onOpenCases={() => setActiveTab('cases')}
-            onPlayGame={() => setActiveTab('game')}
-            onOpenCommunity={() => setActiveTab('community')}
-            cases={cases}
-            language={language}
-          />
-        )}
-
-        {activeTab === 'academy' && (
-          <AcademyView
-            language={language}
-            onOpenTargetInViewer={(caseId) => handleStartExplore(caseId)}
-            onGoToPlay={() => setActiveTab('game')}
-          />
-        )}
-
-        {activeTab === 'explore' && exploreScreen === 'sky' && (
-          <Screen1Sky
-            language={language}
-            onSelectTarget={(target) => {
-              setSelectedTarget(target);
-              setExploreScreen('hunt');
-              const tId = target.id.toLowerCase();
-              if (tId.includes('barnard')) {
-                loadCase('case-barnards-star');
-              } else if (tId.includes('wise-0855') || tId.includes('0855')) {
-                loadCase('case-wise-0855');
-              } else if (tId.includes('rw-aur')) {
-                loadCase('case-rw-aur');
-              } else if (tId.includes('r-dra')) {
-                loadCase('case-r-dra');
-              } else if (tId.includes('epsilon-indi') || tId.includes('indi')) {
-                loadCase('case-epsilon-indi');
-              } else {
-                loadCase(target.id, { ra: target.ra, dec: target.dec });
-              }
-            }}
-            onSelectCoords={(ra, dec) => {
-              setSelectedTarget(null);
-              setExploreScreen('hunt');
-              loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
-            }}
-          />
-        )}
-
-        {activeTab === 'explore' && exploreScreen === 'hunt' && (
-          <div className="spex-flythrough-in">
-            <ExploreView
-              currentResult={currentResult}
-              isLoading={isLoading}
-              onSearchTarget={handleSearchTarget}
+        <Suspense
+          fallback={
+            <div className="min-h-[45vh] flex items-center justify-center text-xs font-mono text-slate-400">
+              {language === 'ar' ? 'جاري تحميل المساحة...' : 'Loading workspace...'}
+            </div>
+          }
+        >
+          {activeTab === 'home' && (
+            <HomeView
+              onStartAcademy={() => setActiveTab('academy')}
+              onStartExplore={handleStartExplore}
+              onQuickDemoWise={handleQuickDemoWise}
               onFlySelection={handleFlySelection}
-              onSelectCase={handleSelectCase}
+              onOpenAbout={() => setActiveTab('about')}
+              onOpenCases={() => setActiveTab('cases')}
+              onPlayGame={() => setActiveTab('game')}
+              onOpenCommunity={() => setActiveTab('community')}
               cases={cases}
               language={language}
-              fallbackQuery={fallbackQuery}
-              onClearFallback={handleClearFallback}
-              onBackToSky={() => setExploreScreen('sky')}
-              isScientistMode={isScientistMode}
-              onToggleScientistMode={handleToggleScientistMode}
-              selectedTarget={selectedTarget}
-              initialDetector={activeDetector}
-              onDetectorChange={handleDetectorChange}
-              activeSizePix={activeSizePix}
-              activeCaseId={activeCaseId}
-              autoPlay={autoPlayExplore}
-              onAutoPlayConsumed={() => setAutoPlayExplore(false)}
-              isEmbed={isEmbed}
             />
-          </div>
-        )}
+          )}
 
-        {activeTab === 'famous' && (
-          <FamousObjectsView
-            language={language}
-            onSelectObject={handleSelectFamousObject}
-          />
-        )}
+          {activeTab === 'academy' && (
+            <ErrorBoundary
+              title={t.academyBoundaryTitle}
+              description={t.academyBoundaryHint}
+              retryLabel={t.academyBackToMapBtn}
+              resetKey={academyResetKey}
+              onRetry={() => {
+                try {
+                  window.sessionStorage?.removeItem('spex_academy_session_v1');
+                } catch {}
+                setAcademyResetKey((k) => k + 1);
+              }}
+            >
+              <AcademyView
+                key={academyResetKey}
+                language={language}
+                onOpenTargetInViewer={handleOpenExploreFromAcademy}
+                onGoToPlay={() => {
+                  setExploreFromAcademy(false);
+                  setActiveTab('game');
+                }}
+              />
+            </ErrorBoundary>
+          )}
 
-        {activeTab === 'game' && (
-          <SpexAdventureGame
-            language={language}
-            onExitToExplore={(caseId) => handleStartExplore(caseId)}
-            onBackToHome={() => setActiveTab('home')}
-          />
-        )}
+          {activeTab === 'explore' && (
+            <>
+              {exploreFromAcademy && !isEmbed && (
+                <div className="w-full bg-sky-950/75 border-b border-sky-400/30 px-4 py-2 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-sky-200 font-medium">
+                    {language === 'ar'
+                      ? 'أكمل الفحص في العارض ثم عد إلى الأكاديمية — إجاباتك محفوظة.'
+                      : 'Complete your hands-on check here, then jump back — your Academy answers are saved.'}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="explore-back-to-academy"
+                    onClick={() => {
+                      setExploreFromAcademy(false);
+                      setActiveTab('academy');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold whitespace-nowrap cursor-pointer transition"
+                  >
+                    {t.exploreReturnToAcademy}
+                  </button>
+                </div>
+              )}
+            <ErrorBoundary
+              title={t.exploreErrorTitle}
+              description={t.exploreErrorHint}
+              retryLabel={t.exploreRetryBtn}
+              secondaryLabel={t.exploreOfflineDemoBtn}
+              resetKey={`${activeCaseId || ''}-${exploreScreen}-${exploreResetKey}`}
+              onRetry={() => {
+                setErrorMsg(null);
+                setExploreResetKey((k) => k + 1);
+                loadCase(activeCaseId || 'case-wise-0855');
+              }}
+              onSecondary={() => {
+                setErrorMsg(null);
+                setExploreScreen('hunt');
+                setActiveCaseId('case-wise-0855');
+                setExploreResetKey((k) => k + 1);
+              }}
+            >
+              {exploreScreen === 'sky' ? (
+                <Screen1Sky
+                  language={language}
+                  onSelectTarget={(target) => {
+                    setSelectedTarget(target);
+                    setExploreScreen('hunt');
+                    const tId = target.id.toLowerCase();
+                    if (tId.includes('barnard')) {
+                      loadCase('case-barnards-star');
+                    } else if (tId.includes('wise-0855') || tId.includes('0855')) {
+                      loadCase('case-wise-0855');
+                    } else if (tId.includes('rw-aur')) {
+                      loadCase('case-rw-aur');
+                    } else if (tId.includes('r-dra')) {
+                      loadCase('case-r-dra');
+                    } else if (tId.includes('epsilon-indi') || tId.includes('indi')) {
+                      loadCase('case-epsilon-indi');
+                    } else {
+                      loadCase(target.id, { ra: target.ra, dec: target.dec });
+                    }
+                  }}
+                  onSelectCoords={(ra, dec) => {
+                    setSelectedTarget(null);
+                    setExploreScreen('hunt');
+                    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
+                  }}
+                />
+              ) : (
+                <div className="spex-flythrough-in" key={exploreResetKey}>
+                  <ExploreView
+                    currentResult={currentResult}
+                    isLoading={isLoading}
+                    onSearchTarget={handleSearchTarget}
+                    onFlySelection={handleFlySelection}
+                    onSelectCase={handleSelectCase}
+                    cases={cases}
+                    language={language}
+                    fallbackQuery={fallbackQuery}
+                    onClearFallback={handleClearFallback}
+                    onBackToSky={() => setExploreScreen('sky')}
+                    isScientistMode={isScientistMode}
+                    onToggleScientistMode={handleToggleScientistMode}
+                    selectedTarget={selectedTarget}
+                    initialDetector={activeDetector}
+                    onDetectorChange={handleDetectorChange}
+                    activeSizePix={activeSizePix}
+                    activeCaseId={activeCaseId}
+                    autoPlay={autoPlayExplore}
+                    onAutoPlayConsumed={() => setAutoPlayExplore(false)}
+                    isEmbed={isEmbed}
+                  />
+                </div>
+              )}
+            </ErrorBoundary>
+            </>
+          )}
 
-        {activeTab === 'cases' && (
-          <CasesView
-            cases={cases}
-            onSelectCase={handleSelectCase}
-            language={language}
-          />
-        )}
+          {activeTab === 'famous' && (
+            <FamousObjectsView
+              language={language}
+              onSelectObject={handleSelectFamousObject}
+            />
+          )}
 
-        {activeTab === 'community' && (
-          <CommunityView
-            language={language}
-            onOpenTargetInViewer={(caseId) => handleStartExplore(caseId)}
-          />
-        )}
+          {activeTab === 'game' && (
+            <SpexAdventureGame
+              language={language}
+              onExitToExplore={(caseId) => handleStartExplore(caseId)}
+              onBackToHome={() => setActiveTab('home')}
+            />
+          )}
 
-        {activeTab === 'about' && <AboutView language={language} />}
+          {activeTab === 'cases' && (
+            <CasesView
+              cases={cases}
+              onSelectCase={handleSelectCase}
+              language={language}
+            />
+          )}
+
+          {activeTab === 'community' && (
+            <CommunityView
+              language={language}
+              onOpenTargetInViewer={(caseId) => handleStartExplore(caseId)}
+            />
+          )}
+
+          {activeTab === 'about' && <AboutView language={language} />}
+        </Suspense>
       </main>
 
       {!isEmbed && (
@@ -697,21 +845,41 @@ export function App() {
       )}
 
       {/* Global SPEX Space Dictionary Modal */}
-      <SpexSpaceDictionaryModal
-        isOpen={globalDictionaryOpen}
-        onClose={() => setGlobalDictionaryOpen(false)}
-        language={language}
-        initialTermId={globalDictionaryTermId}
-        onSelectTerm={(termId) => setGlobalDictionaryTermId(termId)}
-      />
+      {globalDictionaryOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 text-xs font-mono text-slate-300">
+              {language === 'ar' ? 'جاري التحميل...' : 'Loading...'}
+            </div>
+          }
+        >
+          <SpexSpaceDictionaryModal
+            isOpen={globalDictionaryOpen}
+            onClose={() => setGlobalDictionaryOpen(false)}
+            language={language}
+            initialTermId={globalDictionaryTermId}
+            onSelectTerm={(termId) => setGlobalDictionaryTermId(termId)}
+          />
+        </Suspense>
+      )}
 
       {/* Local Achievements & Nickname Scoreboard Modal */}
-      <AchievementsModal
-        isOpen={achievementsOpen}
-        onClose={() => setAchievementsOpen(false)}
-        language={language}
-        onOpenExplore={() => handleStartExplore()}
-      />
+      {achievementsOpen && (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 text-xs font-mono text-slate-300">
+              {language === 'ar' ? 'جاري التحميل...' : 'Loading...'}
+            </div>
+          }
+        >
+          <AchievementsModal
+            isOpen={achievementsOpen}
+            onClose={() => setAchievementsOpen(false)}
+            language={language}
+            onOpenExplore={() => handleStartExplore()}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

@@ -15,7 +15,9 @@ import {
   X,
   BookOpen,
   Award,
+  HelpCircle,
 } from 'lucide-react';
+import { Modal } from '../design/components/Modal';
 import { gameAudio } from '../game/utils/gameAudio';
 import {
   CandidateDetection,
@@ -165,6 +167,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [spexHighlights, setSpexHighlights] = useState<SpexHighlight[]>([]);
   const [spexAutoAskToken, setSpexAutoAskToken] = useState<number>(0);
   const [aladinSlotOpen, setAladinSlotOpen] = useState<boolean>(true);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [latestTimeSeriesMeta, setLatestTimeSeriesMeta] = useState<TimeSeriesResponse | null>(null);
   const [missionProgressByCase, setMissionProgressByCase] = useState<Record<string, TargetActionProgress>>({});
 
@@ -227,6 +230,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [stretch, setStretch] = useState<StretchMode>('asinh');
   const [customColormap, setCustomColormap] = useState<ColormapMode | null>(null);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('presentation');
+  const [showRawPixels, setShowRawPixels] = useState<boolean>(false);
   const [contrastFactor, setContrastFactor] = useState<number>(1.0);
 
   // Active Lens: 'time' | 'colors' | 'doubt' | 'neighbors' | null
@@ -691,37 +695,106 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       {/* ==================================================================== */}
       {!isEmbed && (
       <header className="relative z-30 shrink-0 min-h-13 bg-[#0C0E14]/95 backdrop-blur-xl border-b border-white/10 px-3 sm:px-5 py-2 flex flex-wrap items-center justify-between gap-2 sm:gap-3 shadow-md">
-        {/* Left: Back to Sky & Target Name */}
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          {onBackToSky && (
-            <button
-              type="button"
-              onClick={onBackToSky}
-              className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer text-xs font-mono"
-              title={isRtl ? 'العودة إلى القبة السماوية' : 'Return to Sky Sphere'}
-            >
-              <ArrowLeft className={`w-3.5 h-3.5 transition-transform ${isRtl ? 'rotate-180 group-hover:translate-x-0.5' : 'group-hover:-translate-x-0.5'}`} />
-              <span className="hidden sm:inline font-medium">{isRtl ? 'القبة' : 'Sky'}</span>
-            </button>
-          )}
+        {!isScientistMode ? (
+          <>
+            {/* Simple Mode Left: Clean Target Selector */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              <label className="flex items-center gap-2 text-xs text-slate-300 font-medium">
+                <span className="hidden sm:inline text-slate-400 font-mono">{t.exploreSimpleTargetLabel}:</span>
+                <select
+                  data-testid="explore-target-select"
+                  value={activePresetId || '__custom__'}
+                  onChange={(e) => {
+                    const nextId = e.target.value;
+                    const preset = BENCHMARK_PRESETS.find((p) => p.caseId === nextId);
+                    if (preset) {
+                      gameAudio.playClick();
+                      setGuidedDemoStep(null);
+                      setPendingTarget({ ra: preset.ra, dec: preset.dec, caseId: preset.caseId });
+                      onSelectCase(preset.caseId, { sizePix: currentSizePix });
+                    }
+                  }}
+                  aria-label={t.exploreSimpleTargetLabel}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-white/[0.06] border border-white/15 text-slate-100 text-xs sm:text-sm font-bold cursor-pointer hover:border-sky-400/50 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                >
+                  {BENCHMARK_PRESETS.map((preset) => (
+                    <option key={preset.caseId} value={preset.caseId} className="bg-[#0B101D] text-slate-100">
+                      {isRtl ? preset.labelAr : preset.label} — {preset.sub}
+                    </option>
+                  ))}
+                  {!activePresetId && (
+                    <option value="__custom__" className="bg-[#0B101D] text-slate-100">
+                      {targetDisplayName}
+                    </option>
+                  )}
+                </select>
+              </label>
+            </div>
 
-          <div className="flex items-baseline gap-2 min-w-0">
-            <h1 className="text-sm sm:text-base font-bold text-slate-100 truncate tracking-tight">
-              {targetDisplayName}
-            </h1>
-            {currentResult?.targetCoords && (
-              <span className="hidden md:inline font-mono text-[11px] text-slate-400">
-                ({queryRa.toFixed(4)}°, {queryDec >= 0 ? '+' : ''}{queryDec.toFixed(4)}°)
-              </span>
-            )}
-          </div>
-        </div>
+            {/* Simple Mode Right: ONLY Persistent ? Help + Advanced Toggle */}
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                data-testid="explore-help-btn"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setShowHelpModal(true);
+                }}
+                title={t.exploreHelpTitle}
+                aria-label={t.exploreHelpTitle}
+                className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-400/45 bg-amber-500/15 hover:bg-amber-500/25 text-amber-200 transition cursor-pointer text-xs font-bold"
+              >
+                <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>? {t.exploreHelpBtn}</span>
+              </button>
 
-        {/* Right: Dictionary, Explorer Log, Tour button, Authenticity indicator, Explorer/Scientist switch, Share Card */}
-        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-full flex-wrap">
-          {isScientistMode && (
-            <>
-              {/* SPEX Space Dictionary Trigger */}
+              {onToggleScientistMode && (
+                <button
+                  type="button"
+                  data-testid="mode-scientist-btn"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    onToggleScientistMode();
+                  }}
+                  aria-pressed={false}
+                  title={t.exploreAdvancedToggle}
+                  className="min-h-[38px] flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/20 bg-white/[0.06] hover:bg-white/[0.12] text-slate-100 transition cursor-pointer text-xs font-semibold"
+                >
+                  <Layers className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>{t.exploreAdvancedToggle}</span>
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Advanced / Scientist Header */}
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+              {onBackToSky && (
+                <button
+                  type="button"
+                  onClick={onBackToSky}
+                  className="group flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer text-xs font-mono"
+                  title={isRtl ? 'العودة إلى القبة السماوية' : 'Return to Sky Sphere'}
+                >
+                  <ArrowLeft className={`w-3.5 h-3.5 transition-transform ${isRtl ? 'rotate-180 group-hover:translate-x-0.5' : 'group-hover:-translate-x-0.5'}`} />
+                  <span className="hidden sm:inline font-medium">{isRtl ? 'القبة' : 'Sky'}</span>
+                </button>
+              )}
+
+              <div className="flex items-baseline gap-2 min-w-0">
+                <h1 className="text-sm sm:text-base font-bold text-slate-100 truncate tracking-tight">
+                  {targetDisplayName}
+                </h1>
+                {currentResult?.targetCoords && (
+                  <span className="hidden md:inline font-mono text-[11px] text-slate-400">
+                    ({queryRa.toFixed(4)}°, {queryDec >= 0 ? '+' : ''}{queryDec.toFixed(4)}°)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 max-w-full flex-wrap">
               <button
                 type="button"
                 onClick={() => {
@@ -735,7 +808,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="hidden xl:inline">{isRtl ? 'القاموس الفلكي' : 'Space Dictionary'}</span>
               </button>
 
-              {/* Guided Tour Trigger Button */}
               <button
                 type="button"
                 onClick={() => setShowTour(true)}
@@ -746,7 +818,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="hidden sm:inline">{isRtl ? 'الجولة' : 'Tour'}</span>
               </button>
 
-              {/* Data Authenticity Indicator (Dynamic Canonical Classification) */}
               {(() => {
                 const activePayload: any =
                   viewMode === 'flipbook' && latestTimeSeriesMeta
@@ -787,68 +858,63 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                   </div>
                 );
               })()}
-            </>
-          )}
 
-          {/* Space Explorer's Log Trigger & Optional On-Demand Fly Search */}
-          {!isScientistMode && (
-            <button
-              type="button"
-              data-testid="explore-fly-toggle-btn"
-              onClick={() => setShowFlySearchSheet((v) => !v)}
-              aria-expanded={showFlySearchSheet}
-              className="min-h-[36px] flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 transition cursor-pointer text-xs font-semibold"
-              title={t.flySearchLabel}
-            >
-              <Search className="w-3.5 h-3.5 text-sky-400" />
-              <span className="hidden sm:inline">{t.flySearchBtn}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowExplorerLog(true)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
-            title={isRtl ? 'سجل مستكشف الفضاء' : "Space Explorer's Log"}
-          >
-            <Award className="w-3.5 h-3.5 text-cyan-400" />
-            <span className="hidden xl:inline">{isRtl ? 'سجل المستكشف' : "Explorer's Log"}</span>
-          </button>
-
-          {/* Mode Switch: Explorer vs Scientist */}
-          {onToggleScientistMode && (
-            <div data-tour="scientist_toggle" className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15">
               <button
                 type="button"
-                data-testid="mode-explorer-btn"
-                onClick={() => isScientistMode && onToggleScientistMode()}
-                aria-pressed={!isScientistMode}
-                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
-                  !isScientistMode
-                    ? 'bg-[#FFB900] text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                onClick={() => setShowExplorerLog(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 transition cursor-pointer text-xs font-mono font-semibold shadow-xs"
+                title={isRtl ? 'سجل مستكشف الفضاء' : "Space Explorer's Log"}
               >
-                {t.modeExplorer}
+                <Award className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden xl:inline">{isRtl ? 'سجل المستكشف' : "Explorer's Log"}</span>
               </button>
+
               <button
                 type="button"
-                data-testid="mode-scientist-btn"
-                onClick={() => !isScientistMode && onToggleScientistMode()}
-                aria-pressed={isScientistMode}
-                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
-                  isScientistMode
-                    ? 'bg-[#00D3F3] text-slate-950 shadow-sm font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
+                data-testid="explore-help-btn"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setShowHelpModal(true);
+                }}
+                title={t.exploreHelpTitle}
+                aria-label={t.exploreHelpTitle}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-amber-400/45 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 transition cursor-pointer text-xs font-bold"
               >
-                {t.modeScientist}
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>?</span>
               </button>
-            </div>
-          )}
 
-          {isScientistMode && (
-            <>
-              {/* Collapse/expand SPEX AI Chat Companion on demand */}
+              {onToggleScientistMode && (
+                <div data-tour="scientist_toggle" className="flex items-center p-0.5 rounded-xl bg-black/60 border border-white/15">
+                  <button
+                    type="button"
+                    data-testid="mode-explorer-btn"
+                    onClick={() => isScientistMode && onToggleScientistMode()}
+                    aria-pressed={!isScientistMode}
+                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
+                      !isScientistMode
+                        ? 'bg-[#FFB900] text-slate-950 shadow-sm font-bold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {t.exploreSimpleToggle}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="mode-scientist-btn"
+                    onClick={() => !isScientistMode && onToggleScientistMode()}
+                    aria-pressed={isScientistMode}
+                    className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-mono font-semibold transition cursor-pointer select-none ${
+                      isScientistMode
+                        ? 'bg-[#00D3F3] text-slate-950 shadow-sm font-bold'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {t.exploreAdvancedToggle}
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={() => setShowCompanion((prev) => !prev)}
@@ -864,7 +930,6 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <span className="hidden lg:inline">SPEX</span>
               </button>
 
-              {/* Discovery Postcard Share Action */}
               <button
                 type="button"
                 data-tour="postcard_button"
@@ -875,9 +940,9 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 <Share2 className="w-3.5 h-3.5" />
                 <span className="hidden sm:inline">{isRtl ? 'بطاقة الاكتشاف' : 'Postcard'}</span>
               </button>
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
       </header>
       )}
 
@@ -1136,7 +1201,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 guidedStepAction={guidedDemoStep !== null ? GUIDED_DEMO_STEPS[guidedDemoStep].action : null}
               />
 
-              {!isScientistMode && !isEmbed && (
+              {isScientistMode && !isEmbed && (
                 <div className="max-w-[1180px] mx-auto px-3 sm:px-5 pb-6 mt-4">
                   <ExplorerMissions
                     language={language}
@@ -1249,6 +1314,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                 stretch={stretch}
                 colormap={effectiveColormap}
                 displayMode={displayMode}
+                rawPixels={isScientistMode && showRawPixels}
                 contrastFactor={contrastFactor}
                 zoom={zoom}
                 pan={pan}
@@ -1341,10 +1407,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               stretch={stretch}
               colormap={effectiveColormap}
               displayMode={displayMode}
+              rawPixels={showRawPixels}
               contrastFactor={contrastFactor}
               onStretchChange={setStretch}
               onColormapChange={setCustomColormap}
-              onDisplayModeChange={setDisplayMode}
+              onDisplayModeChange={(mode) => {
+                setDisplayMode(mode);
+                setShowRawPixels(mode === 'science');
+              }}
+              onRawPixelsChange={setShowRawPixels}
               onContrastFactorChange={setContrastFactor}
               selectedCandidate={selectedCandidate}
               onSelectCandidate={setSelectedCandidate}
@@ -1494,6 +1565,27 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           language={language}
         />
       )}
+
+      {/* EXPLORE 4-STEP HELP MODAL */}
+      <Modal
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        title={t.exploreHelpTitle}
+        icon={<HelpCircle className="w-4 h-4 text-amber-400" />}
+        isRtl={isRtl}
+        maxWidthClass="max-w-md"
+      >
+        <div className="space-y-3 text-sm">
+          {[t.exploreHelpStep1, t.exploreHelpStep2, t.exploreHelpStep3, t.exploreHelpStep4].map((step, i) => (
+            <div
+              key={i}
+              className="p-3 rounded-xl bg-white/[0.04] border border-white/10 text-slate-200 leading-relaxed"
+            >
+              {step}
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 };

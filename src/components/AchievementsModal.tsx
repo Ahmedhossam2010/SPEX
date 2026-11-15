@@ -185,8 +185,13 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
             </div>
             <div className="text-xs font-mono text-slate-400">
               {isRtl
-                ? `المستويات: ${progress.completedLevels.length}/5 · الألعاب: ${progress.completedMiniGames.length}/3 · الفصول: ${progress.completedChapters.length}/5`
-                : `Academy: ${progress.completedLevels.length}/5 · Mini-games: ${progress.completedMiniGames.length}/3 · Chapters: ${progress.completedChapters.length}/5`}
+                ? `المستويات: ${progress.completedLevels.length}/5 · الألعاب: ${progress.completedMiniGames.length}/4 · الفصول: ${progress.completedChapters.length}/6`
+                : `Academy: ${progress.completedLevels.length}/5 · Mini-games: ${progress.completedMiniGames.length}/4 · Chapters: ${progress.completedChapters.length}/6`}
+            </div>
+            <div className="text-[11px] font-mono text-slate-400 flex flex-wrap gap-3 tabular-nums">
+              <span className="text-sky-300">{t.xpSourceLearning}: {progress.xpBreakdown.learning}</span>
+              <span className="text-emerald-300">{t.xpSourceSolving}: {progress.xpBreakdown.solving}</span>
+              <span className="text-amber-300">{t.xpSourceGame}: {progress.xpBreakdown.game}</span>
             </div>
           </div>
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Radio } from 'lucide-react';
+import { Radio, Database } from 'lucide-react';
+import { Button } from './Button';
 
 export interface SkeletonSkyProps {
   label?: string;
@@ -9,6 +10,11 @@ export interface SkeletonSkyProps {
   loaded?: number;
   total?: number;
   phase?: string;
+  elapsedSec?: number;
+  slowHint?: string;
+  hasSavedCopy?: boolean;
+  onUseSavedCopy?: () => void;
+  savedCopyLabel?: string;
 }
 
 export const SkeletonSky: React.FC<SkeletonSkyProps> = ({
@@ -19,6 +25,11 @@ export const SkeletonSky: React.FC<SkeletonSkyProps> = ({
   loaded,
   total,
   phase,
+  elapsedSec = 0,
+  slowHint,
+  hasSavedCopy = false,
+  onUseSavedCopy,
+  savedCopyLabel = 'Use offline demo data',
 }) => {
   const aspectClasses = {
     square: 'aspect-square',
@@ -70,6 +81,11 @@ export const SkeletonSky: React.FC<SkeletonSkyProps> = ({
           <span className="text-xs text-slate-400 leading-relaxed">
             {phase || sublabel}
           </span>
+          {elapsedSec >= 4 && slowHint && (
+            <span className="text-[11px] text-amber-300/90 leading-snug mt-0.5 tabular-nums">
+              {slowHint} ({elapsedSec}s)
+            </span>
+          )}
         </div>
 
         {/* Frame-by-frame arrival strip */}
@@ -99,6 +115,18 @@ export const SkeletonSky: React.FC<SkeletonSkyProps> = ({
             </div>
           )}
         </div>
+
+        {hasSavedCopy && onUseSavedCopy && elapsedSec >= 3 && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            icon={<Database className="w-3.5 h-3.5" />}
+            onClick={onUseSavedCopy}
+          >
+            {savedCopyLabel}
+          </Button>
+        )}
       </div>
     </div>
   );

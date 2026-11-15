@@ -16,6 +16,7 @@ export interface RenderOptions {
   maxPercentile?: number;
   contrastFactor?: number; // Adjustable display contrast multiplier (e.g. 0.5 to 2.5)
   renderSize?: number; // target display canvas resolution (default: 512)
+  rawPixels?: boolean; // Advanced opt-in: show unsmoothed native detector pixels
 }
 
 export interface PixelRGB {
@@ -223,20 +224,19 @@ export class AstronomyRenderer {
   ) {
     if (!canvas || !data || data.length === 0 || width === 0 || height === 0) return;
 
-    const displayMode: DisplayMode = options.displayMode || 'presentation';
+    const useRawPixels = options.rawPixels === true;
     const baseDisplaySize = options.renderSize || 640;
     const dpr = getCanvasDpr();
 
     const rawBytes = this.computePixels(data, width, height, options);
 
     // Target display size
-    const targetSize =
-      displayMode === 'presentation'
-        ? baseDisplaySize
-        : width * Math.max(1, Math.floor(baseDisplaySize / width));
+    const targetSize = !useRawPixels
+      ? baseDisplaySize
+      : width * Math.max(1, Math.floor(baseDisplaySize / width));
 
     const offscreen = document.createElement('canvas');
-    if (displayMode === 'presentation') {
+    if (!useRawPixels) {
       // Smooth Catmull-Rom bicubic upsample pass so stars show smooth PSF halos instead of square detector blocks
       const smoothW = Math.min(384, Math.max(width * 4, Math.round(targetSize / 2)));
       const smoothH = Math.min(384, Math.max(height * 4, Math.round(targetSize / 2)));
@@ -269,12 +269,12 @@ export class AstronomyRenderer {
     destCtx.save();
     destCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    if (displayMode === 'presentation') {
+    if (!useRawPixels) {
       destCtx.imageSmoothingEnabled = true;
       destCtx.imageSmoothingQuality = 'high';
       destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     } else {
-      // Advanced Science raw-pixel mode: exact native detector pixels
+      // Advanced Science raw-pixel toggle: exact native detector pixels
       destCtx.imageSmoothingEnabled = false;
       destCtx.drawImage(offscreen, 0, 0, targetSize, targetSize);
     }

@@ -24,6 +24,7 @@ export interface AstronomicalSkyViewportProps {
   stretch: StretchMode;
   colormap: ColormapMode;
   displayMode: DisplayMode;
+  rawPixels?: boolean;
   contrastFactor?: number;
   zoom: number;
   pan: { x: number; y: number };
@@ -82,6 +83,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
   stretch,
   colormap,
   displayMode,
+  rawPixels = false,
   contrastFactor = 1.0,
   zoom,
   pan,
@@ -201,6 +203,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
         stretch,
         colormap: colormap === 'diff_diverging' ? 'infrared_warm' : colormap,
         displayMode,
+        rawPixels,
         contrastFactor,
         renderSize,
       });
@@ -209,6 +212,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
         stretch,
         colormap: colormap === 'diff_diverging' ? 'infrared_warm' : colormap,
         displayMode,
+        rawPixels,
         contrastFactor,
         renderSize,
       });
@@ -223,7 +227,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
       if (!ctx) return;
       ctx.save();
       ctx.scale(dpr, dpr);
-      const isSmooth = displayMode !== 'science';
+      const isSmooth = !rawPixels;
       ctx.imageSmoothingEnabled = isSmooth;
       if (isSmooth) {
         ctx.imageSmoothingQuality = 'high';
@@ -262,6 +266,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
         stretch,
         colormap,
         displayMode,
+        rawPixels,
         isDifference,
         mode: isDifference ? 'signed_difference' : 'unipolar',
         contrastFactor,
@@ -281,6 +286,7 @@ export const AstronomicalSkyViewport: React.FC<AstronomicalSkyViewportProps> = (
     stretch,
     colormap,
     displayMode,
+    rawPixels,
     contrastFactor,
     isCurtainActive,
     epoch1Data,

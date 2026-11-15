@@ -280,6 +280,29 @@ function computePercentileBounds(values: number[]): { p02: number; p98: number; 
   return { p02, p98: p98 > p02 ? p98 : p02 + 1e-6, med };
 }
 
+const SNAPSHOT_TARGET_PRESETS: Array<{ caseId: string; slugs: string[]; ra: number; dec: number }> = [
+  { caseId: 'case-wise-0855', slugs: ['wise-0855', '0855'], ra: 133.81890825, dec: -7.247048 },
+  { caseId: 'case-barnards-star', slugs: ['barnard', 'gj699', 'gj-699'], ra: 269.45207695, dec: 4.69336497 },
+  { caseId: 'case-epsilon-indi', slugs: ['epsilon-indi', 'eps-indi', 'indi'], ra: 331.04414659, dec: -56.7828442 },
+  { caseId: 'case-rw-aur', slugs: ['rw-aur'], ra: 76.95652603, dec: 30.40143817 },
+  { caseId: 'case-r-dra', slugs: ['r-dra'], ra: 248.16761083, dec: 66.75497942 },
+];
+
+function matchSnapshotCaseId(caseId: string | undefined, ra: number, dec: number): string | null {
+  const idLower = (caseId || '').toLowerCase();
+  for (const item of SNAPSHOT_TARGET_PRESETS) {
+    if (item.slugs.some((slug) => idLower.includes(slug))) return item.caseId;
+  }
+  if (Number.isFinite(ra) && Number.isFinite(dec)) {
+    for (const item of SNAPSHOT_TARGET_PRESETS) {
+      if (Math.abs(ra - item.ra) < 0.15 && Math.abs(dec - item.dec) < 0.15) {
+        return item.caseId;
+      }
+    }
+  }
+  return null;
+}
+
 export const FramePlayer: React.FC<FramePlayerProps> = ({
   ra,
   dec,
@@ -318,6 +341,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [data, setData] = useState<TimeSeriesResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingProgress, setLoadingProgress] = useState<{ loaded: number; total: number; phase?: string } | null>(null);
+  const [loadingElapsedSec, setLoadingElapsedSec] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<'OK' | 'ARCHIVE_ZERO_ROWS' | 'NETWORK_ERROR' | 'HTTP_ERROR'>('OK');
 
@@ -518,6 +542,72 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     if (guidedStepAction.showMotionTrail !== undefined) setShowMotionTrail(guidedStepAction.showMotionTrail);
   }, [guidedStepAction, prefersReducedMotion]);
 
+  const activeFetchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingElapsedSec(0);
+      return;
+    }
+    setLoadingElapsedSec(0);
+    const id = setInterval(() => {
+      setLoadingElapsedSec((s) => s + 1);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [loading]);
+
+  const handleUseOfflineDemo = useCallback(async () => {
+    if (activeFetchAbortRef.current) {
+      activeFetchAbortRef.current.abort();
+      activeFetchAbortRef.current = null;
+    }
+    const controller = new AbortController();
+    activeFetchAbortRef.current = controller;
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    setLoading(true);
+    setError(null);
+    try {
+      const targetCase = matchSnapshotCaseId(caseId, ra, dec) || caseId || 'case-wise-0855';
+      const url = `/api/spherex/timeseries?caseId=${encodeURIComponent(targetCase)}&ra=${ra.toFixed(6)}&dec=${dec.toFixed(6)}&sizePix=${sizePix}&offline=1`;
+      const res = await fetch(url, { signal: controller.signal });
+      let json: TimeSeriesResponse | null = res.ok ? await res.json().catch(() => null) : null;
+      if (!json || !json.frames || json.frames.length === 0) {
+        const fallbackRes = await fetch(
+          `/api/spherex/timeseries?caseId=case-wise-0855&ra=133.818908&dec=-7.247048&sizePix=64&offline=1`,
+          { signal: controller.signal }
+        );
+        if (fallbackRes.ok) {
+          json = await fallbackRes.json().catch(() => null);
+        }
+      }
+      if (json && json.frames && json.frames.length > 0) {
+        setState('OK');
+        setData(json);
+        setSelectedReleaseKey(null);
+        setCurrentFrameIdx(0);
+        if (json.availableDetectors?.length) {
+          setKnownDetectors(json.availableDetectors);
+        }
+        setPolaroidKey(`offline_${json.selectedDetector || 'auto'}`);
+        onDataLoaded?.(json);
+      } else {
+        setState('NETWORK_ERROR');
+        setError('Offline snapshot could not be loaded.');
+      }
+    } catch (err: any) {
+      if (err?.name === 'AbortError' && activeFetchAbortRef.current !== controller) return;
+      setState('NETWORK_ERROR');
+      setError('Offline snapshot could not be loaded.');
+    } finally {
+      clearTimeout(timeoutId);
+      if (activeFetchAbortRef.current === controller) {
+        activeFetchAbortRef.current = null;
+      }
+      setLoading(false);
+    }
+  }, [caseId, ra, dec, sizePix, onDataLoaded]);
+
   const fetchTimeSeries = useCallback(async () => {
     const cacheKey = `${ra.toFixed(5)}:${dec.toFixed(5)}:${caseId || ''}:${sizePix}:${frameMode}:${selectedDetector || 'auto'}:${frameCount}:${wavelengthWindow}:${sameReleaseOnly ? 1 : 0}`;
     const cached = timeSeriesCacheRef.current.get(cacheKey);
@@ -537,6 +627,18 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       return;
     }
 
+    if (activeFetchAbortRef.current) {
+      activeFetchAbortRef.current.abort();
+      activeFetchAbortRef.current = null;
+    }
+    const controller = new AbortController();
+    activeFetchAbortRef.current = controller;
+    let timedOut = false;
+    const hardTimeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 20000);
+
     setLoading(true);
     setLoadingProgress(null);
     setError(null);
@@ -554,7 +656,9 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       if (wavelengthWindow !== 'all') params.set('wlWindow', wavelengthWindow);
       if (sameReleaseOnly) params.set('sameReleaseOnly', '1');
 
-      const res = await fetch(`/api/spherex/timeseries?${params.toString()}`);
+      const res = await fetch(`/api/spherex/timeseries?${params.toString()}`, {
+        signal: controller.signal,
+      });
       const contentType = res.headers.get('content-type') || '';
 
       let json: TimeSeriesResponse | null = null;
@@ -641,15 +745,42 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         onDataLoaded?.(json);
       }
     } catch (err: any) {
+      // Ignore aborts triggered because a newer target/detector fetch superseded this one
+      if (err?.name === 'AbortError' && !timedOut) {
+        return;
+      }
+      const matchedSnapshotCase = matchSnapshotCaseId(caseId, ra, dec);
+      if (matchedSnapshotCase) {
+        clearTimeout(hardTimeoutId);
+        if (activeFetchAbortRef.current === controller) {
+          activeFetchAbortRef.current = null;
+        }
+        await handleUseOfflineDemo();
+        return;
+      }
       setState('NETWORK_ERROR');
-      setError(err?.message || 'Could not load time-series frames from NASA IRSA');
+      setError(
+        timedOut
+          ? 'NASA IRSA request timed out after 20 seconds.'
+          : err?.message || 'Could not load time-series frames from NASA IRSA'
+      );
     } finally {
-      setLoading(false);
+      clearTimeout(hardTimeoutId);
+      if (activeFetchAbortRef.current === controller) {
+        activeFetchAbortRef.current = null;
+        setLoading(false);
+      }
     }
-  }, [ra, dec, caseId, sizePix, frameMode, selectedDetector, frameCount, wavelengthWindow, sameReleaseOnly]);
+  }, [ra, dec, caseId, sizePix, frameMode, selectedDetector, frameCount, wavelengthWindow, sameReleaseOnly, handleUseOfflineDemo]);
 
   useEffect(() => {
     fetchTimeSeries();
+    return () => {
+      if (activeFetchAbortRef.current) {
+        activeFetchAbortRef.current.abort();
+        activeFetchAbortRef.current = null;
+      }
+    };
   }, [fetchTimeSeries]);
 
   // Group frames by normalized release::version for consistent diff/coadd subtraction
@@ -1612,6 +1743,26 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     a.click();
   };
 
+  const activeFrameList = displayFrames;
+  const safeFrameIdx = Math.min(currentFrameIdx, Math.max(0, activeFrameList.length - 1));
+  const currentFrame = activeFrameList[safeFrameIdx] || activeFrameList[0];
+  const frameW = currentFrame?.width || 64;
+  const frameH = currentFrame?.height || 64;
+
+  // Compute sample of flagged DQ pixels on active frame to visually highlight affected regions (called unconditionally above early returns)
+  const dqHighlightSpots = useMemo(() => {
+    if (!showDqOverlay || !currentFrame?.flags?.length) return [] as Array<{ x: number; y: number }>;
+    const spots: Array<{ x: number; y: number }> = [];
+    const stride = currentFrame.flags.length > 4096 ? 2 : 1;
+    for (let i = 0; i < currentFrame.flags.length; i += stride) {
+      if ((currentFrame.flags[i] & DQ_ARTIFACT_MASK) !== 0) {
+        spots.push({ x: i % frameW, y: Math.floor(i / frameW) });
+        if (spots.length >= 24) break;
+      }
+    }
+    return spots;
+  }, [showDqOverlay, currentFrame?.flags, frameW]);
+
   if (loading && !data) {
     const progressText =
       loadingProgress && loadingProgress.total > 0
@@ -1626,6 +1777,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         loaded={loadingProgress?.loaded}
         total={loadingProgress?.total}
         phase={progressText}
+        elapsedSec={loadingElapsedSec}
+        slowHint={t.loadingScanningSlow}
+        hasSavedCopy
+        onUseSavedCopy={handleUseOfflineDemo}
+        savedCopyLabel={t.exploreOfflineDemoBtn}
         aspectRatio="video"
         className={className}
       />
@@ -1635,32 +1791,34 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   if (state === 'NETWORK_ERROR' || error) {
     return (
       <ErrorState
-        title="Time-Series Archive Unreachable"
-        error={error || 'Failed to retrieve multi-epoch exposures from NASA/IPAC IRSA.'}
+        title={t.exploreErrorTitle}
+        error={error || t.exploreErrorHint}
+        canRetry
         onRetry={fetchTimeSeries}
+        retryLabel={t.exploreRetryBtn}
+        hasSavedCopy
+        onUseSavedCopy={handleUseOfflineDemo}
+        savedCopyLabel={t.exploreOfflineDemoBtn}
         className={className}
       />
     );
   }
 
-  if (state === 'ARCHIVE_ZERO_ROWS' || !data || data.frames.length === 0) {
+  if (state === 'ARCHIVE_ZERO_ROWS' || !data || data.frames.length === 0 || !currentFrame) {
     return (
-      <EmptyState
-        title="Zero Time-Series Observations at Requested Coordinates"
-        description={
-          data?.message ||
-          'No SPHEREx exposures covering these celestial coordinates were returned by IRSA SPHEREx TAP.'
-        }
+      <ErrorState
+        title={t.exploreErrorTitle}
+        error={data?.message || t.exploreErrorHint}
+        canRetry
+        onRetry={fetchTimeSeries}
+        retryLabel={t.exploreRetryBtn}
+        hasSavedCopy
+        onUseSavedCopy={handleUseOfflineDemo}
+        savedCopyLabel={t.exploreOfflineDemoBtn}
         className={className}
       />
     );
   }
-
-  const activeFrameList = displayFrames;
-  const safeFrameIdx = Math.min(currentFrameIdx, Math.max(0, activeFrameList.length - 1));
-  const currentFrame = activeFrameList[safeFrameIdx] || activeFrameList[0];
-  const frameW = currentFrame.width || 64;
-  const frameH = currentFrame.height || 64;
   const pairInfo = data.temporalPairs?.[Math.min(safeFrameIdx, Math.max(0, (data.temporalPairs?.length || 1) - 1))];
   const activeReleaseLabel = (currentFrame.release || data.activeRelease || 'public').toUpperCase();
   const activeVersionLabel = currentFrame.version || data.activeVersion || '—';
@@ -1789,20 +1947,6 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       : expectedTrailPoints;
   const currentTargetPix = currentFrame.targetRefPixel || currentFrame.targetPixel;
 
-  // Compute sample of flagged DQ pixels on active frame to visually highlight affected regions
-  const dqHighlightSpots = useMemo(() => {
-    if (!showDqOverlay || !currentFrame?.flags?.length) return [] as Array<{ x: number; y: number }>;
-    const spots: Array<{ x: number; y: number }> = [];
-    const stride = currentFrame.flags.length > 4096 ? 2 : 1;
-    for (let i = 0; i < currentFrame.flags.length; i += stride) {
-      if ((currentFrame.flags[i] & DQ_ARTIFACT_MASK) !== 0) {
-        spots.push({ x: i % frameW, y: Math.floor(i / frameW) });
-        if (spots.length >= 24) break;
-      }
-    }
-    return spots;
-  }, [showDqOverlay, currentFrame?.flags, frameW]);
-
   const hasTwoOrMorePasses = surveyPasses.length >= 2;
   const explorerPanelVisibilityClass =
     explorerMode && immersiveMode && idleHidden
@@ -1895,7 +2039,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       {!effectiveDiscoveryEligible && !data.isDemoCopy && (
         <div
           data-testid="provenance-nonlive-banner"
-          className={`p-2.5 rounded-xl border text-xs font-mono flex items-start gap-2 ${
+          className={`px-3 py-2 rounded-xl border text-xs font-mono flex flex-wrap items-center justify-between gap-2 ${
             activeClassification === 'STALE_TAP_CACHE'
               ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
               : activeClassification === 'SAVED_BENCHMARK'
@@ -1903,18 +2047,21 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               : 'bg-rose-500/15 border-rose-500/40 text-rose-200'
           }`}
         >
-          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-          <div className="space-y-0.5">
-            <div className="font-bold">
-              {classificationMeta.badgeLabel} · {t.provenanceDiscoveryBlocked}
-            </div>
-            <div className="text-[11px] opacity-90">
-              {data.discoveryEligibilityReason ||
-                (activeClassification === 'STALE_TAP_CACHE'
-                  ? t.provenanceStaleBanner
-                  : activeClassification === 'SAVED_BENCHMARK'
-                  ? t.provenanceSnapshotBanner
-                  : classificationMeta.description)}
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+            <div className="space-y-0.5">
+              <div className="font-bold">
+                {activeClassification === 'SAVED_BENCHMARK' ? t.exploreSnapshotBadge : classificationMeta.badgeLabel} ·{' '}
+                {t.provenanceDiscoveryBlocked}
+              </div>
+              <div className="text-[11px] opacity-90">
+                {data.discoveryEligibilityReason ||
+                  (activeClassification === 'STALE_TAP_CACHE'
+                    ? t.provenanceStaleBanner
+                    : activeClassification === 'SAVED_BENCHMARK'
+                    ? t.provenanceSnapshotBanner
+                    : classificationMeta.description)}
+              </div>
             </div>
           </div>
         </div>
@@ -2147,7 +2294,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               mobileToolboxOpen ? 'flex' : 'hidden lg:flex'
             } w-full lg:w-[290px] shrink-0 flex-col gap-2 text-xs`}
           >
-            {/* Group 1: View */}
+            {/* Section 1: View */}
             <div className="rounded-xl bg-[#050811] border border-white/10 overflow-hidden">
               <button
                 type="button"
@@ -2157,7 +2304,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               >
                 <span className="flex items-center gap-2">
                   <Eye className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{t.sciGroupView}</span>
+                  <span>{t.panelView}</span>
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${groupViewOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -2257,6 +2404,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         disabled={zoomLocked}
                         onClick={() => setZoom((z) => Math.max(1, Number((z / 1.5).toFixed(1))))}
                         aria-label="Zoom out"
+                        title="Zoom out"
                         className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white disabled:opacity-40 cursor-pointer"
                       >
                         <ZoomOut className="w-3.5 h-3.5" />
@@ -2267,6 +2415,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         disabled={zoomLocked}
                         onClick={() => setZoom((z) => Math.min(8, Number((z * 1.5).toFixed(1))))}
                         aria-label="Zoom in"
+                        title="Zoom in"
                         className="p-1.5 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white disabled:opacity-40 cursor-pointer"
                       >
                         <ZoomIn className="w-3.5 h-3.5" />
@@ -2291,7 +2440,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               )}
             </div>
 
-            {/* Group 2: Arithmetic */}
+            {/* Section 2: Time */}
             <div className="rounded-xl bg-[#050811] border border-white/10 overflow-hidden">
               <button
                 type="button"
@@ -2300,8 +2449,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 className="w-full px-3 py-2.5 flex items-center justify-between gap-2 font-semibold text-slate-200 hover:bg-white/5 cursor-pointer"
               >
                 <span className="flex items-center gap-2">
-                  <Zap className="w-3.5 h-3.5 text-sky-400" />
-                  <span>{t.sciGroupArithmetic}</span>
+                  <Clock className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.panelTime}</span>
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${groupArithOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -2345,6 +2494,36 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     {frameMode === 'sky' ? 'Frame: Sky-Fixed WCS' : 'Frame: Target-Centered'}
                   </button>
 
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowEpoch1Crosshair((v) => !v)}
+                      aria-pressed={showEpoch1Crosshair}
+                      className={`px-2 py-1.5 rounded-lg border text-start flex items-center gap-1.5 cursor-pointer ${
+                        showEpoch1Crosshair
+                          ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                          : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      <Crosshair className="w-3.5 h-3.5 shrink-0" />
+                      <span>Epoch-1</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowMotionTrail((v) => !v)}
+                      aria-pressed={showMotionTrail}
+                      className={`px-2 py-1.5 rounded-lg border text-start flex items-center gap-1.5 cursor-pointer ${
+                        showMotionTrail
+                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
+                          : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      <GitCommit className="w-3.5 h-3.5 shrink-0" />
+                      <span>{t.motionTrailToggle}</span>
+                    </button>
+                  </div>
+
                   <label className="flex items-center justify-between gap-2 text-slate-400">
                     <span>λ window</span>
                     <select
@@ -2384,7 +2563,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               )}
             </div>
 
-            {/* Group 3: Bands & 102 LVF (Expanded by default) */}
+            {/* Section 3: Telescopes */}
             <div className="rounded-xl bg-[#050811] border border-white/10 overflow-hidden">
               <button
                 type="button"
@@ -2393,8 +2572,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 className="w-full px-3 py-2.5 flex items-center justify-between gap-2 font-semibold text-slate-200 hover:bg-white/5 cursor-pointer"
               >
                 <span className="flex items-center gap-2">
-                  <Layers className="w-3.5 h-3.5 text-amber-400" />
-                  <span>{t.sciGroupBands}</span>
+                  <Telescope className="w-3.5 h-3.5 text-amber-400" />
+                  <span>{t.panelTelescopes}</span>
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${groupBandsOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -2454,33 +2633,38 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                     })}
                   </div>
 
-                  <div className="flex flex-col gap-1.5 pt-1">
-                    {onOpenSpectrum && (
-                      <button
-                        type="button"
-                        onClick={onOpenSpectrum}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-sky-400/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>102-Band Spectrum</span>
-                      </button>
-                    )}
-                    {onOpenDetectorStacking && (
-                      <button
-                        type="button"
-                        onClick={onOpenDetectorStacking}
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>Co-add Stacks</span>
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCatalogOverlay((v) => !v)}
+                    aria-pressed={showCatalogOverlay}
+                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start flex items-center gap-2 cursor-pointer ${
+                      showCatalogOverlay
+                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                        : 'bg-white/5 border-white/10 text-slate-400'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5 shrink-0" />
+                    <span>Gaia / AllWISE ({data.catalogOverlays?.length ?? 0})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAladinOverlay((v) => !v)}
+                    aria-pressed={showAladinOverlay}
+                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start flex items-center gap-2 cursor-pointer ${
+                      showAladinOverlay
+                        ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
+                        : 'bg-white/5 border-white/10 text-slate-400'
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                    <span>{t.otherTelescopesAladin}</span>
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Group 4: Overlays & Sky */}
+            {/* Section 4: Tools */}
             <div className="rounded-xl bg-[#050811] border border-white/10 overflow-hidden">
               <button
                 type="button"
@@ -2489,56 +2673,14 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 className="w-full px-3 py-2.5 flex items-center justify-between gap-2 font-semibold text-slate-200 hover:bg-white/5 cursor-pointer"
               >
                 <span className="flex items-center gap-2">
-                  <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{t.sciGroupOverlays}</span>
+                  <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{t.panelTools}</span>
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${groupOverlaysOpen ? 'rotate-180' : ''}`} />
               </button>
               {groupOverlaysOpen && (
                 <div className="p-3 pt-2 border-t border-white/10 space-y-2 font-mono text-[11px]">
                   <div className="grid grid-cols-1 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setShowEpoch1Crosshair((v) => !v)}
-                      aria-pressed={showEpoch1Crosshair}
-                      className={`px-2.5 py-1.5 rounded-lg border text-start flex items-center gap-2 cursor-pointer ${
-                        showEpoch1Crosshair
-                          ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
-                          : 'bg-white/5 border-white/10 text-slate-400'
-                      }`}
-                    >
-                      <Crosshair className="w-3.5 h-3.5 shrink-0" />
-                      <span>Epoch-1 Crosshair</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowMotionTrail((v) => !v)}
-                      aria-pressed={showMotionTrail}
-                      className={`px-2.5 py-1.5 rounded-lg border text-start flex items-center gap-2 cursor-pointer ${
-                        showMotionTrail
-                          ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
-                          : 'bg-white/5 border-white/10 text-slate-400'
-                      }`}
-                    >
-                      <GitCommit className="w-3.5 h-3.5 shrink-0" />
-                      <span>PM Reticle &amp; Trail</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowCatalogOverlay((v) => !v)}
-                      aria-pressed={showCatalogOverlay}
-                      className={`px-2.5 py-1.5 rounded-lg border text-start flex items-center gap-2 cursor-pointer ${
-                        showCatalogOverlay
-                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                          : 'bg-white/5 border-white/10 text-slate-400'
-                      }`}
-                    >
-                      <Users className="w-3.5 h-3.5 shrink-0" />
-                      <span>Gaia / AllWISE ({data.catalogOverlays?.length ?? 0})</span>
-                    </button>
-
                     <button
                       type="button"
                       onClick={() => setShowDqOverlay((v) => !v)}
@@ -2566,32 +2708,78 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       <Grid className="w-3.5 h-3.5 shrink-0" />
                       <span>6.2″/px Grid</span>
                     </button>
-                  </div>
 
-                  <div className="pt-1 border-t border-white/10 flex flex-col gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleExportPng}
-                      className="px-2.5 py-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Download PNG</span>
-                    </button>
-                    {onOpenProvenance && (
+                    {onOpenSpectrum && (
                       <button
                         type="button"
-                        onClick={onOpenProvenance}
-                        className="px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white cursor-pointer text-start"
+                        onClick={onOpenSpectrum}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-sky-400/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 flex items-center justify-center gap-1.5 cursor-pointer"
                       >
-                        Provenance Details
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>102-Band Spectrum</span>
                       </button>
                     )}
+
+                    {onOpenDetectorStacking && (
+                      <button
+                        type="button"
+                        onClick={onOpenDetectorStacking}
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>Co-add Stacks</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setMetaSlotOpen((v) => !v)}
+                      aria-pressed={metaSlotOpen}
+                      className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
+                        metaSlotOpen ? 'bg-amber-500/15 border-amber-400/40 text-amber-200' : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {t.sciMetadataDrawer}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setCentroidSlotOpen((v) => !v)}
+                      aria-pressed={centroidSlotOpen}
+                      className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
+                        centroidSlotOpen ? 'bg-sky-500/15 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {t.slotCentroid}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSpectrumSlotOpen((v) => !v)}
+                      aria-pressed={spectrumSlotOpen}
+                      className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
+                        spectrumSlotOpen ? 'bg-sky-500/15 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {t.slotSpectrum}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setLightCurveSlotOpen((v) => !v)}
+                      aria-pressed={lightCurveSlotOpen}
+                      className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
+                        lightCurveSlotOpen ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200' : 'bg-white/5 border-white/10 text-slate-400'
+                      }`}
+                    >
+                      {t.slotLightCurve}
+                    </button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Group 5: Plots & Info */}
+            {/* Section 5: Share */}
             <div className="rounded-xl bg-[#050811] border border-white/10 overflow-hidden">
               <button
                 type="button"
@@ -2600,8 +2788,8 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 className="w-full px-3 py-2.5 flex items-center justify-between gap-2 font-semibold text-slate-200 hover:bg-white/5 cursor-pointer"
               >
                 <span className="flex items-center gap-2">
-                  <Activity className="w-3.5 h-3.5 text-sky-400" />
-                  <span>{t.sciGroupPlots}</span>
+                  <Share2 className="w-3.5 h-3.5 text-sky-400" />
+                  <span>{t.panelShare}</span>
                 </span>
                 <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${groupPlotsOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -2609,44 +2797,39 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                 <div className="p-3 pt-2 border-t border-white/10 space-y-1.5 font-mono text-[11px]">
                   <button
                     type="button"
-                    onClick={() => setMetaSlotOpen((v) => !v)}
-                    aria-pressed={metaSlotOpen}
-                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
-                      metaSlotOpen ? 'bg-amber-500/15 border-amber-400/40 text-amber-200' : 'bg-white/5 border-white/10 text-slate-400'
-                    }`}
+                    onClick={() => setShowShareModal(true)}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-sky-400/40 bg-sky-500/10 text-sky-200 hover:bg-sky-500/20 flex items-center gap-1.5 cursor-pointer"
                   >
-                    {t.sciMetadataDrawer}
+                    <Share2 className="w-3.5 h-3.5" />
+                    <span>{t.panelShare}</span>
                   </button>
+                  {onOpenPostcard && (
+                    <button
+                      type="button"
+                      onClick={onOpenPostcard}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-amber-400/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>{t.discoveryCardTitle}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => setCentroidSlotOpen((v) => !v)}
-                    aria-pressed={centroidSlotOpen}
-                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
-                      centroidSlotOpen ? 'bg-sky-500/15 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/10 text-slate-400'
-                    }`}
+                    onClick={handleExportPng}
+                    className="w-full px-2.5 py-1.5 rounded-lg border border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 flex items-center gap-1.5 cursor-pointer"
                   >
-                    {t.slotCentroid}
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download PNG</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setSpectrumSlotOpen((v) => !v)}
-                    aria-pressed={spectrumSlotOpen}
-                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
-                      spectrumSlotOpen ? 'bg-sky-500/15 border-sky-400/40 text-sky-200' : 'bg-white/5 border-white/10 text-slate-400'
-                    }`}
-                  >
-                    {t.slotSpectrum}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLightCurveSlotOpen((v) => !v)}
-                    aria-pressed={lightCurveSlotOpen}
-                    className={`w-full px-2.5 py-1.5 rounded-lg border text-start cursor-pointer ${
-                      lightCurveSlotOpen ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200' : 'bg-white/5 border-white/10 text-slate-400'
-                    }`}
-                  >
-                    {t.slotLightCurve}
-                  </button>
+                  {onOpenProvenance && (
+                    <button
+                      type="button"
+                      onClick={onOpenProvenance}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white cursor-pointer text-start"
+                    >
+                      Provenance Details
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2902,6 +3085,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                   }
                   loaded={loadingProgress?.loaded}
                   total={loadingProgress?.total}
+                  elapsedSec={loadingElapsedSec}
+                  slowHint={t.loadingScanningSlow}
+                  hasSavedCopy
+                  onUseSavedCopy={handleUseOfflineDemo}
+                  savedCopyLabel={t.exploreOfflineDemoBtn}
                   aspectRatio="square"
                   className="w-full h-full border-0 rounded-none"
                 />
@@ -3028,14 +3216,26 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                   {showMotionTrail && activeTrailPoints.length > 0 && (
                     <g>
                       {activeTrailPoints.length > 1 && (
-                        <polyline
-                          fill="none"
-                          stroke={motionIsSignificant ? '#00D3F3' : '#F59E0B'}
-                          strokeWidth={0.42}
-                          className={motionIsSignificant && renderMode === 'diff_ref' ? 'spex-trail-path' : ''}
-                          strokeDasharray={motionIsSignificant ? undefined : '0.95 0.65'}
-                          points={activeTrailPoints.map((p) => `${p.x},${p.y}`).join(' ')}
-                        />
+                        <>
+                          <polyline
+                            fill="none"
+                            stroke="rgba(2, 4, 10, 0.72)"
+                            strokeWidth={1.05}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            points={activeTrailPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                          />
+                          <polyline
+                            fill="none"
+                            stroke={motionIsSignificant ? '#00D3F3' : '#F59E0B'}
+                            strokeWidth={0.62}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className={motionIsSignificant && renderMode === 'diff_ref' ? 'spex-trail-path' : ''}
+                            strokeDasharray={motionIsSignificant ? undefined : '1.1 0.7'}
+                            points={activeTrailPoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                          />
+                        </>
                       )}
                       {/* Fading ghost circles behind current epoch from real measured positions */}
                       {measuredTrailPoints.map((p, i) => {
@@ -3045,9 +3245,11 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                             key={`ghost-${p.idx}-${i}`}
                             cx={p.x}
                             cy={p.y}
-                            r={0.35 + progress * 0.3}
+                            r={0.52 + progress * 0.45}
                             fill={motionIsSignificant ? '#00D3F3' : '#F59E0B'}
-                            opacity={0.22 + progress * 0.65}
+                            stroke="rgba(2, 4, 10, 0.75)"
+                            strokeWidth={0.18}
+                            opacity={0.3 + progress * 0.65}
                           />
                         );
                       })}
@@ -3055,12 +3257,13 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         const last = activeTrailPoints[activeTrailPoints.length - 1];
                         return (
                           <text
-                            x={Math.min(frameW - 12, last.x + 2.4)}
+                            x={Math.min(frameW - 14, last.x + 2.4)}
                             y={Math.max(4, last.y - 2.2)}
                             fill="#FBBF24"
-                            fontSize="2.2"
+                            fontSize="2.3"
                             fontFamily="monospace"
-                            opacity={0.9}
+                            fontWeight="bold"
+                            opacity={0.95}
                           >
                             {t.trailExpectedLabel}
                           </text>
@@ -3070,10 +3273,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         <circle
                           cx={currentTargetPix.x}
                           cy={currentTargetPix.y}
-                          r={2.1}
+                          r={2.2}
                           fill="none"
                           stroke="#00D3F3"
-                          strokeWidth={0.35}
+                          strokeWidth={0.42}
                         />
                       )}
                     </g>
@@ -3210,115 +3413,22 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               </button>
             )}
 
-            {explorerMode && (
+            {explorerMode && zoom > 1.05 && (
               <div className="absolute top-2.5 end-2.5 z-20 flex items-center gap-1.5" data-gesture-ignore="true">
-                {zoom > 1.05 && (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    data-testid="explorer-zoom-reset"
-                    aria-label={t.gestureResetViewAria}
-                    onClick={handleResetExplorerView}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') handleResetExplorerView();
-                    }}
-                    className="px-2 py-1 rounded-lg bg-black/80 border border-sky-400/40 text-sky-300 font-mono text-[11px] font-semibold cursor-pointer hover:bg-sky-500/20 tabular-nums"
-                  >
-                    {zoom.toFixed(1)}× ↺
-                  </span>
-                )}
-                <span
-                  role="button"
-                  tabIndex={0}
-                  data-testid="explorer-gesture-help-btn"
-                  aria-label={t.gestureReplayAria}
-                  title={t.gestureReplayAria}
-                  onClick={() => setShowGestureCoach((v) => !v)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') setShowGestureCoach((v) => !v);
-                  }}
-                  className="w-8 h-8 rounded-lg bg-black/80 hover:bg-amber-400 hover:text-slate-950 border border-white/20 text-amber-300 font-mono text-xs font-bold flex items-center justify-center cursor-pointer backdrop-blur-md transition"
+                <button
+                  type="button"
+                  data-testid="explorer-zoom-reset"
+                  aria-label={t.gestureResetViewAria}
+                  title={t.gestureResetViewAria}
+                  onClick={handleResetExplorerView}
+                  className="px-2 py-1 rounded-lg bg-black/80 border border-sky-400/40 text-sky-300 font-mono text-[11px] font-semibold cursor-pointer hover:bg-sky-500/20 tabular-nums"
                 >
-                  ?
-                </span>
+                  {zoom.toFixed(1)}× ↺
+                </button>
               </div>
             )}
 
-            {/* Explorer Side Edge Wavelength Strip (0.75 -> 5.0 µm, draggable display strip — NOT a button) */}
-            {explorerMode && (() => {
-              const displayUm = wavelengthPreview?.um ?? currentFrame.wavelengthUm ?? 0.93;
-              const pctFromBottom = Math.max(0, Math.min(100, ((displayUm - 0.75) / (5.0 - 0.75)) * 100));
-              return (
-                <div
-                  ref={wavelengthStripRef}
-                  data-testid="explorer-wavelength-strip"
-                  data-gesture-ignore="true"
-                  role="slider"
-                  tabIndex={0}
-                  aria-label={t.gestureDragWave}
-                  aria-valuemin={0.75}
-                  aria-valuemax={5.0}
-                  aria-valuenow={Number(displayUm.toFixed(2))}
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                    try {
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                    } catch {}
-                    updateWavelengthFromPointer(e.clientY);
-                  }}
-                  onPointerMove={(e) => {
-                    if (e.buttons === 0 && e.pointerType === 'mouse') return;
-                    if (!e.currentTarget.hasPointerCapture?.(e.pointerId) && e.buttons === 0) return;
-                    updateWavelengthFromPointer(e.clientY);
-                  }}
-                  onPointerUp={(e) => {
-                    try {
-                      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                        e.currentTarget.releasePointerCapture(e.pointerId);
-                      }
-                    } catch {}
-                    const det = waveStripLastDetRef.current;
-                    waveStripLastDetRef.current = null;
-                    setWavelengthPreview(null);
-                    if (det && det !== selectedDetector) {
-                      setSelectedDetector(det);
-                      onDetectorChange?.(det);
-                    }
-                  }}
-                  onPointerCancel={() => {
-                    waveStripLastDetRef.current = null;
-                    setWavelengthPreview(null);
-                  }}
-                  className="absolute end-1.5 top-18 bottom-14 w-7 z-10 flex items-center justify-center cursor-ns-resize touch-none select-none"
-                >
-                  <div className="relative h-full w-1.5 rounded-full bg-gradient-to-t from-sky-400 via-amber-400 to-rose-500 opacity-75">
-                    {detectorRanges.map((dr) => {
-                      const mid = (dr.wavelengthRangeUm[0] + dr.wavelengthRangeUm[1]) / 2;
-                      const pos = ((mid - 0.75) / (5.0 - 0.75)) * 100;
-                      return (
-                        <span
-                          key={dr.detector}
-                          style={{ bottom: `${pos}%` }}
-                          className="absolute -start-1 w-3.5 h-px bg-white/45 pointer-events-none"
-                        />
-                      );
-                    })}
-                    <div
-                      style={{ bottom: `calc(${pctFromBottom}% - 5px)` }}
-                      className="absolute left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white border-2 border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)] pointer-events-none"
-                    />
-                  </div>
-                  <span className="pointer-events-none absolute -top-4 font-mono text-[9px] text-slate-400 tabular-nums">
-                    5µm
-                  </span>
-                  <span className="pointer-events-none absolute -bottom-4 font-mono text-[9px] text-slate-400 tabular-nums">
-                    0.75
-                  </span>
-                </div>
-              );
-            })()}
-
-            {/* Explorer Bottom Edge Date Timeline Strip (draggable display strip — NOT a button) */}
+            {/* Explorer Bottom Edge Date Timeline Strip (draggable display strip) */}
             {explorerMode && (
               <div
                 ref={timelineStripRef}
@@ -3368,15 +3478,6 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               </div>
             )}
 
-            {/* First-run skippable Ghost-Finger Onboarding Overlay (Explorer mode) */}
-            {explorerMode && (
-              <SpexGestureCoach
-                visible={showGestureCoach}
-                onDismiss={dismissGestureCoach}
-                language={language}
-              />
-            )}
-
             {/* Fixed HUD: Obs ID & MJD (Scientist) */}
             {!explorerMode && (
               <div className="absolute bottom-2 start-2 pointer-events-none bg-black/75 backdrop-blur-md px-2.5 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-slate-200 tabular-nums">
@@ -3389,12 +3490,6 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               <div className="absolute bottom-2 end-2 pointer-events-none bg-black/75 px-2 py-1 rounded-lg border border-white/10 font-mono text-[10px] text-slate-300 flex items-center gap-1.5">
                 <span className="inline-block w-8 h-0.5 bg-amber-400" />
                 <span>31″ (5 px · 6.2″/px)</span>
-              </div>
-            )}
-            {/* Drag-to-pan hint on edge when zoomed/panned */}
-            {!showGestureCoach && (
-              <div className="pointer-events-none absolute bottom-1.5 start-1/2 -translate-x-1/2 hidden sm:block px-2 py-0.5 rounded bg-black/50 text-[10px] font-mono text-slate-400">
-                {t.dragToPanHint}
               </div>
             )}
           </div>
@@ -3423,535 +3518,195 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             </div>
           )}
 
-          {/* EXPLORER MODE: Collapsible Floating Glass Panels (Left: Time, Right: Telescopes/FOV/DQ, Bottom: Playback+Timeline+Share) */}
+          {/* SIMPLE MODE BOTTOM BAR: Play/Pause + Timeline + ONLY Other telescopes & Share + Plain Caption + Trail Legend */}
           {explorerMode ? (
-            <>
-              {/* Floating LEFT Panel: Time & Frame Controls */}
-              {!isEmbed && (
-                <div
-                  data-gesture-ignore="true"
-                  className={`hidden md:flex flex-col absolute top-14 start-3 z-25 max-w-[238px] ${explorerPanelVisibilityClass}`}
-                >
-                  <div className="obs-glass rounded-xl border border-white/15 bg-[#090F1E]/88 backdrop-blur-xl shadow-2xl overflow-hidden text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setLeftPanelOpen((v) => !v)}
-                      aria-expanded={leftPanelOpen}
-                      className="w-full px-3 py-2 flex items-center justify-between gap-2 font-mono font-bold text-slate-200 hover:bg-white/5 cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-amber-400" aria-hidden="true" />
-                        <span>{t.panelTime}</span>
-                      </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${leftPanelOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    {leftPanelOpen && (
-                      <div className="p-2.5 pt-1.5 border-t border-white/10 space-y-2">
+            <div className="relative z-25 px-3 sm:px-5 pb-4 pt-2 max-w-5xl mx-auto w-full">
+              <div className="obs-glass rounded-2xl border border-white/15 bg-[#090F1E]/92 backdrop-blur-xl p-3 sm:p-4 shadow-2xl space-y-3">
+                {/* Simple Mode Buttons: Play/Pause, Other telescopes, Share */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="explorer-play-btn"
+                    onClick={() => {
+                      gameAudio.playClick();
+                      setIsPlaying((p) => {
+                        const next = !p;
+                        if (next) {
+                          recordViewerAction('playedBlink');
+                          onExplorerPlay?.();
+                        }
+                        return next;
+                      });
+                    }}
+                    aria-pressed={isPlaying}
+                    className="flex-1 min-w-[160px] min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98] cursor-pointer shadow-sm"
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4 shrink-0" /> : <Play className="w-4 h-4 shrink-0 fill-current" />}
+                    <span>{isPlaying ? t.framePlayerPause : t.framePlayerPlay}</span>
+                  </button>
+
+                  {!isEmbed && (
+                    <>
+                      <div className="relative">
                         <button
                           type="button"
-                          data-testid="survey-pass-toggle"
-                          aria-pressed={surveyPassMode}
-                          onClick={() => {
-                            setSurveyPassMode((prev) => {
-                              const next = !prev;
-                              if (next) recordViewerAction('toggledSurveyPass');
-                              return next;
-                            });
-                            setCurrentFrameIdx(0);
-                            setIsPlaying(false);
-                          }}
-                          className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg border text-start flex items-center justify-between gap-1.5 cursor-pointer transition ${
-                            surveyPassMode
-                              ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
-                              : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
+                          data-testid="other-telescopes-btn"
+                          aria-expanded={otherTelescopesOpen}
+                          onClick={() => setOtherTelescopesOpen((v) => !v)}
+                          className={`min-h-[44px] px-3.5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border cursor-pointer transition ${
+                            showAladinOverlay || (showCatalogOverlay && (showGaiaOverlay || showAllWiseOverlay))
+                              ? 'bg-sky-500/20 border-sky-400/50 text-sky-200'
+                              : 'bg-white/5 border-white/15 text-slate-200 hover:bg-white/10'
                           }`}
                         >
-                          <span className="flex items-center gap-1.5">
-                            <Layers className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-                            <span>{t.surveyPassToggle}</span>
-                          </span>
-                          <span className="font-mono text-[10px] tabular-nums">({surveyPasses.length})</span>
+                          <Telescope className="w-4 h-4 text-sky-400 shrink-0" />
+                          <span>{t.otherTelescopesBtn}</span>
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${otherTelescopesOpen ? 'rotate-180' : ''}`} />
                         </button>
 
-                        {surveyPassMode && !hasTwoOrMorePasses && (
-                          <div
-                            data-testid="survey-pass-fallback-notice"
-                            className="p-2 rounded-lg bg-sky-500/10 border border-sky-400/25 text-[11px] text-sky-200 leading-snug flex items-start gap-1.5"
-                          >
-                            <Info className="w-3.5 h-3.5 text-sky-400 shrink-0 mt-0.5" aria-hidden="true" />
-                            <span>{t.surveyPassFallbackNotice}</span>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setShowMotionTrail((v) => !v)}
-                            aria-pressed={showMotionTrail}
-                            className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center justify-center gap-1 cursor-pointer ${
-                              showMotionTrail
-                                ? 'bg-sky-500/20 border-sky-400/45 text-sky-200'
-                                : 'bg-white/5 border-white/10 text-slate-400'
-                            }`}
-                          >
-                            <GitCommit className="w-3 h-3 shrink-0" />
-                            <span>{t.motionTrailToggle}</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={activeFrameList.length < 2}
-                            onClick={() => setBlinkFirstLast((b) => !b)}
-                            aria-pressed={blinkFirstLast}
-                            className={`px-2 py-1.5 rounded-lg border text-[11px] font-medium flex items-center justify-center gap-1 cursor-pointer disabled:opacity-40 ${
-                              blinkFirstLast
-                                ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
-                                : 'bg-white/5 border-white/10 text-slate-300'
-                            }`}
-                          >
-                            <Zap className="w-3 h-3 shrink-0" />
-                            <span>Blink 1↔End</span>
-                          </button>
-                        </div>
-
-                        <div className="flex flex-wrap gap-1">
-                          {['', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6'].map((det) => {
-                            const active = selectedDetector === det;
-                            return (
-                              <button
-                                key={det || 'auto'}
-                                type="button"
-                                onClick={() => {
-                                  setSelectedDetector(det);
-                                  recordViewerAction('changedBand');
-                                  onDetectorChange?.(det);
+                        {otherTelescopesOpen && (
+                          <div className="absolute bottom-full mb-2 start-0 z-40 w-72 rounded-xl bg-[#0B101D] border border-white/15 p-3 shadow-2xl space-y-2.5 text-xs">
+                            <label className="flex items-start justify-between gap-2 text-slate-200 cursor-pointer">
+                              <span className="flex items-start gap-2">
+                                <span className="w-2.5 h-2.5 mt-1 rounded-full border border-sky-400 inline-block shrink-0" />
+                                <span>
+                                  <span className="block font-medium">{t.otherTelescopesGaia}</span>
+                                  <span className="block text-[10px] text-slate-400">{t.otherTelescopesGaiaDesc}</span>
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={showCatalogOverlay && showGaiaOverlay}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setShowGaiaOverlay(checked);
+                                  if (checked) setShowCatalogOverlay(true);
+                                  else if (!showAllWiseOverlay) setShowCatalogOverlay(false);
                                 }}
-                                aria-pressed={active}
-                                className={`px-1.5 py-0.5 rounded border font-mono text-[10px] cursor-pointer ${
-                                  active
-                                    ? 'bg-sky-400 text-slate-950 border-sky-400 font-bold'
-                                    : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
-                                }`}
-                              >
-                                {det || 'Auto'}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {(Math.abs(pan.x) > 4 || Math.abs(pan.y) > 4 || Math.abs(zoom - defaultZoom) > 0.08) && (
-                          <button
-                            type="button"
-                            onClick={handleResetExplorerView}
-                            className="w-full min-h-[32px] px-2 py-1 rounded-lg border border-sky-400/35 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 font-medium flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>{t.resetPanBtn}</span>
-                          </button>
+                                className="accent-sky-400 cursor-pointer mt-1"
+                              />
+                            </label>
+                            <label className="flex items-start justify-between gap-2 text-slate-200 cursor-pointer">
+                              <span className="flex items-start gap-2">
+                                <span className="w-2.5 h-2.5 mt-1 rotate-45 border border-emerald-400 inline-block shrink-0" />
+                                <span>
+                                  <span className="block font-medium">{t.otherTelescopesWise}</span>
+                                  <span className="block text-[10px] text-slate-400">{t.otherTelescopesWiseDesc}</span>
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={showCatalogOverlay && showAllWiseOverlay}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setShowAllWiseOverlay(checked);
+                                  if (checked) setShowCatalogOverlay(true);
+                                  else if (!showGaiaOverlay) setShowCatalogOverlay(false);
+                                }}
+                                className="accent-emerald-400 cursor-pointer mt-1"
+                              />
+                            </label>
+                            <label className="flex items-start justify-between gap-2 text-slate-200 cursor-pointer">
+                              <span className="flex items-start gap-2">
+                                <Globe className="w-3 h-3 mt-1 text-amber-400 shrink-0" />
+                                <span>
+                                  <span className="block font-medium">{t.otherTelescopesAladin}</span>
+                                  <span className="block text-[10px] text-slate-400">{t.otherTelescopesAladinDesc}</span>
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={showAladinOverlay}
+                                onChange={(e) => setShowAladinOverlay(e.target.checked)}
+                                className="accent-amber-400 cursor-pointer mt-1"
+                              />
+                            </label>
+                          </div>
                         )}
                       </div>
-                    )}
-                  </div>
+
+                      <button
+                        type="button"
+                        data-testid="share-open-btn"
+                        onClick={() => setShowShareModal(true)}
+                        className="min-h-[44px] px-3.5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-sky-400/35 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 cursor-pointer"
+                      >
+                        <Share2 className="w-4 h-4 shrink-0" />
+                        <span>{t.panelShare}</span>
+                      </button>
+                    </>
+                  )}
                 </div>
-              )}
 
-              {/* Floating RIGHT Panel: Other Telescopes, FOV + Warning, Bad-Data Legend & Report */}
-              {!isEmbed && (
-                <div
-                  data-gesture-ignore="true"
-                  className={`hidden md:flex flex-col absolute top-14 end-3 z-25 max-w-[264px] ${explorerPanelVisibilityClass}`}
-                >
-                  <div className="obs-glass rounded-xl border border-white/15 bg-[#090F1E]/88 backdrop-blur-xl shadow-2xl overflow-hidden text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setRightPanelOpen((v) => !v)}
-                      aria-expanded={rightPanelOpen}
-                      className="w-full px-3 py-2 flex items-center justify-between gap-2 font-mono font-bold text-slate-200 hover:bg-white/5 cursor-pointer"
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <Telescope className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
-                        <span>{t.panelTelescopes}</span>
-                      </span>
-                      <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${rightPanelOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    {rightPanelOpen && (
-                      <div className="p-2.5 pt-1.5 border-t border-white/10 space-y-2.5">
-                        {/* Other Telescopes Menu */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            data-testid="other-telescopes-btn"
-                            aria-expanded={otherTelescopesOpen}
-                            onClick={() => setOtherTelescopesOpen((v) => !v)}
-                            className={`w-full min-h-[34px] px-2.5 py-1 rounded-lg border font-medium flex items-center justify-between gap-1.5 cursor-pointer transition ${
-                              showAladinOverlay || (showCatalogOverlay && (showGaiaOverlay || showAllWiseOverlay))
-                                ? 'bg-sky-500/15 border-sky-400/40 text-sky-200'
-                                : 'bg-white/5 border-white/10 text-slate-200 hover:bg-white/10'
-                            }`}
-                          >
-                            <span className="flex items-center gap-1.5">
-                              <Telescope className="w-3.5 h-3.5 text-sky-400" aria-hidden="true" />
-                              <span>{t.otherTelescopesBtn}</span>
-                            </span>
-                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${otherTelescopesOpen ? 'rotate-180' : ''}`} />
-                          </button>
-
-                          {otherTelescopesOpen && (
-                            <div className="mt-1.5 rounded-lg bg-[#050811] border border-white/15 p-2.5 space-y-2">
-                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
-                                <span className="flex items-start gap-2">
-                                  <span className="w-2.5 h-2.5 mt-1 rounded-full border border-sky-400 inline-block shrink-0" />
-                                  <span>
-                                    <span className="block font-medium">{t.otherTelescopesGaia}</span>
-                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesGaiaDesc}</span>
-                                  </span>
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={showCatalogOverlay && showGaiaOverlay}
-                                  onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setShowGaiaOverlay(checked);
-                                    if (checked) setShowCatalogOverlay(true);
-                                    else if (!showAllWiseOverlay) setShowCatalogOverlay(false);
-                                  }}
-                                  className="accent-sky-400 cursor-pointer mt-1"
-                                />
-                              </label>
-                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
-                                <span className="flex items-start gap-2">
-                                  <span className="w-2.5 h-2.5 mt-1 rotate-45 border border-emerald-400 inline-block shrink-0" />
-                                  <span>
-                                    <span className="block font-medium">{t.otherTelescopesWise}</span>
-                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesWiseDesc}</span>
-                                  </span>
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={showCatalogOverlay && showAllWiseOverlay}
-                                  onChange={(e) => {
-                                    const checked = e.target.checked;
-                                    setShowAllWiseOverlay(checked);
-                                    if (checked) setShowCatalogOverlay(true);
-                                    else if (!showGaiaOverlay) setShowCatalogOverlay(false);
-                                  }}
-                                  className="accent-emerald-400 cursor-pointer mt-1"
-                                />
-                              </label>
-                              <label className="flex items-start justify-between gap-2 text-xs text-slate-200 cursor-pointer">
-                                <span className="flex items-start gap-2">
-                                  <Globe className="w-3 h-3 mt-1 text-amber-400 shrink-0" />
-                                  <span>
-                                    <span className="block font-medium">{t.otherTelescopesAladin}</span>
-                                    <span className="block text-[10px] text-slate-400">{t.otherTelescopesAladinDesc}</span>
-                                  </span>
-                                </span>
-                                <input
-                                  type="checkbox"
-                                  checked={showAladinOverlay}
-                                  onChange={(e) => setShowAladinOverlay(e.target.checked)}
-                                  className="accent-amber-400 cursor-pointer mt-1"
-                                />
-                              </label>
-                              <div className="pt-1.5 border-t border-white/10 text-[10px] text-slate-400 flex flex-col gap-0.5">
-                                <span><span className="text-sky-400">○</span> {t.telescopesLegendGaia}</span>
-                                <span><span className="text-emerald-400">◇</span> {t.telescopesLegendWise}</span>
-                                <span><span className="text-amber-400">+</span> {t.telescopesLegendTarget}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* FOV Selector + Large-FOV Warning */}
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
-                            <span>{t.fovLabelShort}</span>
-                            <span className="text-slate-400">{data.fovArcmin.toFixed(1)}′</span>
-                          </div>
-                          <div className="grid grid-cols-4 gap-1">
-                            {[
-                              { pix: 32, arcmin: "3.3'" },
-                              { pix: 64, arcmin: "6.6'" },
-                              { pix: 112, arcmin: "11.6'" },
-                              { pix: 160, arcmin: "16.5'" },
-                            ].map((opt) => {
-                              const active = sizePix === opt.pix;
-                              return (
-                                <button
-                                  key={opt.pix}
-                                  type="button"
-                                  data-testid={`fov-option-${opt.pix}`}
-                                  aria-pressed={active}
-                                  disabled={!onSelectFovSize}
-                                  onClick={() => onSelectFovSize?.(opt.pix)}
-                                  className={`min-h-[30px] px-1 py-0.5 rounded border font-mono text-[10px] tabular-nums cursor-pointer transition ${
-                                    active
-                                      ? 'bg-sky-400 text-slate-950 border-sky-400 font-bold'
-                                      : 'bg-white/5 border-white/10 text-slate-300 hover:text-white disabled:opacity-50'
-                                  }`}
-                                >
-                                  {opt.arcmin}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          {sizePix >= 112 && (
-                            <div
-                              data-testid="large-fov-warning"
-                              className="p-1.5 rounded-lg bg-amber-500/12 border border-amber-500/35 text-amber-200 text-[10px] leading-snug flex items-start gap-1.5"
-                            >
-                              <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0 mt-0.5" aria-hidden="true" />
-                              <span>{t.fovLargeWarning} ({sizePix >= 160 ? '~18s' : '~8s'})</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* DQ Bad-Data Marking Legend + Report Button */}
-                        <div className="pt-1.5 border-t border-white/10 space-y-1.5">
-                          <div className="flex items-center justify-between gap-1">
-                            <button
-                              type="button"
-                              onClick={() => setShowDqOverlay((v) => !v)}
-                              aria-pressed={showDqOverlay}
-                              className={`px-2 py-1 rounded border text-[10px] font-mono flex items-center gap-1 cursor-pointer ${
-                                showDqOverlay
-                                  ? 'bg-rose-500/15 border-rose-400/40 text-rose-200'
-                                  : 'bg-white/5 border-white/10 text-slate-400'
-                              }`}
-                            >
-                              <ShieldAlert className="w-3 h-3" />
-                              <span>DQ ({currentFrame.dqDecoded?.totalMaskedPixels ?? 0})</span>
-                            </button>
-                            <button
-                              type="button"
-                              data-testid="why-marked-btn"
-                              onClick={() => setShowWhyMarked((v) => !v)}
-                              className="text-[10px] text-sky-300 hover:underline cursor-pointer"
-                            >
-                              {t.badDataWhyTitle}
-                            </button>
-                          </div>
-                          {showWhyMarked && (
-                            <p className="p-2 rounded-lg bg-black/60 border border-white/10 text-[10px] text-slate-300 leading-relaxed">
-                              {t.badDataWhyDesc}
-                            </p>
-                          )}
-                          <button
-                            type="button"
-                            data-testid="report-bad-data-btn"
-                            onClick={() => handleReportBadData(currentFrame)}
-                            className="w-full min-h-[32px] px-2 py-1 rounded-lg border border-rose-500/35 bg-rose-500/10 hover:bg-rose-500/20 text-rose-200 text-[11px] font-medium flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Flag className="w-3 h-3" aria-hidden="true" />
-                            <span>{t.badDataReportBtn}</span>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Bottom Dock: Playback + Actual-Date Timeline w/ DQ Badges + Share + Immersive + Honesty Note */}
-              <div className={`relative md:static z-25 px-3 sm:px-5 pb-3 pt-2 ${explorerPanelVisibilityClass}`}>
-                {/* Mobile quick bar for Time / Telescopes / FOV */}
-                {!isEmbed && (
-                  <div className="md:hidden mb-2 flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSurveyPassMode((p) => !p);
-                        setCurrentFrameIdx(0);
-                        setIsPlaying(false);
-                      }}
-                      className={`px-2 py-1 rounded-lg border font-medium flex items-center gap-1 cursor-pointer ${
-                        surveyPassMode ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold' : 'bg-white/5 border-white/10 text-slate-200'
-                      }`}
-                    >
-                      <Layers className="w-3 h-3" />
-                      <span>{t.surveyPassToggle} ({surveyPasses.length})</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setOtherTelescopesOpen((v) => !v)}
-                      className="px-2 py-1 rounded-lg border border-white/15 bg-white/5 text-slate-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Telescope className="w-3 h-3 text-sky-400" />
-                      <span>{t.otherTelescopesBtn}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleReportBadData(currentFrame)}
-                      className="px-2 py-1 rounded-lg border border-rose-500/35 bg-rose-500/10 text-rose-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Flag className="w-3 h-3" />
-                      <span>{t.badDataReportBtn}</span>
-                    </button>
+                {/* Survey-Pass Fallback Honest Notice when < 2 passes exist */}
+                {surveyPassMode && !hasTwoOrMorePasses && (
+                  <div
+                    data-testid="survey-pass-fallback-notice"
+                    className="p-2 rounded-xl bg-sky-500/10 border border-sky-400/25 text-[11px] text-sky-200 leading-snug flex items-center gap-2"
+                  >
+                    <Info className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+                    <span>{t.surveyPassFallbackNotice}</span>
                   </div>
                 )}
 
-                <div className="obs-glass rounded-2xl border border-white/15 bg-[#090F1E]/90 backdrop-blur-xl p-3 sm:p-4 shadow-2xl space-y-3">
-                  {/* Primary Actions + Share + Immersive */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      data-testid="explorer-play-btn"
-                      onClick={() => {
-                        gameAudio.playClick();
-                        setIsPlaying((p) => {
-                          const next = !p;
-                          if (next) {
-                            recordViewerAction('playedBlink');
-                            onExplorerPlay?.();
-                          }
-                          return next;
-                        });
-                      }}
-                      aria-pressed={isPlaying}
-                      className="flex-1 min-w-[130px] min-h-[44px] px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition-transform active:scale-[0.98] cursor-pointer shadow-sm"
-                    >
-                      {isPlaying ? <Pause className="w-4 h-4 shrink-0" /> : <Play className="w-4 h-4 shrink-0 fill-current" />}
-                      <span>{isPlaying ? t.explorerBtnPauseSky : t.explorerBtnPlaySky}</span>
-                    </button>
+                {/* Actual-Date Frame Timeline */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  {activeFrameList.map((fr, idx) => {
+                    const active = idx === safeFrameIdx;
+                    const maskedCount = fr.dqDecoded?.totalMaskedPixels ?? 0;
+                    const isFlagged = maskedCount > 0;
+                    return (
+                      <button
+                        key={`${fr.obsId}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          setIsPlaying(false);
+                          setCurrentFrameIdx(idx);
+                          onSelectFrame?.(idx);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] tabular-nums shrink-0 flex items-center gap-1.5 cursor-pointer transition ${
+                          active
+                            ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
+                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                        }`}
+                      >
+                        <span>{fr.dateObs?.slice(0, 10) || `F${idx + 1}`}</span>
+                        {isFlagged && (
+                          <AlertTriangle
+                            className={`w-3 h-3 ${active ? 'text-rose-800' : 'text-rose-400'}`}
+                            aria-label={t.flaggedFramesBadge}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
 
-                    <button
-                      type="button"
-                      data-testid="explorer-diff-btn"
-                      onClick={() => {
-                        gameAudio.playClick();
-                        setRenderMode((prev) => {
-                          const next = prev === 'diff_ref' ? 'raw' : 'diff_ref';
-                          if (next === 'diff_ref') recordViewerAction('toggledDiff');
-                          onExplorerToggleDiff?.(next === 'diff_ref');
-                          return next;
-                        });
-                      }}
-                      aria-pressed={renderMode === 'diff_ref'}
-                      className={`flex-1 min-w-[140px] min-h-[44px] px-4 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border transition-transform active:scale-[0.98] cursor-pointer ${
-                        renderMode === 'diff_ref'
-                          ? 'bg-sky-400 border-sky-400 text-slate-950 shadow-sm'
-                          : 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-400/40 text-sky-200'
+                {/* Plain-Language 1-Line Caption & Motion Trail Legend */}
+                <div className="pt-2 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <p data-testid="explore-plain-caption" className="text-slate-100 font-medium">
+                    {data.astrometrySummary?.motionSignificant && data.astrometrySummary.measuredDisplacementArcsec > 0.05
+                      ? `${t.exploreCaptionMovedPrefix} ${data.astrometrySummary.measuredDisplacementArcsec.toFixed(2)} ${t.exploreCaptionMovedMiddle} ${activeFrameList.length}`
+                      : t.exploreCaptionStill}
+                  </p>
+                  <div className="flex items-center gap-2 text-[11px] text-slate-300 shrink-0">
+                    <span
+                      aria-hidden="true"
+                      className={`inline-block w-5 h-0.5 ${
+                        motionIsSignificant
+                          ? 'bg-[#00D3F3]'
+                          : 'border-b-2 border-dashed border-amber-400'
                       }`}
-                    >
-                      <Zap className="w-4 h-4 shrink-0" />
-                      <span>{renderMode === 'diff_ref' ? t.explorerBtnShowingChanges : t.explorerBtnShowChanged}</span>
-                    </button>
-
-                    {!isEmbed && (
-                      <>
-                        <button
-                          type="button"
-                          data-testid="explorer-ask-spex-btn"
-                          onClick={() => {
-                            gameAudio.playClick();
-                            onAskSpex?.();
-                          }}
-                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 border border-amber-400/40 bg-white/5 hover:bg-white/10 text-amber-300 transition-transform active:scale-[0.98] cursor-pointer"
-                        >
-                          <Sparkles className="w-4 h-4 shrink-0" />
-                          <span>{t.explorerBtnAskSpex}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          data-testid="share-open-btn"
-                          onClick={() => setShowShareModal(true)}
-                          className="min-h-[44px] px-3.5 py-2.5 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 border border-sky-400/35 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 cursor-pointer"
-                        >
-                          <Share2 className="w-4 h-4 shrink-0" />
-                          <span>{t.panelShare}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          data-testid="explorer-immersive-btn"
-                          onClick={() => setImmersiveMode((v) => !v)}
-                          aria-pressed={immersiveMode}
-                          title={t.immersiveHint}
-                          className={`min-h-[44px] px-3 py-2.5 rounded-xl border text-xs font-mono flex items-center gap-1.5 cursor-pointer ${
-                            immersiveMode
-                              ? 'bg-emerald-500/20 border-emerald-400/45 text-emerald-200'
-                              : 'bg-white/5 border-white/10 text-slate-300 hover:text-white'
-                          }`}
-                        >
-                          {immersiveMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-                          <span className="hidden lg:inline">{t.immersiveToggle}</span>
-                        </button>
-                      </>
-                    )}
+                    />
+                    <span>
+                      {motionIsSignificant
+                        ? t.exploreMotionTrailLegendSolid
+                        : t.exploreMotionTrailLegendDashed}
+                    </span>
                   </div>
-
-                  {/* Actual-Date Frame Timeline with DQ Flag Warning Badges */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                    {activeFrameList.map((fr, idx) => {
-                      const active = idx === safeFrameIdx;
-                      const maskedCount = fr.dqDecoded?.totalMaskedPixels ?? 0;
-                      const isFlagged = maskedCount > 0;
-                      return (
-                        <button
-                          key={`${fr.obsId}-${idx}`}
-                          type="button"
-                          onClick={() => {
-                            setIsPlaying(false);
-                            setCurrentFrameIdx(idx);
-                            onSelectFrame?.(idx);
-                          }}
-                          className={`px-2.5 py-1.5 rounded-lg border font-mono text-[11px] tabular-nums shrink-0 flex items-center gap-1.5 cursor-pointer transition ${
-                            active
-                              ? 'bg-amber-400 text-slate-950 border-amber-400 font-bold'
-                              : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                          }`}
-                        >
-                          <span>{fr.dateObs?.slice(0, 10) || `F${idx + 1}`}</span>
-                          {isFlagged && (
-                            <AlertTriangle
-                              className={`w-3 h-3 ${active ? 'text-rose-800' : 'text-rose-400'}`}
-                              aria-label={t.flaggedFramesBadge}
-                            />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Compact Honesty + Status Row */}
-                  {!isEmbed && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <p className="text-slate-300">
-                        <span className="font-semibold text-white">{targetLabel || caseId || 'Sky target'}</span>
-                        {' · '}
-                        {data.astrometrySummary?.motionSignificant
-                          ? t.explorerHonestySignificant
-                          : t.explorerHonestyNotSignificant}
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <span
-                          data-testid="explorer-data-badge"
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border ${
-                            activeClassification === 'SYNTHETIC_DEMO'
-                              ? 'bg-orange-500/15 border-orange-500/40 text-orange-200'
-                              : activeClassification === 'SAVED_BENCHMARK'
-                              ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-200'
-                              : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
-                          }`}
-                        >
-                          {activeClassification === 'SAVED_BENCHMARK'
-                            ? `${t.explorerBadgeSavedCopy} ${(data.snapshotTakenAt || currentFrame.dateObs || '').slice(0, 10)}`
-                            : t.explorerBadgeLiveNasa}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onSwitchToScientist?.()}
-                          className="text-sky-300 hover:text-sky-200 underline underline-offset-4 font-medium cursor-pointer"
-                        >
-                          {t.explorerMoreTools}
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
-            </>
+            </div>
           ) : (
             <div data-tour="collapsible_slots" className="flex flex-col gap-2.5">
               <div
@@ -4266,50 +4021,57 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
               aria-hidden="true"
             />
           </button>
-          {spectrumSlotOpen && (
-            <div className="px-3 pb-2.5 pt-1 border-t border-white/10">
-              {data.spectrumAtCenter && data.spectrumAtCenter.length > 0 ? (() => {
-                const minWl = Math.min(...data.spectrumAtCenter!.map((p) => p.wavelengthUm));
-                const maxWl = Math.max(...data.spectrumAtCenter!.map((p) => p.wavelengthUm));
-                const detCount = new Set(data.spectrumAtCenter!.map((p) => p.detector)).size;
-                const wideSpan = maxWl - minWl > 0.3 || detCount > 1;
-                return (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-[11px] font-mono text-slate-300 space-y-0.5">
-                        <div>
-                          Wavelength span:{' '}
-                          <span className="text-[#00D3F3] font-semibold">
-                            {minWl.toFixed(2)}–{maxWl.toFixed(2)} µm
-                          </span>
+          {spectrumSlotOpen && (() => {
+            const validSpectrum = (data.spectrumAtCenter || []).filter(
+              (p) => Number.isFinite(p.wavelengthUm) && p.wavelengthUm > 0 && Number.isFinite(p.fluxMjySr)
+            );
+            return (
+              <div className="px-3 pb-2.5 pt-1 border-t border-white/10">
+                {validSpectrum.length > 0 ? (() => {
+                  const minWl = Math.min(...validSpectrum.map((p) => p.wavelengthUm));
+                  const maxWl = Math.max(...validSpectrum.map((p) => p.wavelengthUm));
+                  const detCount = new Set(validSpectrum.map((p) => p.detector)).size;
+                  const wideSpan = maxWl - minWl > 0.3 || detCount > 1;
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="text-[11px] font-mono text-slate-300 space-y-0.5">
+                          <div>
+                            Wavelength span:{' '}
+                            <span className="text-[#00D3F3] font-semibold">
+                              {minWl.toFixed(2)}–{maxWl.toFixed(2)} µm
+                            </span>
+                          </div>
+                          <div className="text-slate-400">
+                            {validSpectrum.length} measured exposure point(s) at target aperture.
+                          </div>
                         </div>
-                        <div className="text-slate-400">
-                          {data.spectrumAtCenter!.length} measured exposure point(s) at target aperture.
-                        </div>
+                        {onOpenSpectrum && (
+                          <button
+                            type="button"
+                            onClick={onOpenSpectrum}
+                            className="px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 font-mono text-xs flex items-center gap-1 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#FFB900]"
+                          >
+                            <Sparkles className="w-3 h-3" aria-hidden="true" />
+                            <span>Open Full Spectrum</span>
+                          </button>
+                        )}
                       </div>
-                      {onOpenSpectrum && (
-                        <button
-                          type="button"
-                          onClick={onOpenSpectrum}
-                          className="px-2.5 py-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 font-mono text-xs flex items-center gap-1 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#FFB900]"
-                        >
-                          <Sparkles className="w-3 h-3" aria-hidden="true" />
-                          <span>Open Full Spectrum</span>
-                        </button>
+                      {wideSpan && (
+                        <div className="text-[10px] font-mono text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2 py-1">
+                          Wide wavelength span ({(maxWl - minWl).toFixed(2)} µm across LVF channels) — spectral slope affects continuum comparisons; filter by wavelength window in Advanced.
+                        </div>
                       )}
                     </div>
-                    {wideSpan && (
-                      <div className="text-[10px] font-mono text-amber-300/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2 py-1">
-                        Wide wavelength span ({(maxWl - minWl).toFixed(2)} µm across LVF channels) — spectral slope affects continuum comparisons; filter by wavelength window in Advanced.
-                      </div>
-                    )}
-                  </div>
-                );
-              })() : (
-                <p className="text-xs font-mono text-slate-400 py-1.5">{t.emptySpectrum}</p>
-              )}
-            </div>
-          )}
+                  );
+                })() : (
+                  <p className="text-xs font-mono text-slate-300 py-1.5" data-testid="spectrum-unavailable-notice">
+                    {t.spectrumUnavailableFrame}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Reserved Slot 4: Brightness vs Time Light Curve (Task 4) */}

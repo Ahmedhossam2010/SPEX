@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { bicubicUpsampleRgba } from '../utils/smoothCanvas';
+import { bicubicUpsampleRgba, drawPsfStar, getCanvasDpr } from '../utils/smoothCanvas';
 import {
   Telescope,
   Sparkles,
@@ -51,6 +51,8 @@ import { Language, translations } from '../utils/translations';
 import { gameAudio } from './utils/gameAudio';
 import { LeaderboardModal } from './leaderboard/LeaderboardModal';
 import { EvidenceNotebook, ClueItem } from './evidence/EvidenceNotebook';
+import { useProgress } from '../progress/progressStore';
+import { Button } from '../design';
 
 export type GameDifficulty = 'rookie' | 'investigator' | 'expert';
 
@@ -67,6 +69,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
 }) => {
   const isArabic = language === 'ar';
   const t = translations[language];
+  const { progress, rank, unlockAchievement } = useProgress();
 
   // Game Progress & State
   const [currentMission, setCurrentMission] = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -205,11 +208,12 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     gameAudio.enabled = next;
   };
 
-  // Helper to unlock clues
-  const unlockClue = (clueId: string) => {
+  // Helper to unlock clues and award global 'game' XP via progressStore
+  const unlockClue = (clueId: string, xpBonus = 30) => {
     setClues((prev) =>
       prev.map((c) => (c.id === clueId ? { ...c, unlocked: true } : c))
     );
+    unlockAchievement(`cd_${clueId}`, xpBonus, 'game');
   };
 
   // -------------------------------------------------------------
@@ -222,8 +226,17 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = 600;
+    const height = 320;
+    const dpr = getCanvasDpr();
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     // Deep space background
@@ -233,7 +246,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, width, height);
 
-    // Static background stars
+    // Static background stars (soft anti-aliased PSFs)
     const seedStars = [
       { x: 0.15, y: 0.25, r: 1.5, b: 0.8 },
       { x: 0.85, y: 0.2, r: 2.0, b: 0.9 },
@@ -243,10 +256,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       { x: 0.65, y: 0.3, r: 1.6, b: 0.8 },
     ];
     seedStars.forEach((star) => {
-      ctx.beginPath();
-      ctx.arc(star.x * width, star.y * height, star.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(220, 240, 255, ${star.b})`;
-      ctx.fill();
+      drawPsfStar(ctx, star.x * width, star.y * height, star.r, '220, 240, 255', star.b);
     });
 
     const irProgress = m1WipePos / 100;
@@ -314,6 +324,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       ctx.textAlign = 'center';
       ctx.fillText('TARGET: HIDDEN PROTOSTAR', cx, cy - 38);
     }
+    ctx.restore();
   }, [currentMission, m1WipePos]);
 
   // -------------------------------------------------------------
@@ -326,8 +337,17 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = 620;
+    const height = 260;
+    const dpr = getCanvasDpr();
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     ctx.fillStyle = '#060a14';
@@ -440,6 +460,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
 
     if (m2FoundH2O || m2ActiveBand === 4) drawMarker(3.05, 'H2O Ice (3.05 µm)', '#38bdf8');
     if (m2FoundCO2 || m2ActiveBand === 5) drawMarker(4.27, 'CO2 Ice (4.27 µm)', '#f43f5e');
+    ctx.restore();
   }, [currentMission, m2ActiveBand, m2FoundH2O, m2FoundCO2]);
 
   // -------------------------------------------------------------
@@ -452,8 +473,17 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = 560;
+    const height = 300;
+    const dpr = getCanvasDpr();
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     ctx.fillStyle = '#050811';
@@ -477,13 +507,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       ctx.clip();
 
       refStars.forEach((st) => {
-        const rad = ctx.createRadialGradient(st.x, st.y, 0, st.x, st.y, st.r * 3);
-        rad.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-        rad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = rad;
-        ctx.beginPath();
-        ctx.arc(st.x, st.y, st.r * 3, 0, Math.PI * 2);
-        ctx.fill();
+        drawPsfStar(ctx, st.x, st.y, st.r, '220, 240, 255', 0.92);
       });
 
       // Target star is faint in Epoch 1 (quiescent) and exploding 8x brighter in Epoch 2!
@@ -528,6 +552,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     } else {
       drawEpoch(m3BlinkEpoch, 0, width);
     }
+    ctx.restore();
   }, [currentMission, m3CompareMode, m3SliderPos, m3BlinkEpoch]);
 
   // -------------------------------------------------------------
@@ -600,8 +625,17 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
+    const width = 560;
+    const height = 300;
+    const dpr = getCanvasDpr();
+    if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+    }
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.clearRect(0, 0, width, height);
 
     ctx.fillStyle = '#060a12';
@@ -667,6 +701,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     ctx.arc(tx, ty, 26, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.restore();
   }, [currentMission, m5ViewMode]);
 
   // Handlers for Mission 1
@@ -729,11 +764,13 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const canvas = m5CanvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
-    const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+    const logicalW = 560;
+    const logicalH = 300;
+    const x = ((e.clientX - rect.left) / rect.width) * logicalW;
+    const y = ((e.clientY - rect.top) / rect.height) * logicalH;
 
-    const tx = canvas.width / 2;
-    const ty = canvas.height / 2;
+    const tx = logicalW / 2;
+    const ty = logicalH / 2;
     const dist = Math.hypot(x - tx, y - ty);
 
     if (dist < 40) {
@@ -754,6 +791,7 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       gameAudio.playSuccess();
       setScore((s) => s + 300);
       setM5ShowCertificate(true);
+      unlockAchievement('cd_final_verdict', 100, 'game');
     } else {
       gameAudio.playClick();
     }
@@ -806,12 +844,14 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
             </div>
           </div>
 
-          {/* Center: Score & Difficulty Pills */}
+          {/* Center: Score, Global Rank & Difficulty Pills */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs">
+            <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-900 border border-slate-800 font-mono text-xs" title={`${rank} · ${progress.xp} XP`}>
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span className="text-white font-bold">{score}</span>
-              <span className="text-slate-400 text-[10px]">XP</span>
+              <span className="text-slate-400 text-[10px]">PTS</span>
+              <span className="text-slate-600 hidden md:inline">·</span>
+              <span className="text-sky-300 font-semibold hidden md:inline">{rank} ({progress.xp} XP)</span>
             </div>
 
             {/* Difficulty selector */}
@@ -1452,13 +1492,15 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
                       </button>
                     </div>
 
-                    <button
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="md"
+                      icon={<Sparkles className="w-4 h-4" />}
                       onClick={() => onExitToExplore('case-nep-var-01')}
-                      className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-cyan-500 hover:from-cyan-500 hover:to-blue-400 text-white font-bold text-xs sm:text-sm shadow-lg shadow-cyan-950/50 flex items-center gap-2 transition cursor-pointer"
                     >
-                      <Sparkles className="w-4 h-4 text-amber-300" />
-                      <span>Launch Real NASA Archive Explorer</span>
-                    </button>
+                      {isArabic ? 'الانتقال إلى أرشيف ناسا الحقيقي' : 'Launch Real NASA Archive Explorer'}
+                    </Button>
                   </div>
                 </div>
               )}

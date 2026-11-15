@@ -77,6 +77,8 @@ export const AitoffSkyMap: React.FC<AitoffSkyMapProps> = ({
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // 1. Deep-space background inside canvas
     ctx.clearRect(0, 0, width, height);

@@ -14,13 +14,14 @@ import {
   CheckCircle2,
   GraduationCap,
   Users,
+  X,
+  ChevronDown,
 } from 'lucide-react';
 import { Badge } from '../design/components/Badge';
 import { Language, translations } from '../utils/translations';
-import { SpexPortrait } from '../spex/SpexPortrait';
 import { usePrefersReducedMotion } from '../design/motionKit';
 import { gameAudio } from '../game/utils/gameAudio';
-import { FlyToSearch, FlyTargetSelection } from '../ui/FlyToSearch';
+import { FlyTargetSelection } from '../ui/FlyToSearch';
 import { drawPsfStar, getCanvasDpr } from '../utils/smoothCanvas';
 
 interface HomeViewProps {
@@ -48,11 +49,12 @@ interface CreatureTargetCard {
   icon: React.ComponentType<{ className?: string }>;
 }
 
+const HOME_HINT_KEY = 'spex_home_hint_dismissed';
+
 export const HomeView: React.FC<HomeViewProps> = ({
   onStartAcademy,
   onStartExplore,
   onQuickDemoWise,
-  onFlySelection,
   onPlayGame,
   onOpenCommunity,
   language,
@@ -68,7 +70,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [blinkEpoch, setBlinkEpoch] = useState<0 | 1>(0);
   const [showDiffPreview, setShowDiffPreview] = useState<boolean>(false);
   const [flyTargetId, setFlyTargetId] = useState<string | null>(null);
-  const [spexMood, setSpexMood] = useState<'greeting' | 'curious' | 'happy'>('greeting');
+  const [showMoreTargets, setShowMoreTargets] = useState<boolean>(false);
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem(HOME_HINT_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleDismissHint = () => {
+    setHintDismissed(true);
+    try {
+      localStorage.setItem(HOME_HINT_KEY, '1');
+    } catch {}
+  };
 
   // Hero sky cutout preview loop
   useEffect(() => {
@@ -288,7 +304,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
   const handleFlyToTarget = (caseId: string) => {
     gameAudio.playClick();
-    setSpexMood('happy');
     if (reducedMotion) {
       onStartExplore(caseId);
       return;
@@ -297,7 +312,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     setTimeout(() => {
       setFlyTargetId(null);
       onStartExplore(caseId);
-    }, 300);
+    }, 280);
   };
 
   return (
@@ -314,26 +329,64 @@ export const HomeView: React.FC<HomeViewProps> = ({
         aria-hidden="true"
       />
 
-      {/* HERO SCENE: Immediate 60-second clarity + 3 Action Cards + Live Blink Preview */}
-      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-7 sm:pt-10 pb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left Story + Search + Mascot */}
-          <div className="lg:col-span-7 space-y-5 text-start">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-sky-500/10 border border-sky-400/25 text-xs font-mono text-sky-300 font-semibold">
+      {/* HERO SCENE: Clear 5-second hierarchy: Hint -> 1 Headline -> Big Quick Demo + 3 Cards */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-6 sm:pt-10 pb-8">
+        {/* First-Visit Dismissible Hint */}
+        {!hintDismissed && (
+          <div
+            data-testid="home-first-visit-hint"
+            className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-400/45 bg-amber-500/15 px-3.5 py-1.5 text-xs font-semibold text-amber-200 backdrop-blur-md shadow-sm"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                gameAudio.playClick();
+                handleDismissHint();
+                onQuickDemoWise();
+              }}
+              className="flex items-center gap-1.5 hover:text-white transition cursor-pointer"
+            >
               <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>{t.homePlainHeroTag}</span>
-            </div>
+              <span>{t.homeFirstVisitHint}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDismissHint}
+              aria-label={t.homeFirstVisitHintDismiss}
+              title={t.homeFirstVisitHintDismiss}
+              className="p-0.5 rounded-full hover:bg-white/15 text-amber-300 hover:text-white transition cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
 
-            <h1 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-50 leading-[1.08] text-balance">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+          {/* Left: Single Headline + Big Quick Demo + 3 Destination Cards */}
+          <div className="lg:col-span-7 space-y-6 text-start">
+            <h1 className="font-display text-3xl sm:text-5xl font-extrabold tracking-tight text-slate-50 leading-[1.1] text-balance">
               {t.heroHeadline}
             </h1>
 
-            <p className="text-sm sm:text-base text-slate-300 max-w-2xl leading-relaxed">
-              {t.homePlainSubtitle}
-            </p>
+            {/* ONE Primary CTA Button */}
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                data-testid="home-quick-demo-wise"
+                onClick={() => {
+                  gameAudio.playClick();
+                  handleDismissHint();
+                  onQuickDemoWise();
+                }}
+                className="min-h-[54px] px-7 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-display text-base sm:text-lg font-extrabold flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-[0_0_28px_rgba(245,158,11,0.38)] active:scale-[0.98]"
+              >
+                <Play className="w-5 h-5 fill-current shrink-0" />
+                <span>{t.homeBtnQuickDemo}</span>
+              </button>
+            </div>
 
-            {/* 3 Clear Primary Destination Cards (Start Academy, Explore the Sky, Play) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            {/* 3 Big Clear Destination Cards: Start Academy / Explore the Sky / Play */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-1">
               <button
                 type="button"
                 data-testid="home-btn-academy"
@@ -341,17 +394,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   gameAudio.playClick();
                   onStartAcademy();
                 }}
-                className="group text-start rounded-2xl border border-amber-400/30 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-amber-400/70 p-4 flex flex-col justify-between gap-2.5 transition-all cursor-pointer min-h-[120px]"
+                className="group text-start rounded-2xl border border-amber-400/35 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-amber-400/75 p-4 flex flex-col justify-between gap-3 transition-all cursor-pointer min-h-[132px]"
               >
                 <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300">
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300">
                     <GraduationCap className="w-5 h-5" />
                   </div>
                   <ArrowRight className={`w-4 h-4 text-amber-400 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
                 </div>
                 <div>
-                  <div className="font-display text-sm font-bold text-slate-50">{t.homeBtnStartAcademy}</div>
-                  <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{t.homeCardAcademyDesc}</p>
+                  <div className="font-display text-base font-bold text-slate-50">{t.homeBtnStartAcademy}</div>
+                  <p className="text-xs text-slate-300 mt-1 leading-snug">{t.homeCardAcademyDesc}</p>
                 </div>
               </button>
 
@@ -359,17 +412,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 type="button"
                 data-testid="home-btn-explore"
                 onClick={() => handleFlyToTarget('case-barnards-star')}
-                className="group text-start rounded-2xl border border-sky-400/50 bg-gradient-to-br from-sky-500/20 to-[#0B1222] hover:border-sky-300 p-4 flex flex-col justify-between gap-2.5 shadow-[0_0_24px_rgba(56,189,248,0.18)] transition-all cursor-pointer min-h-[120px]"
+                className="group text-start rounded-2xl border border-sky-400/50 bg-gradient-to-br from-sky-500/20 to-[#0B1222] hover:border-sky-300 p-4 flex flex-col justify-between gap-3 shadow-[0_0_24px_rgba(56,189,248,0.16)] transition-all cursor-pointer min-h-[132px]"
               >
                 <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-xl bg-sky-500/25 border border-sky-400/40 flex items-center justify-center text-sky-300">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/25 border border-sky-400/40 flex items-center justify-center text-sky-300">
                     <Compass className="w-5 h-5" />
                   </div>
                   <ArrowRight className={`w-4 h-4 text-sky-300 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
                 </div>
                 <div>
-                  <div className="font-display text-sm font-bold text-white">{t.homeBtnExploreSky}</div>
-                  <p className="text-[11px] text-slate-200 mt-0.5 leading-snug">{t.homeCardExploreDesc}</p>
+                  <div className="font-display text-base font-bold text-white">{t.homeBtnExploreSky}</div>
+                  <p className="text-xs text-slate-200 mt-1 leading-snug">{t.homeCardExploreDesc}</p>
                 </div>
               </button>
 
@@ -380,73 +433,23 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   gameAudio.playClick();
                   onPlayGame?.();
                 }}
-                className="group text-start rounded-2xl border border-white/15 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-emerald-400/60 p-4 flex flex-col justify-between gap-2.5 transition-all cursor-pointer min-h-[120px]"
+                className="group text-start rounded-2xl border border-white/15 bg-[#0B1222]/90 hover:bg-[#111B33] hover:border-emerald-400/60 p-4 flex flex-col justify-between gap-3 transition-all cursor-pointer min-h-[132px]"
               >
                 <div className="flex items-center justify-between">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-300">
                     <Gamepad2 className="w-5 h-5" />
                   </div>
                   <ArrowRight className={`w-4 h-4 text-emerald-300 group-hover:translate-x-0.5 transition-transform ${isRtl ? 'rotate-180' : ''}`} />
                 </div>
                 <div>
-                  <div className="font-display text-sm font-bold text-slate-50">{t.homeBtnPlaySimple}</div>
-                  <p className="text-[11px] text-slate-300 mt-0.5 leading-snug">{t.homeCardPlayDesc}</p>
+                  <div className="font-display text-base font-bold text-slate-50">{t.homeBtnPlaySimple}</div>
+                  <p className="text-xs text-slate-300 mt-1 leading-snug">{t.homeCardPlayDesc}</p>
                 </div>
               </button>
             </div>
-
-            {/* Single Centered "Fly me to..." Search */}
-            <FlyToSearch
-              language={language}
-              onFlyToTarget={(selection) => {
-                if (onFlySelection) {
-                  onFlySelection(selection);
-                } else if (selection.caseId) {
-                  handleFlyToTarget(selection.caseId);
-                } else {
-                  handleFlyToTarget('case-barnards-star');
-                }
-              }}
-              className="pt-1"
-            />
-
-            {/* Reactive SPEX Mascot Greeting Card + Community Shortcut */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0B1120]/85 border border-white/10 backdrop-blur-xl max-w-2xl">
-              <div className="flex items-center gap-3 min-w-0">
-                <SpexPortrait
-                  mood={spexMood}
-                  size={56}
-                  interactive
-                  onClick={() => setSpexMood((m) => (m === 'greeting' ? 'curious' : 'greeting'))}
-                  alt="SPEX Cat Guide"
-                  className="shrink-0 rounded-xl bg-amber-500/10 border border-amber-500/25 p-1"
-                />
-                <div className="min-w-0">
-                  <div className="text-[11px] font-mono font-bold text-amber-400 uppercase tracking-wider mb-0.5">
-                    SPEX · {isRtl ? 'مرشدك الفلكي' : 'Your Space Guide'}
-                  </div>
-                  <p className="text-xs text-slate-200 leading-relaxed">
-                    {t.homeCatGreeting}
-                  </p>
-                </div>
-              </div>
-              {onOpenCommunity && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    gameAudio.playClick();
-                    onOpenCommunity();
-                  }}
-                  className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-sky-400/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-xs font-semibold transition cursor-pointer"
-                >
-                  <Users className="w-3.5 h-3.5 text-sky-400" />
-                  <span>{t.navCommunity}</span>
-                </button>
-              )}
-            </div>
           </div>
 
-          {/* Right: Smooth Interactive Sky Cutout Preview + Quick Demo: WISE 0855 */}
+          {/* Right: Clean Interactive Sky Cutout Preview */}
           <div className="lg:col-span-5">
             <div className="relative rounded-3xl border border-sky-400/25 bg-[#090F1E]/92 p-4 sm:p-5 shadow-[0_24px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl">
               <div className="flex items-center justify-between gap-2 mb-3">
@@ -471,9 +474,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   }
                 }}
                 aria-label={isRtl ? 'افتح معاينة نجم بارنارد في المستكشف' : "Open Barnard's Star preview in Explorer"}
-                className="relative w-full aspect-square max-h-[300px] mx-auto rounded-2xl bg-[radial-gradient(circle_at_center,#0b1328_0%,#040711_75%)] border border-white/15 overflow-hidden cursor-pointer group"
+                className="relative w-full aspect-square max-h-[290px] mx-auto rounded-2xl bg-[radial-gradient(circle_at_center,#0b1328_0%,#040711_75%)] border border-white/15 overflow-hidden cursor-pointer group"
               >
-                {/* Soft Background PSF Stars (no sharp squares) */}
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100">
                   <defs>
                     <radialGradient id="preview-psf-white">
@@ -528,7 +530,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   <span className="block w-8 h-8 rounded-full bg-[radial-gradient(circle,#fffbeb_0%,#fbbf24_35%,rgba(245,158,11,0)_72%)]" />
                 </div>
 
-                {/* Hover Action Overlay */}
                 <div className="absolute bottom-3 inset-x-3 flex items-center justify-between text-[11px] font-mono bg-black/75 border border-white/10 rounded-xl px-3 py-1.5 backdrop-blur-md">
                   <span className="text-slate-200">
                     {showDiffPreview ? (isRtl ? 'شاهد القفزة!' : 'Motion highlighted!') : (isRtl ? 'وميض الزمن' : 'Flipping epochs')}
@@ -540,139 +541,142 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </div>
               </div>
 
-              {/* Blink toggle + Quick Demo: loads WISE 0855 & auto-plays */}
-              <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setShowDiffPreview((v) => !v);
+                }}
+                aria-pressed={showDiffPreview}
+                className={`mt-3 w-full min-h-[42px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  showDiffPreview
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-200'
+                    : 'bg-white/[0.04] border-white/10 text-slate-200 hover:bg-white/[0.08]'
+                }`}
+              >
+                <Eye className="w-4 h-4 text-sky-400 shrink-0" />
+                <span>{t.heroPreviewBlinkBtn}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* BELOW THE FOLD: Short 3-Step "How It Works" Strip + Optional Collapsible Targets Drawer */}
+      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-8 space-y-4">
+        <div className="rounded-2xl border border-white/10 bg-[#0B1120]/85 backdrop-blur-xl p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h2 className="font-display text-sm sm:text-base font-bold text-slate-100 uppercase tracking-wider">
+              {t.homeHowItWorksTitle}
+            </h2>
+            <div className="flex items-center gap-3">
+              {onOpenCommunity && (
                 <button
                   type="button"
                   onClick={() => {
                     gameAudio.playClick();
-                    setShowDiffPreview((v) => !v);
+                    onOpenCommunity();
                   }}
-                  aria-pressed={showDiffPreview}
-                  className={`min-h-[44px] px-3 py-2 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                    showDiffPreview
-                      ? 'bg-sky-500/20 border-sky-400 text-sky-200'
-                      : 'bg-white/[0.04] border-white/10 text-slate-200 hover:bg-white/[0.08]'
-                  }`}
+                  className="text-xs text-sky-300 hover:text-sky-200 flex items-center gap-1 cursor-pointer"
                 >
-                  <Eye className="w-4 h-4 text-sky-400 shrink-0" />
-                  <span>{t.heroPreviewBlinkBtn}</span>
+                  <Users className="w-3.5 h-3.5" />
+                  <span>{t.navCommunity}</span>
                 </button>
-                <button
-                  type="button"
-                  data-testid="home-quick-demo-wise"
-                  onClick={() => {
-                    gameAudio.playClick();
-                    onQuickDemoWise();
-                  }}
-                  className="min-h-[44px] px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.3)]"
-                >
-                  <Play className="w-4 h-4 fill-current shrink-0" />
-                  <span>{t.homeBtnQuickDemo}</span>
-                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowMoreTargets((v) => !v)}
+                aria-expanded={showMoreTargets}
+                className="text-xs text-amber-300 hover:text-amber-200 flex items-center gap-1 font-medium cursor-pointer"
+              >
+                <span>{t.homeMoreTargetsToggle}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showMoreTargets ? 'rotate-180' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-sm text-slate-200 font-medium">
+              {t.homeHowStep1}
+            </div>
+            <div className="rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-sm text-slate-200 font-medium">
+              {t.homeHowStep2}
+            </div>
+            <div className="rounded-xl bg-white/[0.03] border border-white/10 px-3.5 py-2.5 text-sm text-slate-200 font-medium">
+              {t.homeHowStep3}
+            </div>
+          </div>
+
+          {/* Collapsible 5 Benchmark Targets & Data Policy */}
+          {showMoreTargets && (
+            <div className="mt-4 pt-4 border-t border-white/10 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {creatureTargets.map((card) => {
+                  const Icon = card.icon;
+                  const accentStyles =
+                    card.accent === 'amber'
+                      ? 'text-amber-400 bg-amber-500/15 border-amber-500/30'
+                      : card.accent === 'cyan'
+                      ? 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30'
+                      : card.accent === 'emerald'
+                      ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30'
+                      : card.accent === 'rose'
+                      ? 'text-rose-300 bg-rose-500/15 border-rose-500/30'
+                      : 'text-sky-300 bg-sky-500/15 border-sky-500/30';
+
+                  return (
+                    <button
+                      key={card.caseId}
+                      type="button"
+                      onClick={() => handleFlyToTarget(card.caseId)}
+                      className="group text-start rounded-xl border border-white/12 bg-[#070B16] hover:bg-[#10192E] p-3 flex flex-col justify-between gap-2 transition cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className={`w-8 h-8 rounded-lg border flex items-center justify-center ${accentStyles}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="flex items-center gap-0.5 text-amber-400" aria-label={`${t.difficultyLabel} ${card.difficulty}/3`}>
+                          {[1, 2, 3].map((s) => (
+                            <Star
+                              key={s}
+                              className={`w-3 h-3 ${s <= card.difficulty ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-mono text-sky-400">{card.nickname}</div>
+                        <div className="font-display text-sm font-bold text-slate-50 group-hover:text-amber-300">
+                          {card.name}
+                        </div>
+                        {isRtl && <div className="text-[11px] text-slate-400">{card.nameAr}</div>}
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                        <span>{card.metric}</span>
+                        <span className="text-amber-400 font-semibold">{isRtl ? 'افتح' : 'Explore'}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl bg-[#070B16] border border-white/10 p-3.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs font-bold text-slate-100">{t.homeHonestyTitle}</div>
+                    <p className="text-[11px] text-slate-400">{t.homeHonestyDesc}</p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  <Badge variant="REAL" size="sm" />
+                  <Badge variant="SAVED" size="sm" />
+                  <Badge variant="TRAINING" size="sm" />
+                  <Badge variant="UNVERIFIED" size="sm" />
+                </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5 OFFICIAL BENCHMARK TARGETS */}
-      <section className="relative z-10 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pb-10">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-4">
-          <div>
-            <h2 className="font-display text-xl sm:text-2xl font-bold text-slate-50">
-              {t.heroCreaturesTitle}
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-              {t.heroCreaturesHint}
-            </p>
-          </div>
-          <span className="text-xs font-mono text-slate-400">
-            5 NASA SPHEREx {isRtl ? 'أهداف' : 'Targets'}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-          {creatureTargets.map((card) => {
-            const Icon = card.icon;
-            const accentStyles =
-              card.accent === 'amber'
-                ? 'text-amber-400 bg-amber-500/15 border-amber-500/30 group-hover:border-amber-400'
-                : card.accent === 'cyan'
-                ? 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30 group-hover:border-cyan-400'
-                : card.accent === 'emerald'
-                ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30 group-hover:border-emerald-400'
-                : card.accent === 'rose'
-                ? 'text-rose-300 bg-rose-500/15 border-rose-500/30 group-hover:border-rose-400'
-                : 'text-sky-300 bg-sky-500/15 border-sky-500/30 group-hover:border-sky-400';
-
-            return (
-              <button
-                key={card.caseId}
-                type="button"
-                onClick={() => handleFlyToTarget(card.caseId)}
-                className="group relative text-start rounded-2xl border border-white/12 bg-[#0B1120]/85 hover:bg-[#10192E] p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-1 hover:border-sky-400/50 hover:shadow-[0_14px_30px_rgba(0,0,0,0.45)] cursor-pointer min-h-[168px]"
-              >
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 transition-colors ${accentStyles}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <span
-                      className="flex items-center gap-0.5 text-amber-400"
-                      aria-label={`${t.difficultyLabel} ${card.difficulty}/3`}
-                    >
-                      {[1, 2, 3].map((s) => (
-                        <Star
-                          key={s}
-                          className={`w-3.5 h-3.5 ${s <= card.difficulty ? 'fill-amber-400 text-amber-400' : 'text-slate-600'}`}
-                        />
-                      ))}
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="text-[11px] font-mono text-sky-400 font-semibold">
-                      {card.nickname}
-                    </div>
-                    <h3 className="font-display text-base font-bold text-slate-50 group-hover:text-amber-300 transition-colors">
-                      {card.name}
-                    </h3>
-                    {isRtl && <div className="text-xs text-slate-400">{card.nameAr}</div>}
-                  </div>
-
-                  <p className="text-xs text-slate-300 leading-snug">{card.hook}</p>
-                </div>
-
-                <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-slate-400 tabular-nums">
-                  <span>{card.metric}</span>
-                  <span className="text-amber-400 font-semibold flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                    <span>{isRtl ? 'ابدأ' : 'Explore'}</span>
-                    <ArrowRight className={`w-3 h-3 ${isRtl ? 'rotate-180' : ''}`} />
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Honest Data Provenance Footer Strip */}
-      <section className="relative z-10 px-4 sm:px-6 lg:px-8 pb-10 max-w-7xl mx-auto w-full">
-        <div className="rounded-2xl bg-[#0B1120]/80 border border-white/10 p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-              <h4 className="text-sm font-bold text-slate-100">{t.homeHonestyTitle}</h4>
-            </div>
-            <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">{t.homeHonestyDesc}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Badge variant="REAL" size="sm" />
-            <Badge variant="SAVED" size="sm" />
-            <Badge variant="TRAINING" size="sm" />
-            <Badge variant="UNVERIFIED" size="sm" />
-          </div>
+          )}
         </div>
       </section>
     </div>

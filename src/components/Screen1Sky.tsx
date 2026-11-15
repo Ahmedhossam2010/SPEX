@@ -218,6 +218,8 @@ export const Screen1Sky: React.FC<Screen1SkyProps> = ({
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.clearRect(0, 0, cssW, cssH);
 
       const cx = cssW / 2;

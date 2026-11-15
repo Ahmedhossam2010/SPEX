@@ -613,6 +613,9 @@ export interface TranslationDictionary {
   gamePuzzleSubtitle: string;
   gamePuzzleMovesLabel: string;
   gamePuzzleResetBtn: string;
+  gameOverTitle: string;
+  gameOverDesc: string;
+  gameOverRetryBtn: string;
 
   // Community Page
   communityTitle: string;
@@ -629,6 +632,44 @@ export interface TranslationDictionary {
   communityReportBtn: string;
   communityReportedLabel: string;
   communityOfflineNotice: string;
+  communityEphemeralNotice: string;
+
+  // Simple Navigation, Home Flow, Explore Help & Simple Mode
+  headerMoreLabel: string;
+  headerMoreTooltip: string;
+  homeFirstVisitHint: string;
+  homeFirstVisitHintDismiss: string;
+  homeHowItWorksTitle: string;
+  homeHowStep1: string;
+  homeHowStep2: string;
+  homeHowStep3: string;
+  homeMoreTargetsToggle: string;
+  exploreHelpBtn: string;
+  exploreHelpTitle: string;
+  exploreHelpStep1: string;
+  exploreHelpStep2: string;
+  exploreHelpStep3: string;
+  exploreHelpStep4: string;
+  exploreSimpleTargetLabel: string;
+  exploreCaptionMovedPrefix: string;
+  exploreCaptionMovedMiddle: string;
+  exploreCaptionStill: string;
+  exploreMotionTrailLegendSolid: string;
+  exploreMotionTrailLegendDashed: string;
+  exploreOfflineDemoBtn: string;
+  exploreRetryBtn: string;
+  exploreAdvancedToggle: string;
+  exploreSimpleToggle: string;
+  exploreErrorTitle: string;
+  exploreErrorHint: string;
+  exploreSnapshotBadge: string;
+  loadingScanningSlow: string;
+  academyBoundaryTitle: string;
+  academyBoundaryHint: string;
+  academyBackToMapBtn: string;
+  exploreReturnToAcademy: string;
+  spectrumUnavailableFrame: string;
+  academyContinueBtn: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -1051,7 +1092,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       'Official Discovery Passport / Discovery Card export is blocked for non-live, stale, demo, or unverified data.',
 
     // Redesign: Hero Story, Sound, Tour & WiseView Scientist Toolbox
-    heroHeadline: 'Watch the real sky change. Catch a moving star.',
+    heroHeadline: 'Watch real NASA infrared images and spot objects that move',
     heroSubcopy:
       'Real infrared space photos stacked over time — flip through them to spot what moves, dims, or flares.',
     heroPreviewLabel: 'Live Sky Preview',
@@ -1149,13 +1190,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     achievementsTitle: 'My Achievements',
     discoveryCardTitle: 'Discovery Card',
     academyTitle: 'SPHEREx Academy with Mr. SPEX',
-    academySubtitle: 'Five quick 2-minute lessons + interactive sky exams to earn XP and unlock story chapters.',
+    academySubtitle: 'Six quick 2-minute lessons + interactive sky exams to earn XP and unlock story chapters.',
     academyStartLesson: 'Study Lesson',
     academyTakeExam: 'Take Exam',
     academyPassedBadge: 'Completed',
     academyRewardXp: 'XP Reward',
     gameStoryBannerTitle: 'Mr. SPEX lost a faint signal — help him find the object',
-    gameStoryBannerDesc: 'Earn XP in the Academy or mini-games to raise your rank and unlock all 5 story chapters.',
+    gameStoryBannerDesc: 'Earn XP in the Academy or mini-games to raise your rank and unlock all 6 story chapters.',
     gameChaptersTab: 'Story & Mini-Games',
     gameMiniGamesTab: '2D Mini-Games',
     gameStation3dTab: '3D Station',
@@ -1266,6 +1307,9 @@ export const translations: Record<Language, TranslationDictionary> = {
     gamePuzzleSubtitle: 'Slide the 8 sky tiles to restore the calibrated SPHEREx infrared frame.',
     gamePuzzleMovesLabel: 'Moves',
     gamePuzzleResetBtn: 'Shuffle Tiles',
+    gameOverTitle: 'Signal Lost!',
+    gameOverDesc: 'All 3 mission lives ran out before locking the target. Recalibrate and try again.',
+    gameOverRetryBtn: 'Retry Mission',
 
     // Community Page
     communityTitle: 'Explorer Community',
@@ -1282,6 +1326,44 @@ export const translations: Record<Language, TranslationDictionary> = {
     communityReportBtn: 'Report',
     communityReportedLabel: 'Reported',
     communityOfflineNotice: 'Live community server offline — showing local saved reports only.',
+    communityEphemeralNotice: 'Note: Posts and bad-data flags are stored in JSON on the server (data/community_store.json) and may reset when the server restarts.',
+
+    // Simple Navigation, Home Flow, Explore Help & Simple Mode
+    headerMoreLabel: 'More',
+    headerMoreTooltip: 'Community, Glossary, Sound & Theme',
+    homeFirstVisitHint: 'Start here → Quick Demo',
+    homeFirstVisitHintDismiss: 'Dismiss first-visit hint',
+    homeHowItWorksTitle: 'How it works',
+    homeHowStep1: '1. Pick a real sky target',
+    homeHowStep2: '2. Flip through NASA infrared photos',
+    homeHowStep3: '3. Spot the dot that moves',
+    homeMoreTargetsToggle: 'Browse 5 NASA targets & data policy',
+    exploreHelpBtn: 'Help',
+    exploreHelpTitle: '4 steps to spot moving objects',
+    exploreHelpStep1: '1. Pick target — choose a star or search coordinates.',
+    exploreHelpStep2: '2. Press play — flip across real NASA observation dates.',
+    exploreHelpStep3: '3. Look for the dot that moves — background stars stay still.',
+    exploreHelpStep4: '4. Try Other telescopes — overlay Gaia or WISE to compare.',
+    exploreSimpleTargetLabel: 'Target',
+    exploreCaptionMovedPrefix: 'This star moved',
+    exploreCaptionMovedMiddle: 'arcsec between Epoch 1 and Epoch',
+    exploreCaptionStill: 'No clear motion detected — this is a stationary object.',
+    exploreMotionTrailLegendSolid: 'Solid trail = measured motion across frames',
+    exploreMotionTrailLegendDashed: 'Dashed trail = expected path (motion not significant)',
+    exploreOfflineDemoBtn: 'Use offline demo data',
+    exploreRetryBtn: 'Retry',
+    exploreAdvancedToggle: 'Advanced',
+    exploreSimpleToggle: 'Simple mode',
+    exploreErrorTitle: 'Could not load NASA sky images right now',
+    exploreErrorHint: 'The archive may be busy or offline. Try again or load a saved NASA snapshot.',
+    exploreSnapshotBadge: 'Showing saved snapshot',
+    loadingScanningSlow: 'NASA archive is taking a moment — will fall back to saved snapshot automatically.',
+    academyBoundaryTitle: 'Academy lesson hit a display issue',
+    academyBoundaryHint: 'Your XP and progress are saved safely. Return to the course map to continue.',
+    academyBackToMapBtn: 'Back to course map',
+    exploreReturnToAcademy: 'Back to Academy',
+    spectrumUnavailableFrame: 'Spectrum unavailable for this frame',
+    academyContinueBtn: 'Continue',
   },
   ar: {
     // Brand & Top Navigation
@@ -1702,7 +1784,7 @@ export const translations: Record<Language, TranslationDictionary> = {
       'تم حظر تصدير جواز أو بطاقة الاكتشاف الرسمية للبيانات المرجعية أو القديمة أو التجريبية أو غير الموثقة.',
 
     // Redesign: Hero Story, Sound, Tour & WiseView Scientist Toolbox
-    heroHeadline: 'شاهد السماء الحقيقية تتغير. اصطد نجماً متحركاً.',
+    heroHeadline: 'شاهد صور ناسا الحقيقية بالأشعة تحت الحمراء واكتشف الأجرام المتحركة',
     heroSubcopy:
       'صور فضائية حقيقية بالأشعة تحت الحمراء عبر الزمن — شغّلها كدفتر صور لتكتشف ما يتحرك أو يتوهج.',
     heroPreviewLabel: 'معاينة السماء الحية',
@@ -1800,13 +1882,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     achievementsTitle: 'إنجازاتي',
     discoveryCardTitle: 'بطاقة الاكتشاف',
     academyTitle: 'أكاديمية سبيراكس مع الأستاذ سبيكس',
-    academySubtitle: 'خمسة دروس سريعة واختبارات تطبيقية في السماء لكسب النقاط وفتح فصول القصة.',
+    academySubtitle: 'ستة دروس سريعة واختبارات تطبيقية في السماء لكسب النقاط وفتح فصول القصة.',
     academyStartLesson: 'ابدأ الدرس',
     academyTakeExam: 'ابدأ الاختبار',
     academyPassedBadge: 'مكتمل',
     academyRewardXp: 'مكافأة النقاط',
     gameStoryBannerTitle: 'فقد الأستاذ سبيكس إشارة خافتة — ساعده في العثور على الجرم',
-    gameStoryBannerDesc: 'اكسب النقاط في الأكاديمية أو الألعاب المصغرة لترقية رتبتك وفتح فصول القصة الخمسة.',
+    gameStoryBannerDesc: 'اكسب النقاط في الأكاديمية أو الألعاب المصغرة لترقية رتبتك وفتح فصول القصة الستة.',
     gameChaptersTab: 'القصة والألعاب المصغرة',
     gameMiniGamesTab: 'ألعاب 2D مصغرة',
     gameStation3dTab: 'محطة الفضاء 3D',
@@ -1917,6 +1999,9 @@ export const translations: Record<Language, TranslationDictionary> = {
     gamePuzzleSubtitle: 'حرّك المربعات الثمانية لإعادة بناء إطار سبيراكس المعاير.',
     gamePuzzleMovesLabel: 'الحركات',
     gamePuzzleResetBtn: 'خلط المربعات',
+    gameOverTitle: 'فُقدت الإشارة!',
+    gameOverDesc: 'نفدت المحاولات الثلاث قبل تثبيت الهدف. أعد المعايرة وحاول من جديد.',
+    gameOverRetryBtn: 'إعادة المحاولة',
 
     // Community Page
     communityTitle: 'مجتمع المستكشفين',
@@ -1933,5 +2018,43 @@ export const translations: Record<Language, TranslationDictionary> = {
     communityReportBtn: 'إبلاغ',
     communityReportedLabel: 'تم الإبلاغ',
     communityOfflineNotice: 'خادم المجتمع غير متصل حالياً — تُعرض البلاغات المحفوظة محلياً فقط.',
+    communityEphemeralNotice: 'ملاحظة: تُحفظ المنشورات وبلاغات الجودة في ملف JSON على الخادم (data/community_store.json) وقد تُعاد عند إعادة تشغيل الخادم.',
+
+    // Simple Navigation, Home Flow, Explore Help & Simple Mode
+    headerMoreLabel: 'المزيد',
+    headerMoreTooltip: 'المجتمع والقاموس والصوت والمظهر',
+    homeFirstVisitHint: 'ابدأ هنا ← العرض السريع',
+    homeFirstVisitHintDismiss: 'إخفاء تلميح الزيارة الأولى',
+    homeHowItWorksTitle: 'كيف يعمل؟',
+    homeHowStep1: '١. اختر هدفاً حقيقياً في السماء',
+    homeHowStep2: '٢. قلّب صور ناسا بالأشعة تحت الحمراء',
+    homeHowStep3: '٣. اصطد النقطة التي تتحرك',
+    homeMoreTargetsToggle: 'استعرض ٥ أهداف لوكالة ناسا وسياسة البيانات',
+    exploreHelpBtn: 'مساعدة',
+    exploreHelpTitle: '٤ خطوات لاكتشاف الأجرام المتحركة',
+    exploreHelpStep1: '١. اختر هدفاً — انتقِ نجماً أو ابحث بالإحداثيات.',
+    exploreHelpStep2: '٢. اضغط تشغيل — قلّب بين تواريخ رصد ناسا الحقيقية.',
+    exploreHelpStep3: '٣. راقب النقطة التي تتحرك — النجوم الخلفية تبقى ثابتة.',
+    exploreHelpStep4: '٤. جرّب تلسكوبات أخرى — قارن مع فهارس غايا ووايز.',
+    exploreSimpleTargetLabel: 'الهدف',
+    exploreCaptionMovedPrefix: 'تحرك هذا النجم بمقدار',
+    exploreCaptionMovedMiddle: 'ثانية قوسية بين الحقبة ١ والحقبة',
+    exploreCaptionStill: 'لم تُرصد حركة واضحة — هذا جرم ثابت في السماء.',
+    exploreMotionTrailLegendSolid: 'خط متصل = حركة مقاسة عبر اللقطات',
+    exploreMotionTrailLegendDashed: 'خط متقطع = المسار المتوقع (الحركة غير دالة إحصائياً)',
+    exploreOfflineDemoBtn: 'استخدم البيانات التجريبية المحلية',
+    exploreRetryBtn: 'إعادة المحاولة',
+    exploreAdvancedToggle: 'متقدم',
+    exploreSimpleToggle: 'الوضع البسيط',
+    exploreErrorTitle: 'تعذر تحميل صور السماء من ناسا حالياً',
+    exploreErrorHint: 'قد يكون الأرشيف مشغولاً أو غير متصل. أعد المحاولة أو حمّل لقطة ناسا المحفوظة.',
+    exploreSnapshotBadge: 'عرض لقطة محفوظة',
+    loadingScanningSlow: 'يستغرق أرشيف ناسا وقتاً إضافياً — سيتم التحويل إلى اللقطة المحفوظة تلقائياً.',
+    academyBoundaryTitle: 'واجه درس الأكاديمية مشكلة في العرض',
+    academyBoundaryHint: 'نقاطك وتقدمك محفوظان بأمان. عُد إلى خريطة الدروس للمتابعة.',
+    academyBackToMapBtn: 'العودة إلى خريطة الدروس',
+    exploreReturnToAcademy: 'العودة إلى الأكاديمية',
+    spectrumUnavailableFrame: 'الطيف غير متاح لهذا الإطار',
+    academyContinueBtn: 'متابعة',
   },
 };

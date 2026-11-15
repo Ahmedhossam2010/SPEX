@@ -333,13 +333,26 @@ export function migrateLegacyStorage(state: ProgressState, storage: StorageLike 
   };
 }
 
+let cachedBrowserRaw: string | null = null;
+let cachedBrowserState: ProgressState | null = null;
+let emitScheduled = false;
+
 export function loadProgress(storage: StorageLike | null = getDefaultStorage()): ProgressState {
+  const isBrowserDefault =
+    typeof window !== 'undefined' && storage !== null && storage === getDefaultStorage();
   let state = createInitialProgressState();
   if (storage) {
     try {
       const raw = storage.getItem(PROGRESS_STORAGE_KEY);
       if (raw) {
+        if (isBrowserDefault && raw === cachedBrowserRaw && cachedBrowserState) {
+          return cachedBrowserState;
+        }
         state = normalizeProgressState(JSON.parse(raw));
+        if (isBrowserDefault) {
+          cachedBrowserRaw = raw;
+          cachedBrowserState = state;
+        }
       }
     } catch {
       state = createInitialProgressState();
@@ -354,10 +367,20 @@ export function loadProgress(storage: StorageLike | null = getDefaultStorage()):
 
 function emitProgressUpdated() {
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
-    try {
-      window.dispatchEvent(new CustomEvent(PROGRESS_UPDATED_EVENT));
-    } catch {
-      // ignore event dispatch errors in non-DOM test environments
+    if (emitScheduled) return;
+    emitScheduled = true;
+    const flush = () => {
+      emitScheduled = false;
+      try {
+        window.dispatchEvent(new CustomEvent(PROGRESS_UPDATED_EVENT));
+      } catch {
+        // ignore event dispatch errors in non-DOM test environments
+      }
+    };
+    if (typeof queueMicrotask === 'function') {
+      queueMicrotask(flush);
+    } else {
+      flush();
     }
   }
 }
@@ -371,9 +394,16 @@ export function saveProgress(
     ...normalizeProgressState(state),
     updatedAt: new Date().toISOString(),
   };
+  const isBrowserDefault =
+    typeof window !== 'undefined' && storage !== null && storage === getDefaultStorage();
   if (storage) {
     try {
-      storage.setItem(PROGRESS_STORAGE_KEY, JSON.stringify(normalized));
+      const serialized = JSON.stringify(normalized);
+      storage.setItem(PROGRESS_STORAGE_KEY, serialized);
+      if (isBrowserDefault) {
+        cachedBrowserRaw = serialized;
+        cachedBrowserState = normalized;
+      }
     } catch {
       // ignore quota / restricted storage errors
     }
@@ -605,7 +635,21 @@ export function useProgress() {
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress());
 
   useEffect(() => {
-    const sync = () => setProgress(loadProgress());
+    const sync = () => {
+      const next = loadProgress();
+      setProgress((prev) => {
+        if (
+          prev.updatedAt === next.updatedAt &&
+          prev.xp === next.xp &&
+          prev.completedLevels.length === next.completedLevels.length &&
+          prev.completedChapters.length === next.completedChapters.length &&
+          prev.completedMiniGames.length === next.completedMiniGames.length
+        ) {
+          return prev;
+        }
+        return next;
+      });
+    };
     window.addEventListener(PROGRESS_UPDATED_EVENT, sync);
     window.addEventListener('spex-missions-updated', sync);
     window.addEventListener('storage', sync);

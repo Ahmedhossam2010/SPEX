@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   GraduationCap,
   CheckCircle2,
@@ -34,6 +34,69 @@ interface AcademyViewProps {
 
 type AcademyMode = 'map' | 'lesson' | 'exam' | 'results';
 
+export const ACADEMY_SESSION_KEY = 'spex_academy_session_v1';
+
+interface AcademySessionSnapshot {
+  mode: AcademyMode;
+  selectedLevelId: number;
+  lessonStep: number;
+  previewAllLevels: boolean;
+  answers: Record<string, number>;
+}
+
+function loadAcademySession(completedLevels: number[]): AcademySessionSnapshot {
+  const firstIncomplete = ACADEMY_LEVELS.find((l) => !completedLevels.includes(l.levelId));
+  const fallbackLevelId = firstIncomplete ? firstIncomplete.levelId : 0;
+  const fallback: AcademySessionSnapshot = {
+    mode: 'map',
+    selectedLevelId: fallbackLevelId,
+    lessonStep: 0,
+    previewAllLevels: false,
+    answers: {},
+  };
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return fallback;
+    const raw = window.sessionStorage.getItem(ACADEMY_SESSION_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<AcademySessionSnapshot> | null;
+    if (!parsed || typeof parsed !== 'object') return fallback;
+
+    const validModes: AcademyMode[] = ['map', 'lesson', 'exam', 'results'];
+    const mode: AcademyMode =
+      typeof parsed.mode === 'string' && validModes.includes(parsed.mode as AcademyMode)
+        ? (parsed.mode as AcademyMode)
+        : 'map';
+
+    const lvlExists = ACADEMY_LEVELS.some((l) => l.levelId === parsed.selectedLevelId);
+    const selectedLevelId = lvlExists ? (parsed.selectedLevelId as number) : fallbackLevelId;
+    const lvl = ACADEMY_LEVELS.find((l) => l.levelId === selectedLevelId) || ACADEMY_LEVELS[0];
+    const maxSteps = Math.max(0, lvl.sections.length);
+    const lessonStep =
+      typeof parsed.lessonStep === 'number' && Number.isInteger(parsed.lessonStep)
+        ? Math.max(0, Math.min(parsed.lessonStep, maxSteps))
+        : 0;
+
+    const cleanAnswers: Record<string, number> = {};
+    if (parsed.answers && typeof parsed.answers === 'object') {
+      for (const [k, v] of Object.entries(parsed.answers)) {
+        if (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 10) {
+          cleanAnswers[k] = v;
+        }
+      }
+    }
+
+    return {
+      mode,
+      selectedLevelId,
+      lessonStep,
+      previewAllLevels: Boolean(parsed.previewAllLevels),
+      answers: cleanAnswers,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
 export const AcademyView: React.FC<AcademyViewProps> = ({
   language,
   onOpenTargetInViewer,
@@ -43,14 +106,15 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
   const isRtl = language === 'ar';
   const { progress, rank, rankInfo, completeAcademyLevel } = useProgress();
 
-  const [mode, setMode] = useState<AcademyMode>('map');
-  const [previewAllLevels, setPreviewAllLevels] = useState<boolean>(false);
-  const [selectedLevelId, setSelectedLevelId] = useState<number>(() => {
-    const firstIncomplete = ACADEMY_LEVELS.find(
-      (l) => !progress.completedLevels.includes(l.levelId)
-    );
-    return firstIncomplete ? firstIncomplete.levelId : 0;
-  });
+  const [initialSession] = useState<AcademySessionSnapshot>(() =>
+    loadAcademySession(progress.completedLevels)
+  );
+  const [mode, setMode] = useState<AcademyMode>(initialSession.mode);
+  const [previewAllLevels, setPreviewAllLevels] = useState<boolean>(
+    initialSession.previewAllLevels
+  );
+  const [lessonStep, setLessonStep] = useState<number>(initialSession.lessonStep);
+  const [selectedLevelId, setSelectedLevelId] = useState<number>(initialSession.selectedLevelId);
 
   // Practice micro-check state inside lesson
   const [practiceChoice, setPracticeChoice] = useState<Record<number, number>>({});
@@ -58,9 +122,30 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
   const [showPracticeHint, setShowPracticeHint] = useState<Record<number, boolean>>({});
 
   // Exam state
-  const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [answers, setAnswers] = useState<Record<string, number>>(initialSession.answers);
   const [lastEarnedXp, setLastEarnedXp] = useState<number>(0);
   const [examPassedLastRun, setExamPassedLastRun] = useState<boolean>(false);
+
+  // Safely debounce Academy UI session state persistence so "Try it in Explore" never resets exam/lesson progress
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          const payload: AcademySessionSnapshot = {
+            mode,
+            selectedLevelId,
+            lessonStep,
+            previewAllLevels,
+            answers,
+          };
+          window.sessionStorage.setItem(ACADEMY_SESSION_KEY, JSON.stringify(payload));
+        }
+      } catch {
+        // ignore storage restrictions
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [mode, selectedLevelId, lessonStep, previewAllLevels, answers]);
 
   const activeLevel =
     ACADEMY_LEVELS.find((l) => l.levelId === selectedLevelId) || ACADEMY_LEVELS[0];
@@ -90,6 +175,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
     if (!isLevelUnlocked(levelId)) return;
     gameAudio.playClick();
     setSelectedLevelId(levelId);
+    setLessonStep(0);
     setMode(targetMode);
     setLastEarnedXp(0);
   };
@@ -213,9 +299,39 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
         </div>
       </section>
 
-      {/* VIEW 1: KHAN ACADEMY COURSE MAP */}
-      {mode === 'map' && (
+      {/* VIEW 1: COURSE PATH */}
+      {mode === 'map' && (() => {
+        const continueLevel =
+          ACADEMY_LEVELS.find(
+            (l) => isLevelUnlocked(l.levelId) && !progress.completedLevels.includes(l.levelId)
+          ) || activeLevel;
+        return (
         <section className="space-y-4">
+          <div className="rounded-2xl bg-[#0B1426] border border-amber-400/35 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="text-xs font-mono text-amber-300 font-semibold">
+                {isRtl ? `المستوى ${continueLevel.levelId}` : `Level ${continueLevel.levelId}`} · +{continueLevel.xpReward} XP
+              </div>
+              <div className="font-display text-lg sm:text-xl font-bold text-white">
+                {isRtl ? continueLevel.titleAr : continueLevel.title}
+              </div>
+              <p className="text-xs sm:text-sm text-slate-300">
+                {isRtl ? continueLevel.subtitleAr : continueLevel.subtitle}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              data-testid="academy-continue-btn"
+              icon={<ForwardArrow className="w-4 h-4" />}
+              iconPosition="end"
+              onClick={() => handleOpenLevel(continueLevel.levelId, 'lesson')}
+            >
+              {t.academyContinueBtn}
+            </Button>
+          </div>
+
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-sm text-slate-300">
               <Map className="w-4 h-4 text-sky-400 shrink-0" />
@@ -355,215 +471,266 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
             })}
           </div>
         </section>
-      )}
+        );
+      })()}
 
-      {/* VIEW 2: LESSON VIEW */}
-      {mode === 'lesson' && (
+      {/* VIEW 2: LESSON VIEW (Short sections, big readable text, progress bar, Next/Back) */}
+      {mode === 'lesson' && (() => {
+        const totalSteps = activeLevel.sections.length + 1;
+        const safeStep = Math.max(0, Math.min(lessonStep, totalSteps - 1));
+        const isLastStep = safeStep === totalSteps - 1;
+        const activeSection = activeLevel.sections[safeStep];
+        const stepPct = Math.round(((safeStep + 1) / totalSteps) * 100);
+
+        return (
         <section className="rounded-2xl bg-[#070B16]/95 border border-white/10 p-5 sm:p-6 space-y-6">
-          {/* Top Lesson Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-            <button
-              type="button"
-              onClick={() => {
-                gameAudio.playClick();
-                setMode('map');
-              }}
-              className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-slate-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition"
-            >
-              <BackArrow className="w-4 h-4" />
-              <span>{t.academyBackToMap}</span>
-            </button>
-
-            <div className="flex items-center gap-2 text-xs font-mono text-slate-400 tabular-nums">
-              <Clock className="w-3.5 h-3.5 text-sky-400" />
-              <span>
-                {activeLevel.durationMinutes} {t.academyMinutesRead}
-              </span>
-              <span aria-hidden="true">·</span>
-              <span className="text-amber-300 font-semibold">+{activeLevel.xpReward} XP</span>
-            </div>
-          </div>
-
-          {/* Visual Diagram */}
-          <AcademyDiagram type={activeLevel.diagramType} isRtl={isRtl} />
-
-          {/* Concept Sections */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {activeLevel.sections.map((sec, idx) => (
-              <article
-                key={idx}
-                className="rounded-xl bg-[#0C1224] border border-white/10 p-4 sm:p-5 flex flex-col justify-between gap-3"
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2 text-xs font-mono text-sky-400 font-semibold">
-                    <span>0{idx + 1}. {isRtl ? sec.titleAr : sec.title}</span>
-                    {sec.termKey && <ScienceTerm termKey={sec.termKey} language={language} />}
-                  </div>
-                  <p className="text-sm text-slate-200 leading-relaxed">
-                    {isRtl ? sec.bodyAr : sec.body}
-                  </p>
-                </div>
-                <div className="rounded-lg bg-amber-500/10 border border-amber-400/20 px-3 py-2 text-xs font-mono text-amber-200">
-                  {isRtl ? sec.keyFactAr : sec.keyFact}
-                </div>
-              </article>
-            ))}
-          </div>
-
-          {/* Interactive Practice Check + Hint */}
-          <div className="rounded-xl bg-[#0B1222] border border-sky-400/25 p-4 sm:p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider font-bold text-sky-300">
-                <HelpCircle className="w-4 h-4 shrink-0" />
-                <span>{t.academyPracticeTitle}</span>
-              </div>
+          {/* Top Lesson Bar + Progress Bar */}
+          <div className="space-y-3 border-b border-white/10 pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <button
                 type="button"
-                onClick={() =>
-                  setShowPracticeHint((prev) => ({
-                    ...prev,
-                    [activeLevel.levelId]: !prev[activeLevel.levelId],
-                  }))
-                }
-                className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-amber-300 flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setMode('map');
+                }}
+                className="min-h-[40px] px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-slate-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition"
               >
-                <Lightbulb className="w-3.5 h-3.5" />
-                <span>{isRtl ? 'تلميح' : 'Hint'}</span>
+                <BackArrow className="w-4 h-4" />
+                <span>{t.academyBackToMap}</span>
               </button>
+
+              <div className="flex items-center gap-3 text-xs font-mono text-slate-300 tabular-nums">
+                <span>
+                  {isRtl ? `خطوة ${safeStep + 1} / ${totalSteps}` : `Step ${safeStep + 1} / ${totalSteps}`}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="text-amber-300 font-semibold">+{activeLevel.xpReward} XP</span>
+              </div>
             </div>
 
-            <p className="text-sm font-semibold text-white">
-              {isRtl ? activeLevel.practice.promptAr : activeLevel.practice.prompt}
-            </p>
+            <div className="h-2 rounded-full bg-white/10 overflow-hidden" aria-label="Lesson progress">
+              <div
+                className="h-full bg-gradient-to-r from-sky-400 to-amber-400 transition-all duration-300"
+                style={{ width: `${stepPct}%` }}
+              />
+            </div>
+          </div>
 
-            {showPracticeHint[activeLevel.levelId] && (
-              <p className="text-xs text-amber-200 bg-amber-500/10 border border-amber-400/20 rounded-lg px-3 py-2">
-                {isRtl ? activeLevel.practice.hintAr : activeLevel.practice.hint}
-              </p>
-            )}
+          {/* Step Content: Short Section or Practice + Takeaways */}
+          {!isLastStep && activeSection ? (
+            <div className="space-y-5">
+              {safeStep === 0 && (
+                <AcademyDiagram type={activeLevel.diagramType} isRtl={isRtl} />
+              )}
 
-            <div className="grid grid-cols-1 gap-2">
-              {(isRtl ? activeLevel.practice.optionsAr : activeLevel.practice.options).map(
-                (opt, optIdx) => {
-                  const chosen = practiceChoice[activeLevel.levelId] === optIdx;
-                  const checked = Boolean(practiceChecked[activeLevel.levelId]);
-                  const isCorrect = optIdx === activeLevel.practice.correctIndex;
-                  return (
-                    <button
-                      key={optIdx}
-                      type="button"
-                      onClick={() => {
+              <article className="rounded-2xl bg-[#0C1224] border border-white/10 p-5 sm:p-6 space-y-4">
+                <div className="flex items-center justify-between gap-2 text-xs sm:text-sm font-mono text-sky-400 font-semibold">
+                  <span>
+                    0{safeStep + 1}. {isRtl ? activeSection.titleAr : activeSection.title}
+                  </span>
+                  {activeSection.termKey && (
+                    <ScienceTerm termKey={activeSection.termKey} language={language} />
+                  )}
+                </div>
+                <p className="text-base sm:text-lg text-slate-100 leading-relaxed">
+                  {isRtl ? activeSection.bodyAr : activeSection.body}
+                </p>
+                <div className="rounded-xl bg-amber-500/10 border border-amber-400/25 px-4 py-3 text-sm font-mono text-amber-200">
+                  {isRtl ? activeSection.keyFactAr : activeSection.keyFact}
+                </div>
+              </article>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* Interactive Practice Check + Hint */}
+              <div className="rounded-2xl bg-[#0B1222] border border-sky-400/25 p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-mono uppercase tracking-wider font-bold text-sky-300">
+                    <HelpCircle className="w-4 h-4 shrink-0" />
+                    <span>{t.academyPracticeTitle}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPracticeHint((prev) => ({
+                        ...prev,
+                        [activeLevel.levelId]: !prev[activeLevel.levelId],
+                      }))
+                    }
+                    className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-amber-300 flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition"
+                  >
+                    <Lightbulb className="w-3.5 h-3.5" />
+                    <span>{isRtl ? 'تلميح' : 'Hint'}</span>
+                  </button>
+                </div>
+
+                <p className="text-base sm:text-lg font-semibold text-white leading-relaxed">
+                  {isRtl ? activeLevel.practice.promptAr : activeLevel.practice.prompt}
+                </p>
+
+                {showPracticeHint[activeLevel.levelId] && (
+                  <p className="text-sm text-amber-200 bg-amber-500/10 border border-amber-400/20 rounded-xl px-3.5 py-2.5">
+                    {isRtl ? activeLevel.practice.hintAr : activeLevel.practice.hint}
+                  </p>
+                )}
+
+                <div className="grid grid-cols-1 gap-2">
+                  {(isRtl ? activeLevel.practice.optionsAr : activeLevel.practice.options).map(
+                    (opt, optIdx) => {
+                      const chosen = practiceChoice[activeLevel.levelId] === optIdx;
+                      const checked = Boolean(practiceChecked[activeLevel.levelId]);
+                      const isCorrect = optIdx === activeLevel.practice.correctIndex;
+                      return (
+                        <button
+                          key={optIdx}
+                          type="button"
+                          onClick={() => {
+                            gameAudio.playClick();
+                            setPracticeChoice((prev) => ({
+                              ...prev,
+                              [activeLevel.levelId]: optIdx,
+                            }));
+                            setPracticeChecked((prev) => ({
+                              ...prev,
+                              [activeLevel.levelId]: false,
+                            }));
+                          }}
+                          className={`text-start min-h-[46px] px-4 py-3 rounded-xl border text-base cursor-pointer transition ${
+                            checked && chosen
+                              ? isCorrect
+                                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
+                                : 'bg-rose-500/15 border-rose-400 text-rose-200'
+                              : chosen
+                              ? 'bg-sky-500/20 border-sky-400 text-white font-medium'
+                              : 'bg-white/[0.03] border-white/10 text-slate-200 hover:bg-white/[0.08]'
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                  <Button
+                    type="button"
+                    variant="cyan"
+                    size="sm"
+                    disabled={practiceChoice[activeLevel.levelId] === undefined}
+                    onClick={() => {
+                      const chosen = practiceChoice[activeLevel.levelId];
+                      if (chosen === activeLevel.practice.correctIndex) {
+                        gameAudio.playSuccess();
+                      } else {
                         gameAudio.playClick();
-                        setPracticeChoice((prev) => ({
-                          ...prev,
-                          [activeLevel.levelId]: optIdx,
-                        }));
-                        setPracticeChecked((prev) => ({
-                          ...prev,
-                          [activeLevel.levelId]: false,
-                        }));
-                      }}
-                      className={`text-start min-h-[42px] px-3.5 py-2.5 rounded-xl border text-sm cursor-pointer transition ${
-                        checked && chosen
-                          ? isCorrect
-                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-semibold'
-                            : 'bg-rose-500/15 border-rose-400 text-rose-200'
-                          : chosen
-                          ? 'bg-sky-500/20 border-sky-400 text-white font-medium'
-                          : 'bg-white/[0.03] border-white/10 text-slate-200 hover:bg-white/[0.08]'
+                      }
+                      setPracticeChecked((prev) => ({
+                        ...prev,
+                        [activeLevel.levelId]: true,
+                      }));
+                    }}
+                  >
+                    {t.academyPracticeCheckBtn}
+                  </Button>
+
+                  {practiceChecked[activeLevel.levelId] && (
+                    <span
+                      className={`text-sm font-semibold ${
+                        practiceChoice[activeLevel.levelId] === activeLevel.practice.correctIndex
+                          ? 'text-emerald-300'
+                          : 'text-amber-300'
                       }`}
                     >
-                      {opt}
-                    </button>
-                  );
-                }
-              )}
-            </div>
+                      {practiceChoice[activeLevel.levelId] === activeLevel.practice.correctIndex
+                        ? t.academyPracticeCorrect
+                        : t.academyPracticeTryAgain}
+                    </span>
+                  )}
+                </div>
+              </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+              {/* Key Takeaways */}
+              <div className="rounded-xl bg-[#050811] border border-white/10 p-4 sm:p-5 space-y-2.5">
+                <h3 className="text-xs font-mono uppercase tracking-wider font-bold text-amber-300">
+                  {t.academyKeyTakeaways}
+                </h3>
+                <ul className="space-y-1.5 text-sm sm:text-base text-slate-200">
+                  {(isRtl ? activeLevel.takeawaysAr : activeLevel.takeaways).map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-1" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Clean Lesson Footer: Back / Next / Try in Explore / Take Quiz */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10">
+            <div className="flex items-center gap-2">
               <Button
                 type="button"
-                variant="cyan"
-                size="sm"
-                disabled={practiceChoice[activeLevel.levelId] === undefined}
+                variant="secondary"
+                size="md"
+                disabled={safeStep === 0}
+                icon={<BackArrow className="w-4 h-4" />}
                 onClick={() => {
-                  const chosen = practiceChoice[activeLevel.levelId];
-                  if (chosen === activeLevel.practice.correctIndex) {
-                    gameAudio.playSuccess();
-                  } else {
-                    gameAudio.playClick();
-                  }
-                  setPracticeChecked((prev) => ({
-                    ...prev,
-                    [activeLevel.levelId]: true,
-                  }));
+                  gameAudio.playClick();
+                  setLessonStep((s) => Math.max(0, s - 1));
                 }}
               >
-                {t.academyPracticeCheckBtn}
+                {isRtl ? 'السابق' : 'Back'}
               </Button>
-
-              {practiceChecked[activeLevel.levelId] && (
-                <span
-                  className={`text-xs font-semibold ${
-                    practiceChoice[activeLevel.levelId] === activeLevel.practice.correctIndex
-                      ? 'text-emerald-300'
-                      : 'text-amber-300'
-                  }`}
-                >
-                  {practiceChoice[activeLevel.levelId] === activeLevel.practice.correctIndex
-                    ? t.academyPracticeCorrect
-                    : t.academyPracticeTryAgain}
-                </span>
-              )}
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                icon={<Compass className="w-4 h-4 text-sky-400" />}
+                onClick={() => {
+                  gameAudio.playClick();
+                  onOpenTargetInViewer(activeLevel.exploreCaseId);
+                }}
+              >
+                {t.academyTryInExplore}
+              </Button>
             </div>
-          </div>
 
-          {/* Key Takeaways + Actions */}
-          <div className="rounded-xl bg-[#050811] border border-white/10 p-4 sm:p-5 space-y-2.5">
-            <h3 className="text-xs font-mono uppercase tracking-wider font-bold text-amber-300">
-              {t.academyKeyTakeaways}
-            </h3>
-            <ul className="space-y-1.5 text-sm text-slate-200">
-              {(isRtl ? activeLevel.takeawaysAr : activeLevel.takeaways).map((item, idx) => (
-                <li key={idx} className="flex items-start gap-2">
-                  <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/10">
-            <Button
-              type="button"
-              variant="secondary"
-              size="md"
-              icon={<Compass className="w-4 h-4 text-sky-400" />}
-              onClick={() => {
-                gameAudio.playClick();
-                onOpenTargetInViewer(activeLevel.exploreCaseId);
-              }}
-            >
-              {t.academyTryInExplore}
-            </Button>
-
-            <Button
-              type="button"
-              variant="primary"
-              size="md"
-              data-testid="academy-tab-exam"
-              icon={<ForwardArrow className="w-4 h-4" />}
-              iconPosition="end"
-              onClick={() => {
-                gameAudio.playClick();
-                setMode('exam');
-              }}
-            >
-              {t.academyTakeExam}
-            </Button>
+            {!isLastStep ? (
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                icon={<ForwardArrow className="w-4 h-4" />}
+                iconPosition="end"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setLessonStep((s) => Math.min(totalSteps - 1, s + 1));
+                }}
+              >
+                {isRtl ? 'التالي' : 'Next'}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                data-testid="academy-tab-exam"
+                icon={<ForwardArrow className="w-4 h-4" />}
+                iconPosition="end"
+                onClick={() => {
+                  gameAudio.playClick();
+                  setMode('exam');
+                }}
+              >
+                {t.academyTakeExam}
+              </Button>
+            )}
           </div>
         </section>
-      )}
+        );
+      })()}
 
       {/* VIEW 3: EXAM VIEW */}
       {mode === 'exam' && (
@@ -808,6 +975,7 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
                   onClick={() => {
                     gameAudio.playClick();
                     setSelectedLevelId(nextLevel.levelId);
+                    setLessonStep(0);
                     setMode('lesson');
                   }}
                 >

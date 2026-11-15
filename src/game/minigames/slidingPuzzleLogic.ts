@@ -1,43 +1,53 @@
-export type PuzzleBoard = number[]; // length 9, 0 = empty space, 1..8 = sky tiles
+export type PuzzleBoard = number[]; // 0 = empty space, 1..(size*size-1) = sky tiles
 
-export const SOLVED_BOARD: PuzzleBoard = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+export function getSolvedBoard(size = 3): PuzzleBoard {
+  const total = size * size;
+  const board: number[] = [];
+  for (let i = 1; i < total; i++) board.push(i);
+  board.push(0);
+  return board;
+}
 
-export function isPuzzleSolved(board: PuzzleBoard): boolean {
-  if (board.length !== 9) return false;
-  for (let i = 0; i < 9; i++) {
-    if (board[i] !== SOLVED_BOARD[i]) return false;
+export const SOLVED_BOARD: PuzzleBoard = getSolvedBoard(3);
+
+export function isPuzzleSolved(board: PuzzleBoard, size = 3): boolean {
+  const total = size * size;
+  if (board.length !== total) return false;
+  for (let i = 0; i < total - 1; i++) {
+    if (board[i] !== i + 1) return false;
   }
-  return true;
+  return board[total - 1] === 0;
 }
 
 export function countAlignedTiles(board: PuzzleBoard): number {
   let count = 0;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < board.length - 1; i++) {
     if (board[i] === i + 1) count++;
   }
   return count;
 }
 
-export function getValidMoves(emptyIndex: number): number[] {
-  const row = Math.floor(emptyIndex / 3);
-  const col = emptyIndex % 3;
+export function getValidMoves(emptyIndex: number, size = 3): number[] {
+  const row = Math.floor(emptyIndex / size);
+  const col = emptyIndex % size;
   const moves: number[] = [];
-  if (row > 0) moves.push(emptyIndex - 3);
-  if (row < 2) moves.push(emptyIndex + 3);
+  if (row > 0) moves.push(emptyIndex - size);
+  if (row < size - 1) moves.push(emptyIndex + size);
   if (col > 0) moves.push(emptyIndex - 1);
-  if (col < 2) moves.push(emptyIndex + 1);
+  if (col < size - 1) moves.push(emptyIndex + 1);
   return moves;
 }
 
-export function canMoveTile(board: PuzzleBoard, tileIndex: number): boolean {
-  if (tileIndex < 0 || tileIndex >= 9) return false;
+export function canMoveTile(board: PuzzleBoard, tileIndex: number, size = 3): boolean {
+  const total = size * size;
+  if (tileIndex < 0 || tileIndex >= total || board.length !== total) return false;
   const emptyIndex = board.indexOf(0);
   if (emptyIndex === -1 || tileIndex === emptyIndex) return false;
-  return getValidMoves(emptyIndex).includes(tileIndex);
+  return getValidMoves(emptyIndex, size).includes(tileIndex);
 }
 
-export function moveTile(board: PuzzleBoard, tileIndex: number): PuzzleBoard {
-  if (!canMoveTile(board, tileIndex)) return board;
+export function moveTile(board: PuzzleBoard, tileIndex: number, size = 3): PuzzleBoard {
+  if (!canMoveTile(board, tileIndex, size)) return board;
   const emptyIndex = board.indexOf(0);
   const next = [...board];
   next[emptyIndex] = next[tileIndex];
@@ -46,16 +56,17 @@ export function moveTile(board: PuzzleBoard, tileIndex: number): PuzzleBoard {
 }
 
 /**
- * Generates a guaranteed solvable 3x3 sliding puzzle by executing legal random empty-slot walks
+ * Generates a guaranteed solvable NxN sliding puzzle by executing legal random empty-slot walks
  * starting from the solved state. Never produces an unsolvable parity!
  */
-export function createShuffledBoard(steps = 34): PuzzleBoard {
-  let board = [...SOLVED_BOARD];
-  let emptyIndex = 8;
+export function createShuffledBoard(steps = 34, size = 3): PuzzleBoard {
+  const total = size * size;
+  const board = getSolvedBoard(size);
+  let emptyIndex = total - 1;
   let lastEmpty = -1;
 
   for (let i = 0; i < steps; i++) {
-    const candidates = getValidMoves(emptyIndex).filter((idx) => idx !== lastEmpty);
+    const candidates = getValidMoves(emptyIndex, size).filter((idx) => idx !== lastEmpty);
     const chosen = candidates[Math.floor(Math.random() * candidates.length)] ?? candidates[0];
     lastEmpty = emptyIndex;
     board[emptyIndex] = board[chosen];
@@ -64,8 +75,8 @@ export function createShuffledBoard(steps = 34): PuzzleBoard {
   }
 
   // Ensure it didn't accidentally land back on solved
-  if (isPuzzleSolved(board)) {
-    return moveTile(board, 7);
+  if (isPuzzleSolved(board, size)) {
+    return moveTile(board, total - 2, size);
   }
   return board;
 }

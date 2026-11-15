@@ -36,10 +36,12 @@ export interface ScientistInvestigationPanelProps {
   stretch: StretchMode;
   colormap: ColormapMode;
   displayMode: DisplayMode;
+  rawPixels?: boolean;
   contrastFactor: number;
   onStretchChange: (s: StretchMode) => void;
   onColormapChange: (c: ColormapMode) => void;
   onDisplayModeChange: (d: DisplayMode) => void;
+  onRawPixelsChange?: (raw: boolean) => void;
   onContrastFactorChange: (val: number) => void;
   selectedCandidate: CandidateDetection | null;
   onSelectCandidate: (cand: CandidateDetection | null) => void;
@@ -54,10 +56,12 @@ export const ScientistInvestigationPanel: React.FC<ScientistInvestigationPanelPr
   stretch,
   colormap,
   displayMode,
+  rawPixels = false,
   contrastFactor,
   onStretchChange,
   onColormapChange,
   onDisplayModeChange,
+  onRawPixelsChange,
   onContrastFactorChange,
   selectedCandidate,
   onSelectCandidate,
@@ -431,7 +435,7 @@ export const ScientistInvestigationPanel: React.FC<ScientistInvestigationPanelPr
                 </div>
               </div>
 
-              {/* Display Mode (Science pixelated vs Presentation smoothed) */}
+              {/* Display Mode (Presentation smoothed vs Advanced Show raw pixels) */}
               <div className="space-y-1.5 pt-1">
                 <label className="text-[10px] font-mono text-slate-400 uppercase block">
                   {isRtl ? 'وضع دقة العرض' : 'RESOLUTION DISPLAY MODE'}
@@ -439,25 +443,31 @@ export const ScientistInvestigationPanel: React.FC<ScientistInvestigationPanelPr
                 <div className="grid grid-cols-2 gap-1.5 font-mono text-xs">
                   <button
                     type="button"
-                    onClick={() => onDisplayModeChange('presentation')}
+                    onClick={() => {
+                      onDisplayModeChange('presentation');
+                      onRawPixelsChange?.(false);
+                    }}
                     className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${
-                      displayMode === 'presentation'
+                      !rawPixels && displayMode === 'presentation'
                         ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 font-bold'
                         : 'border-white/10 bg-black/30 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {isRtl ? 'تنعيم عالي الدقة' : 'Subpixel Smoothed'}
+                    {isRtl ? 'تنعيم عالي الدقة' : 'Smooth View'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => onDisplayModeChange('science')}
+                    onClick={() => {
+                      onDisplayModeChange('science');
+                      onRawPixelsChange?.(true);
+                    }}
                     className={`py-1.5 rounded-lg border text-center transition cursor-pointer ${
-                      displayMode === 'science'
+                      rawPixels
                         ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 font-bold'
                         : 'border-white/10 bg-black/30 text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {isRtl ? 'بكسلات الكاشف الأصلية' : 'Native Detector Grid'}
+                    {isRtl ? 'إظهار البكسلات الخام' : 'Show raw pixels'}
                   </button>
                 </div>
               </div>

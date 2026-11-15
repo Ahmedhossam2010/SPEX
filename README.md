@@ -14,15 +14,23 @@
 
 ---
 
-## How to Run
+## How to Run (1-Command Setup)
+
+Requires **Node.js 22+** (`.nvmrc` included). No API key is required for core Explore, Academy, Game, or offline snapshot mode — copy `.env.example` to `.env` only if enabling optional Gemini explanations (`GEMINI_API_KEY`).
 
 ```bash
-npm install
-npm run dev     # Starts Express + Vite dev server on http://localhost:3000
-npm run lint    # Runs TypeScript type-checking (tsc --noEmit)
-npm test        # Runs unit & API validation suites (tsx --test)
-npm run build   # Builds Vite production bundle + esbuild server.js
-npm start       # Runs production server (node server.js)
+npm install                        # Installs dependencies using package-lock.json
+npm run dev                        # Starts Express + Vite dev server on http://localhost:3000
+```
+
+Useful scripts:
+
+```bash
+npm run check                      # Runs TypeScript type-check + full production build
+npm run lint                       # Runs tsc --noEmit
+SPHEREX_OFFLINE=1 npm test         # Runs unit & API validation suites offline (113/122; 5 legacy fixture + 4 live IRSA checks)
+npm run build                      # Builds Vite frontend + esbuild server.js
+npm start                          # Runs production server (node server.js, respects $PORT)
 ```
 
 ---
@@ -52,7 +60,7 @@ npm start       # Runs production server (node server.js)
 | **Community & Embed Sharing** | Validated & rate-limited REST API (`/api/community/posts`, `/comments`, `/report`, `/flags`) backed by `data/community_store.json`, `?embed=1`, and survey credits footer |
 
 ### Deployment Note (Cloud Run / Container Ephemeral Storage)
-- Community posts, comments, reports, and citizen bad-data flags persist to `data/community_store.json` on disk (seeded safely on first boot). In stateless/ephemeral container environments such as Cloud Run without an attached persistent volume, new Community entries last for the container instance's lifetime and gracefully degrade to offline/local mode if storage is read-only.
+- Community posts, comments, reports, and citizen bad-data flags are stored in `data/community_store.json` on the server filesystem (seeded safely on first boot). Because container filesystems on Cloud Run are ephemeral, community data lasts for the container instance's lifetime and resets across container restarts unless backed by an external store/volume. If storage is read-only or offline, the UI gracefully falls back to local/offline state.
 
 ---
 

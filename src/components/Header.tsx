@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   Sparkles,
@@ -15,6 +15,8 @@ import {
   Volume2,
   VolumeX,
   Users,
+  MoreHorizontal,
+  ChevronDown,
 } from 'lucide-react';
 import { SpherexLogo } from './SpherexLogo';
 import { Language, translations } from '../utils/translations';
@@ -55,10 +57,24 @@ export const Header: React.FC<HeaderProps> = ({
   const t = translations[language];
   const isRtl = language === 'ar';
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const [soundEnabled, setSoundEnabled] = useState<boolean>(() => gameAudio.isEnabled());
   const { progress, rank } = useProgress();
 
   useModalBehavior(mobileMenuOpen, () => setMobileMenuOpen(false));
+  useModalBehavior(moreMenuOpen, () => setMoreMenuOpen(false));
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
+        setMoreMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [moreMenuOpen]);
 
   interface NavItem {
     id: AppTab;
@@ -67,7 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
     highlight?: boolean;
   }
 
-  // Max 4 primary items in header nav: Home, Explore, Academy, Play
+  // Strictly 4 primary items in header nav: Home, Explore, Academy, Play
   const navItems: NavItem[] = [
     { id: 'home', label: t.navHome, icon: Home },
     { id: 'explore', label: t.navExploreShort, icon: Sparkles, highlight: true },
@@ -79,6 +95,7 @@ export const Header: React.FC<HeaderProps> = ({
     gameAudio.playClick();
     setActiveTab(tab);
     setMobileMenuOpen(false);
+    setMoreMenuOpen(false);
   };
 
   const handleToggleSound = () => {
@@ -96,6 +113,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={() => handleSelectTab('home')}
+          title={t.navHome}
           className="flex items-center gap-2 text-start transition-transform active:scale-95 group shrink-0 cursor-pointer select-none min-h-[44px]"
           aria-label="SPEX Home"
         >
@@ -118,7 +136,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </button>
 
-        {/* Center Navigation (Desktop lg+, max 4 items) */}
+        {/* Center Navigation (Desktop lg+, strictly 4 items) */}
         <nav
           aria-label={isRtl ? 'التنقل الرئيسي' : 'Primary navigation'}
           className="hidden lg:flex items-center gap-1 rounded-2xl p-1 bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] shrink-0"
@@ -131,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
                 key={item.id}
                 type="button"
                 onClick={() => handleSelectTab(item.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium rounded-xl transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 min-h-[36px] text-xs font-medium rounded-xl transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   isActive
                     ? item.highlight
                       ? 'bg-sky-500/15 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/35 font-bold shadow-xs'
@@ -150,9 +168,9 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        {/* Utility Actions (Always-visible Rank + XP, Community trigger, Tools & Mobile Drawer) */}
+        {/* Utility Actions: Rank + XP Badge, Language Toggle, Compact "More" Menu */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Always-visible Rank & XP Badge on Desktop AND Mobile */}
+          {/* Always-visible Rank & XP Badge */}
           {onOpenAchievements && (
             <button
               type="button"
@@ -163,78 +181,13 @@ export const Header: React.FC<HeaderProps> = ({
               }}
               title={t.headerRankBadgeTooltip}
               aria-label={`${rank} ${progress.xp} XP`}
-              className="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 min-h-[38px] rounded-xl border border-sky-500/35 bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-200 text-[11px] sm:text-xs font-mono font-bold transition-all cursor-pointer active:scale-95 shrink-0 whitespace-nowrap tabular-nums"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 py-1.5 min-h-[38px] rounded-xl border border-sky-500/35 bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-200 text-[11px] sm:text-xs font-mono font-bold transition-all cursor-pointer active:scale-95 shrink-0 whitespace-nowrap tabular-nums"
             >
               <Trophy className="h-3.5 w-3.5 text-amber-400 shrink-0" />
               <span>{rank}</span>
               <span className="text-amber-500 dark:text-amber-300">{progress.xp} XP</span>
             </button>
           )}
-
-          {/* Community link button (compact icon + tooltip, not a 5th nav tab) */}
-          <button
-            type="button"
-            data-testid="header-community-btn"
-            onClick={() => handleSelectTab('community')}
-            title={t.navCommunity}
-            aria-label={t.navCommunity}
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 min-h-[38px] rounded-xl border text-xs font-medium transition-all cursor-pointer active:scale-95 shrink-0 ${
-              activeTab === 'community'
-                ? 'border-amber-400/60 bg-amber-500/15 text-amber-300 font-bold'
-                : 'border-slate-200 dark:border-white/[0.12] bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300'
-            }`}
-          >
-            <Users className="h-4 w-4 text-sky-400 shrink-0" />
-            <span className="hidden xl:inline">{t.navCommunity}</span>
-          </button>
-
-          <div className="hidden lg:flex items-center gap-1.5 shrink-0">
-            {/* Glossary ("Learn the words") */}
-            <button
-              type="button"
-              onClick={() => {
-                gameAudio.playClick();
-                window.dispatchEvent(new CustomEvent('open-spex-dictionary', { detail: {} }));
-              }}
-              title={t.explorerLearnWords}
-              aria-label={t.explorerLearnWords}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 min-h-[38px] rounded-xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 text-xs font-medium transition-all cursor-pointer active:scale-95 shrink-0 whitespace-nowrap"
-            >
-              <BookOpen className="h-4 w-4 text-amber-500 shrink-0" />
-              <span className="font-semibold hidden xl:inline">{t.explorerLearnWords}</span>
-            </button>
-
-            {/* Sound Toggle */}
-            <button
-              type="button"
-              onClick={handleToggleSound}
-              title={soundEnabled ? t.soundEnabled : t.soundMuted}
-              aria-label={soundEnabled ? t.soundEnabled : t.soundMuted}
-              aria-pressed={soundEnabled}
-              className={`flex items-center justify-center p-2 min-h-[38px] min-w-[38px] rounded-xl border transition-all cursor-pointer active:scale-95 shrink-0 ${
-                soundEnabled
-                  ? 'border-sky-400/50 bg-sky-500/15 text-sky-400'
-                  : 'border-slate-200 dark:border-white/[0.12] bg-slate-100 dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-              }`}
-            >
-              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </button>
-
-            {/* Theme Toggle */}
-            <button
-              type="button"
-              onClick={onToggleTheme}
-              title={theme === 'dark' ? t.themeToggleLight : t.themeToggleDark}
-              aria-label={theme === 'dark' ? t.themeToggleLight : t.themeToggleDark}
-              className="flex items-center justify-center p-2 min-h-[38px] min-w-[38px] rounded-xl border border-slate-200 dark:border-white/[0.12] bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300 transition-all cursor-pointer active:scale-95 shrink-0"
-            >
-              {theme === 'dark' ? (
-                <Sun className="h-4 w-4 text-amber-400" />
-              ) : (
-                <Moon className="h-4 w-4 text-slate-700" />
-              )}
-            </button>
-          </div>
 
           {/* Single Shared Language Toggle */}
           <button
@@ -249,10 +202,105 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-bold text-xs">{language === 'en' ? 'عربي' : 'EN'}</span>
           </button>
 
+          {/* Compact Secondary "More" Dropdown (Desktop lg+) */}
+          <div ref={moreMenuRef} className="relative hidden lg:block">
+            <button
+              type="button"
+              data-testid="header-more-btn"
+              onClick={() => setMoreMenuOpen((v) => !v)}
+              aria-expanded={moreMenuOpen}
+              aria-haspopup="menu"
+              aria-label={t.headerMoreTooltip}
+              title={t.headerMoreTooltip}
+              className={`flex items-center gap-1 px-2.5 py-1.5 min-h-[38px] rounded-xl border text-xs font-medium transition-all cursor-pointer active:scale-95 shrink-0 ${
+                moreMenuOpen || activeTab === 'community'
+                  ? 'border-amber-400/50 bg-amber-500/10 text-amber-600 dark:text-amber-300'
+                  : 'border-slate-200 dark:border-white/[0.12] bg-slate-100 dark:bg-white/[0.04] hover:bg-slate-200 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <MoreHorizontal className="h-4 w-4 shrink-0" />
+              <span className="hidden xl:inline">{t.headerMoreLabel}</span>
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${moreMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {moreMenuOpen && (
+              <div
+                role="menu"
+                className="absolute end-0 mt-2 w-56 rounded-2xl border border-slate-200 dark:border-white/15 bg-white dark:bg-[#090F1E] shadow-2xl p-1.5 space-y-1 z-50 backdrop-blur-xl"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="header-community-btn"
+                  onClick={() => handleSelectTab('community')}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium transition cursor-pointer ${
+                    activeTab === 'community'
+                      ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300 font-bold'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-sky-400 shrink-0" />
+                    <span>{t.navCommunity}</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    gameAudio.playClick();
+                    setMoreMenuOpen(false);
+                    window.dispatchEvent(new CustomEvent('open-spex-dictionary', { detail: {} }));
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"
+                >
+                  <BookOpen className="h-4 w-4 text-amber-500 shrink-0" />
+                  <span>{t.explorerLearnWords}</span>
+                </button>
+
+                <div className="my-1 border-t border-slate-200 dark:border-white/10" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={handleToggleSound}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    {soundEnabled ? (
+                      <Volume2 className="h-4 w-4 text-sky-400 shrink-0" />
+                    ) : (
+                      <VolumeX className="h-4 w-4 text-slate-400 shrink-0" />
+                    )}
+                    <span>{soundEnabled ? t.soundEnabled : t.soundMuted}</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={onToggleTheme}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"
+                >
+                  <span className="flex items-center gap-2">
+                    {theme === 'dark' ? (
+                      <Sun className="h-4 w-4 text-amber-400 shrink-0" />
+                    ) : (
+                      <Moon className="h-4 w-4 text-slate-600 shrink-0" />
+                    )}
+                    <span>{theme === 'dark' ? t.themeToggleLight : t.themeToggleDark}</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Mobile / Tablet Menu Drawer Button */}
           <button
             type="button"
             onClick={() => setMobileMenuOpen(true)}
+            title={isRtl ? 'فتح القائمة' : 'Open navigation menu'}
             aria-label="Open mobile navigation menu"
             className="flex lg:hidden p-2 min-h-[40px] min-w-[40px] items-center justify-center rounded-xl bg-slate-100 dark:bg-white/[0.08] text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-white/10 active:scale-95 cursor-pointer"
           >
