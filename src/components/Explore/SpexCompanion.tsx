@@ -1,24 +1,36 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  MessageCircle,
   Sparkles,
   X,
   Send,
   Loader2,
-  HelpCircle,
   Compass,
   ArrowRight,
-  Maximize2,
-  Volume2,
   BookOpen,
+  Minus,
+  CheckCircle2,
+  Circle,
 } from 'lucide-react';
-import { Language } from '../../utils/translations';
+import { Language, translations } from '../../utils/translations';
 import { SpexPortrait } from '../../spex/SpexPortrait';
 import { SPEXMood } from '../../spex/spexAssets';
 import { CandidateDetection, InvestigationResult } from '../../science/types';
+import { TimeSeriesResponse } from '../TimeLens/FramePlayer';
+import { unlockAchievement } from '../../progress/progressStore';
+
+export interface ExploreStoryState {
+  pickedStar: boolean;
+  watchedBlink: boolean;
+  spottedMover: boolean;
+  checkedTelescopes: boolean;
+  sharedResult: boolean;
+}
 
 export interface SpexCompanionProps {
   currentResult: InvestigationResult | null;
+  timeSeriesMeta?: TimeSeriesResponse | null;
+  targetName?: string;
+  storyState?: ExploreStoryState;
   activeLens: 'time' | 'colors' | 'doubt' | 'neighbors' | null;
   currentFrameIdx: number;
   isCurtainActive: boolean;
@@ -38,11 +50,13 @@ interface ChatMessage {
   text: string;
   mood?: SPEXMood;
   action?: string | null;
-  timestamp: Date;
 }
 
 export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   currentResult,
+  timeSeriesMeta,
+  targetName: propTargetName,
+  storyState,
   activeLens,
   currentFrameIdx,
   isCurtainActive,
@@ -51,20 +65,22 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   language,
   onOpenTour,
   onHighlightElement,
-  onOpenScientistMode,
   onOpenDictionary,
   className = '',
 }) => {
   const isRtl = language === 'ar';
+  const t = translations[language];
 
-  // Chat window open/closed
+  const [isMinimized, setIsMinimized] = useState<boolean>(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) return true;
+    return false;
+  });
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputQuery, setInputQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [currentMood, setCurrentMood] = useState<SPEXMood>('greeting');
 
-  // Proactive suggestion bubble state
   const [proactiveBubble, setProactiveBubble] = useState<{
     text: string;
     mood: SPEXMood;
@@ -72,130 +88,140 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
     onAction?: () => void;
   } | null>(null);
 
-  // Track event triggers so proactive tips only show once per context
   const shownTipsRef = useRef<Set<string>>(new Set());
   const chatBottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Target name and metadata
-  const targetName = currentResult?.title || "Target";
-  const cadenceSec = currentResult?.compatibility?.startToStartCadenceSec ?? 128.9;
+  const targetName = propTargetName || currentResult?.title || 'SPHEREx Sky Patch';
+  const aSum = timeSeriesMeta?.astrometrySummary;
+  const completedStepsCount = storyState
+    ? [
+        storyState.pickedStar,
+        storyState.watchedBlink,
+        storyState.spottedMover,
+        storyState.checkedTelescopes,
+        storyState.sharedResult,
+      ].filter(Boolean).length
+    : 0;
 
-  // Initial welcome greeting on first render
+  // Award XP once when all 5 story milestones complete
   useEffect(() => {
-    if (!shownTipsRef.current.has('welcome')) {
-      shownTipsRef.current.add('welcome');
-      const timer = setTimeout(() => {
+    if (completedStepsCount === 5) {
+      unlockAchievement('spex_story_complete', 20, undefined, 'solving');
+    }
+  }, [completedStepsCount]);
+
+  // Grounded welcome / verdict bubble when target loads
+  useEffect(() => {
+    if (!timeSeriesMeta?.frames?.length) return;
+    const key = `verdict_${targetName}_${timeSeriesMeta.frames.length}_${aSum?.measuredDisplacementArcsec ?? 'x'}`;
+    if (shownTipsRef.current.has(key)) return;
+    shownTipsRef.current.add(key);
+
+    if (aSum) {
+      const sig =
+        aSum.sigma ??
+        (aSum.measuredDisplacementErrorArcsec > 0
+          ? aSum.measuredDisplacementArcsec / aSum.measuredDisplacementErrorArcsec
+          : 0);
+      if (aSum.motionSignificant) {
         setProactiveBubble({
           text: isRtl
-            ? 'أهلاً! أنا SPEX. استخدم Play (Space) أو Blink (B) أو بدّل بين عادي/إظهار التغيرات واختر الكاشف (D1–D6)، وافتح الإعدادات المتقدمة أو الأقسام القابلة للطي لمزيد من الأدوات!'
-            : "Hi! I'm SPEX. Press Space to Play, B to Blink 1↔Last, switch Normal / Show changes or D1–D6 Auto, and open Advanced or the collapsible Metadata/Centroid/Spectrum/Aladin slots anytime.",
-          mood: 'greeting',
-          actionLabel: isRtl ? 'ابدأ الجولة' : 'Start Tour',
+            ? `في ${targetName}: قسنا حركة ${aSum.measuredDisplacementArcsec.toFixed(2)}″ (${sig.toFixed(1)}σ) عبر ${timeSeriesMeta.frames.length} لقطات! اضغط تشغيل لمشاهدتها.`
+            : `${targetName}: measured ${aSum.measuredDisplacementArcsec.toFixed(2)}″ drift (${sig.toFixed(1)}σ) across ${timeSeriesMeta.frames.length} frames. Press Play to watch it move!`,
+          mood: 'eureka',
+          actionLabel: t.tourReplayBtn,
           onAction: onOpenTour,
         });
-      }, 1200);
-      return () => clearTimeout(timer);
+      } else {
+        setProactiveBubble({
+          text: isRtl
+            ? `${targetName}: الإزاحة المقاسة ${aSum.measuredDisplacementArcsec.toFixed(2)}″ ± ${aSum.measuredDisplacementErrorArcsec.toFixed(2)}″ (${sig.toFixed(1)}σ) — الحركة غير دالة إحصائياً حتى الآن.`
+            : `${targetName}: measured ${aSum.measuredDisplacementArcsec.toFixed(2)}″ ± ${aSum.measuredDisplacementErrorArcsec.toFixed(2)}″ (${sig.toFixed(1)}σ) — motion not significant yet.`,
+          mood: 'explaining',
+        });
+      }
+    } else {
+      setProactiveBubble({
+        text: isRtl
+          ? `مرحباً! أنا سبيكس. اضغط تشغيل لتقليب لقطات ${targetName} الحقيقية أو اسألني أي شيء.`
+          : `Hi! I'm SPEX. Press Play to blink real ${targetName} frames or ask me about any star here.`,
+        mood: 'greeting',
+        actionLabel: t.tourReplayBtn,
+        onAction: onOpenTour,
+      });
     }
-  }, [isRtl, onOpenTour]);
+  }, [timeSeriesMeta, targetName, aSum, isRtl, onOpenTour, t.tourReplayBtn]);
 
-  // Contextual proactive tip on lens change
+  // React to story milestones
   useEffect(() => {
-    if (!activeLens) return;
-    const key = `lens_${activeLens}`;
-    if (shownTipsRef.current.has(key)) return;
-    shownTipsRef.current.add(key);
-
-    let text = '';
-    let mood: SPEXMood = 'explaining';
-
-    if (activeLens === 'time') {
-      text = isRtl
-        ? 'جرب شريط WiseView أسفل العارض: تشغيل (Space)، خطوة (←/→)، تكرار (L)، وميض 1↔الأخير (B)، أو التبديل إلى «إظهار التغيرات» لطرح الإطار الأول.'
-        : 'Try the WiseView bar under the viewer: Play (Space), Step (←/→), Loop (L), Blink 1↔Last (B), or switch Normal ↔ Show changes to subtract Epoch 1.';
-      mood = 'explaining';
-    } else if (activeLens === 'colors') {
-      text = isRtl
-        ? 'اختر مصفوفة الكاشف D1–D6 (أو Auto) وافتح قسم الطيف المقاس أسفل العارض لاستكشاف الأطوال الموجية الفعلية (0.75–5.0 ميكرون).'
-        : 'Pick detector D1–D6 (or Auto) and open the Measured Spectrum slot below the viewer to inspect per-exposure wavelengths (0.75–5.0 µm).';
-      mood = 'discovery';
-    } else if (activeLens === 'doubt') {
-      text = isRtl
-        ? 'فعّل طبقة علامات الجودة DQ من شريط التحكم أو من قسم الطبقات داخل «إعدادات متقدمة» للتحقق من بكسلات التشبع والأشعة الكونية.'
-        : 'Toggle the DQ flags icon in the viewer bar (or Overlays inside Advanced) to check saturation and cosmic-ray pixel masks.';
-      mood = 'investigator';
-    } else if (activeLens === 'neighbors') {
-      text = isRtl
-        ? 'فعّل أيقونة الكتالوجات لمطابقة نجوم Gaia DR3 و AllWISE، وافتح لوحة خريطة علاء الدين (Aladin Context) لمشاهدة مجال السماء الواسع.'
-        : 'Toggle the Catalogs icon to overlay Gaia DR3 & AllWISE sources, and expand the Aladin Sky Context slot for wide-field imagery.';
-      mood = 'explaining';
+    if (!storyState) return;
+    if (storyState.watchedBlink && !shownTipsRef.current.has('story_blink')) {
+      shownTipsRef.current.add('story_blink');
+      setCurrentMood('discovery');
+      setProactiveBubble({
+        text: isRtl
+          ? 'ممتاز! شاهدت النجوم الخلفية ثابتة. الآن تفقد التلسكوبات الأخرى أو فحص التغير في لوحة متقدم.'
+          : 'Nice! Background stars stay put while time flips. Try Other telescopes next!',
+        mood: 'discovery',
+      });
     }
+  }, [storyState?.watchedBlink, isRtl]);
 
-    if (text) {
-      setProactiveBubble({ text, mood });
-    }
-  }, [activeLens, isRtl]);
-
-  // Contextual proactive tip when candidate is selected
   useEffect(() => {
-    if (!selectedCandidate) return;
-    const key = `cand_${selectedCandidate.id}`;
-    if (shownTipsRef.current.has(key)) return;
-    shownTipsRef.current.add(key);
+    if (!storyState?.checkedTelescopes) return;
+    if (!shownTipsRef.current.has('story_tel')) {
+      shownTipsRef.current.add('story_tel');
+      setCurrentMood('proud');
+      setProactiveBubble({
+        text: isRtl
+          ? 'قارنت الآن بين SPHEREx و Gaia/AllWISE! شارك نتيجتك لإتمام قصة الاستكشاف.'
+          : 'You compared SPHEREx against Gaia / AllWISE! Share your view to finish the exploration story.',
+        mood: 'proud',
+      });
+    }
+  }, [storyState?.checkedTelescopes, isRtl]);
 
-    const isArtifact = selectedCandidate.status === 'Possible artifact';
-    const text = isRtl
-      ? isArtifact
-        ? `المرشح ${selectedCandidate.id} تم استبعاده بسبب تشبع المستشعر؛ ده عيب جهاز مش اكتشاف فلكي.`
-        : `رصدنا مرشحًا يظهر فارقًا بدلالة ${selectedCandidate.peakSignificance.toFixed(1)}σ! تعال نفحص دليله سوا.`
-      : isArtifact
-      ? `Candidate ${selectedCandidate.id} is flagged as an instrumental saturation glitch rather than true variability.`
-      : `Detected a candidate showing flux variation at ${selectedCandidate.peakSignificance.toFixed(1)}σ! Want to examine the evidence together?`;
-
-    setProactiveBubble({
-      text,
-      mood: isArtifact ? 'sassy' : 'eureka',
-      actionLabel: isRtl ? 'اسأل سبيكس' : 'Ask SPEX',
-      onAction: () => {
-        setIsOpen(true);
-        handleSendMessage(isRtl ? `احكيلي عن المرشح ${selectedCandidate.id}` : `Tell me about candidate ${selectedCandidate.id}`);
-      },
-    });
-  }, [selectedCandidate, isRtl]);
-
-  // Contextual proactive tip when flagged pixel is tapped
   useEffect(() => {
     if (!selectedFlagPixel) return;
     const isOverflow = (selectedFlagPixel.flag & 0x02) !== 0;
-    const text = isRtl
-      ? `البكسل ده سجل علامة جودة (${isOverflow ? 'تشبع مستشعر' : 'أشعة كونية'})! مش تغير فلكي حقيقي يا هندسة.`
-      : `This pixel has a quality flag (${isOverflow ? 'sensor saturation' : 'cosmic ray'})! It is an instrumental artifact.`;
-
     setProactiveBubble({
-      text,
+      text: isRtl
+        ? `هذا البكسل يحمل علم جودة (${isOverflow ? 'تشبع مستشعر' : 'شعاع كوني'}) وليس نجماً متحركاً.`
+        : `This pixel has a quality flag (${isOverflow ? 'saturation' : 'cosmic ray'}) rather than astrophysical motion.`,
       mood: 'sassy',
     });
   }, [selectedFlagPixel, isRtl]);
 
-  // Auto-scroll chat to bottom
   useEffect(() => {
     if (isOpen) {
       chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, isOpen]);
 
-  // Send message to server AI endpoint
+  const buildLocalGroundedFallback = (): string => {
+    if (aSum) {
+      const sig =
+        aSum.sigma ??
+        (aSum.measuredDisplacementErrorArcsec > 0
+          ? aSum.measuredDisplacementArcsec / aSum.measuredDisplacementErrorArcsec
+          : 0);
+      return isRtl
+        ? `للهدف ${targetName}: الإزاحة المقاسة ${aSum.measuredDisplacementArcsec.toFixed(2)}″ ± ${aSum.measuredDisplacementErrorArcsec.toFixed(2)}″ (${sig.toFixed(2)}σ). استخدم زر التشغيل والشريط الزمني أسفل الصورة، وقارن مع Gaia و AllWISE من اللوحة اليمنى.`
+        : `For ${targetName}: measured offset is ${aSum.measuredDisplacementArcsec.toFixed(2)}″ ± ${aSum.measuredDisplacementErrorArcsec.toFixed(2)}″ (${sig.toFixed(2)}σ). Use Play and the bottom date timeline, then toggle Gaia/AllWISE/Aladin on the right panel.`;
+    }
+    return isRtl
+      ? `استخدم زر التشغيل أسفل الشاشة لتقليب لقطات ${targetName} عبر الزمن، وقارن مواقع النجوم مع فهارس Gaia DR3 و AllWISE.`
+      : `Use Play at the bottom to flip ${targetName} across dates, and toggle Gaia DR3 / AllWISE / Aladin in Telescopes to verify neighbors.`;
+  };
+
   const handleSendMessage = async (textToSend?: string) => {
     const q = (textToSend || inputQuery).trim();
     if (!q || isLoading) return;
 
-    const userMsg: ChatMessage = {
-      id: `usr-${Date.now()}`,
-      sender: 'user',
-      text: q,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: `usr-${Date.now()}`, sender: 'user', text: q },
+    ]);
     setInputQuery('');
     setIsLoading(true);
     setProactiveBubble(null);
@@ -210,103 +236,153 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
           evidence: currentResult?.evidence,
           context: {
             targetName,
-            targetCoords: currentResult?.targetCoords,
+            targetCoords: timeSeriesMeta?.targetCoords || currentResult?.targetCoords,
             activeLens,
-            activeBand: `Band ${activeLens === 'colors' ? 'Active' : '1'}`,
-            selectedObservation: currentFrameIdx === 2 ? 'Difference' : `Visit ${currentFrameIdx + 1}`,
-            cadenceSeconds: cadenceSec,
+            selectedObservation: `Frame ${currentFrameIdx + 1}`,
+            cadenceSeconds: currentResult?.compatibility?.startToStartCadenceSec ?? 128.9,
             selectedCandidate: selectedCandidate ? selectedCandidate.id : null,
             selectedFlagPixel,
             isCurtainActive,
           },
         }),
       });
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-
-      const spexMood = (data.mood || 'explaining') as SPEXMood;
+      const json = await res.json();
+      const spexMood = (json.mood || 'explaining') as SPEXMood;
       setCurrentMood(spexMood);
-
-      const spexMsg: ChatMessage = {
-        id: `spx-${Date.now()}`,
-        sender: 'spex',
-        text: data.reply || (isRtl ? 'كل الأنظمة تعمل بكفاءة.' : 'All systems nominal.'),
-        mood: spexMood,
-        action: data.action || null,
-        timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, spexMsg]);
-
-      // If reply contains an action, trigger visual highlighting of that element!
-      if (data.action && onHighlightElement) {
-        onHighlightElement(data.action);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `spx-${Date.now()}`,
+          sender: 'spex',
+          text: json.reply || buildLocalGroundedFallback(),
+          mood: spexMood,
+          action: json.action || null,
+        },
+      ]);
+      if (json.action && onHighlightElement) {
+        onHighlightElement(json.action);
       }
-    } catch (err) {
-      const fallbackMsg: ChatMessage = {
-        id: `spx-${Date.now()}`,
-        sender: 'spex',
-        text: isRtl
-          ? 'يعرض المستكشف لقطات SPHEREx الحقيقية عبر الكواشف D1–D6. استخدم Normal / Show changes لرؤية الفروق، وأدوات WiseView (Space/←/→/L/B) أسفل العارض، وقائمة «إعدادات متقدمة» لعرض التباين والطبقات والتحليل والتصدير.'
-          : 'SPHEREx captures multi-epoch infrared exposures across detectors D1–D6. Use Normal / Show changes, the WiseView bar (Space/←/→/L/B), Advanced (Display, Overlays, Analysis, Export), and the collapsible Metadata, Centroid, Spectrum, and Aladin slots.',
-        mood: 'explaining',
-        timestamp: new Date(),
-      };
-      setMessages((prev) => [...prev, fallbackMsg]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `spx-${Date.now()}`,
+          sender: 'spex',
+          text: buildLocalGroundedFallback(),
+          mood: 'explaining',
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <>
-      {/* ============================================================== */}
-      {/* PERSISTENT FLOATING SPEX MASCOT & PROACTIVE SPEECH BUBBLE */}
-      {/* ============================================================== */}
+  if (isMinimized) {
+    return (
       <div
-        className={`fixed bottom-22 sm:bottom-6 z-40 flex flex-col gap-2.5 pointer-events-auto ${
-          isRtl ? 'right-3 sm:right-6 items-end' : 'left-3 sm:left-6 items-start'
+        className={`fixed bottom-20 z-40 pointer-events-none ${isRtl ? 'right-3' : 'left-3'} ${className}`}
+        dir={isRtl ? 'rtl' : 'ltr'}
+      >
+        <button
+          type="button"
+          data-testid="spex-restore-btn"
+          onClick={() => setIsMinimized(false)}
+          className="pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#090F1E]/90 backdrop-blur-xl border border-[#FFB900]/45 text-amber-200 hover:bg-[#101933] shadow-lg text-xs font-semibold cursor-pointer transition"
+          aria-label={t.spexRestore}
+          title={t.spexRestore}
+        >
+          <SpexPortrait mood={currentMood} size={20} />
+          <span>{t.spexRestore}</span>
+          {storyState && (
+            <span className="font-mono text-[10px] text-sky-300 tabular-nums">
+              {completedStepsCount}/5
+            </span>
+          )}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-40" dir={isRtl ? 'rtl' : 'ltr'}>
+      <div
+        className={`fixed bottom-24 sm:bottom-24 flex flex-col gap-2 pointer-events-none ${
+          isRtl ? 'right-3 sm:right-5 items-end' : 'left-3 sm:left-5 items-start'
         } ${className}`}
       >
-        {/* Proactive Speech Bubble (Floats cleanly ABOVE the mascot button) */}
         {proactiveBubble && !isOpen && (
-          <div
-            className={`w-72 sm:w-80 bg-[#0C0E14]/95 backdrop-blur-xl border border-[#FFB900]/40 rounded-2xl p-3 sm:p-3.5 shadow-[0_12px_40px_rgba(0,0,0,0.85)] text-slate-100 space-y-2 animate-scale-in ${
-              isRtl ? 'origin-bottom-right' : 'origin-bottom-left'
-            }`}
-          >
-            <div className="flex items-start justify-between gap-2">
+          <div className="pointer-events-auto w-64 sm:w-72 bg-[#070B16]/90 backdrop-blur-xl border border-[#FFB900]/40 rounded-2xl p-3 shadow-2xl text-slate-100 space-y-2">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#FFB900] font-bold uppercase">
                 <Sparkles className="w-3 h-3" />
-                <span>SPEX GUIDE</span>
+                <span>SPEX</span>
               </div>
-              <button
-                type="button"
-                onClick={() => setProactiveBubble(null)}
-                className="text-slate-400 hover:text-white p-0.5 rounded transition cursor-pointer"
-                title={isRtl ? 'إغلاق التنبيه' : 'Dismiss tip'}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  data-testid="spex-minimize-btn"
+                  onClick={() => setIsMinimized(true)}
+                  className="text-slate-400 hover:text-white p-1 rounded transition cursor-pointer"
+                  aria-label={t.spexMinimize}
+                  title={t.spexMinimize}
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setProactiveBubble(null)}
+                  className="text-slate-400 hover:text-white p-1 rounded transition cursor-pointer"
+                  aria-label="Dismiss tip"
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <p className="text-xs text-slate-200 leading-snug font-sans">
-              {proactiveBubble.text}
-            </p>
+            <p className="text-xs text-slate-200 leading-snug">{proactiveBubble.text}</p>
 
-            <div className="flex items-center justify-between gap-2 pt-1">
-              {proactiveBubble.actionLabel && (
+            {storyState && (
+              <div className="pt-1 border-t border-white/10 flex flex-wrap gap-1 text-[10px] font-mono">
+                {[
+                  { done: storyState.pickedStar, label: t.spexStoryStep1 },
+                  { done: storyState.watchedBlink, label: t.spexStoryStep2 },
+                  { done: storyState.spottedMover, label: t.spexStoryStep3 },
+                  { done: storyState.checkedTelescopes, label: t.spexStoryStep4 },
+                  { done: storyState.sharedResult, label: t.spexStoryStep5 },
+                ].map((s, idx) => (
+                  <span
+                    key={idx}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded ${
+                      s.done
+                        ? 'bg-emerald-500/20 text-emerald-300'
+                        : 'bg-white/5 text-slate-400'
+                    }`}
+                  >
+                    {s.done ? (
+                      <CheckCircle2 className="w-2.5 h-2.5 shrink-0" />
+                    ) : (
+                      <Circle className="w-2.5 h-2.5 shrink-0" />
+                    )}
+                    <span>{s.label}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              {proactiveBubble.actionLabel && proactiveBubble.onAction && (
                 <button
                   type="button"
                   onClick={() => {
-                    if (proactiveBubble.onAction) proactiveBubble.onAction();
+                    proactiveBubble.onAction?.();
                     setProactiveBubble(null);
                   }}
-                  className="px-2.5 py-1 rounded-lg bg-[#FFB900] hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition flex items-center gap-1 cursor-pointer"
+                  className="px-2 py-1 rounded-lg bg-[#FFB900] hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition flex items-center gap-1 cursor-pointer"
                 >
                   <span>{proactiveBubble.actionLabel}</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <ArrowRight className={`w-3 h-3 ${isRtl ? 'rotate-180' : ''}`} />
                 </button>
               )}
               <button
@@ -315,207 +391,164 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
                   setIsOpen(true);
                   setProactiveBubble(null);
                 }}
-                className="text-[11px] font-mono text-[#00D3F3] hover:underline cursor-pointer ml-auto"
+                className="text-[11px] font-mono text-[#00D3F3] hover:underline cursor-pointer ms-auto"
               >
-                {isRtl ? 'تحدث مع سبيكس' : 'Chat with SPEX'}
+                {t.spexRestore}
               </button>
             </div>
           </div>
         )}
 
-        {/* Persistent Floating SPEX Mascot Avatar Button */}
-        <button
-          type="button"
-          data-tour="spex_companion"
-          onClick={() => {
-            setIsOpen(!isOpen);
-            setProactiveBubble(null);
-          }}
-          className={`group relative p-1.5 sm:p-2 rounded-2xl bg-gradient-to-b from-[#141824] to-[#07090E] border-2 transition-all duration-300 shadow-[0_8px_32px_rgba(0,0,0,0.8)] cursor-pointer select-none hover:scale-105 active:scale-95 ${
-            isOpen
-              ? 'border-[#00D3F3] shadow-[0_0_24px_rgba(0,211,243,0.4)]'
-              : 'border-[#FFB900]/50 hover:border-[#FFB900] shadow-[0_0_20px_rgba(255,185,0,0.25)]'
-          }`}
-          title={isRtl ? 'المرافق الفلكي الذكي SPEX' : 'SPEX Intelligent Space Cat Companion'}
-        >
-          {/* Subtle Breathing Glow Ring */}
-          <span className="absolute -inset-1 rounded-2xl bg-gradient-to-r from-[#FFB900]/20 to-[#00D3F3]/20 blur-xs group-hover:opacity-100 opacity-60 transition-opacity" />
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          <button
+            type="button"
+            data-tour="spex_companion"
+            onClick={() => {
+              setIsOpen((prev) => !prev);
+              setProactiveBubble(null);
+            }}
+            className={`group relative p-1.5 rounded-2xl bg-[#0B1020]/90 backdrop-blur-xl border-2 transition cursor-pointer shadow-xl ${
+              isOpen ? 'border-[#00D3F3]' : 'border-[#FFB900]/55 hover:border-[#FFB900]'
+            }`}
+            title={t.spexRestore}
+            aria-label={t.spexRestore}
+          >
+            <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center">
+              <SpexPortrait mood={currentMood} size={40} className="w-full h-full object-contain" />
+            </div>
+          </button>
 
-          {/* Authentic SPEX Egyptian Mechanical Cat Avatar */}
-          <div className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-xl overflow-hidden flex items-center justify-center">
-            <SpexPortrait mood={currentMood} size={48} className="w-full h-full object-contain" />
-          </div>
-
-          {/* Active Status Badge */}
-          <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-[#0C0E14] shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-        </button>
+          {!proactiveBubble && !isOpen && (
+            <button
+              type="button"
+              data-testid="spex-minimize-btn"
+              onClick={() => setIsMinimized(true)}
+              aria-label={t.spexMinimize}
+              title={t.spexMinimize}
+              className="p-1.5 rounded-lg bg-[#070B16]/85 border border-white/15 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <Minus className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* ============================================================== */}
-      {/* INTERACTIVE SPEX CHAT PANEL (Responsive Drawer / Window) */}
-      {/* ============================================================== */}
       {isOpen && (
         <div
-          className={`fixed bottom-36 sm:bottom-20 z-50 w-[calc(100vw-1.5rem)] sm:w-[420px] max-h-[580px] h-[520px] bg-[#0C0E14]/98 backdrop-blur-2xl border border-[#FFB900]/40 rounded-2xl shadow-[0_20px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden text-slate-100 animate-slide-up ${
-            isRtl ? 'right-3 sm:right-6' : 'left-3 sm:left-6'
+          className={`pointer-events-auto fixed bottom-40 sm:bottom-40 z-50 w-[calc(100vw-1.5rem)] sm:w-[390px] max-h-[500px] h-[440px] bg-[#070B16]/95 backdrop-blur-2xl border border-[#FFB900]/45 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100 ${
+            isRtl ? 'right-3 sm:right-5' : 'left-3 sm:left-5'
           }`}
-          dir={isRtl ? 'rtl' : 'ltr'}
         >
-          {/* Header */}
-          <div className="shrink-0 h-14 bg-white/5 border-b border-white/10 px-4 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-[#FFB900]/20 border border-[#FFB900]/40 p-0.5 flex items-center justify-center shrink-0">
-                <SpexPortrait mood={currentMood} size={28} />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-100 font-mono flex items-center gap-1.5">
-                  <span>SPEX</span>
-                  <span className="text-[10px] text-[#FFB900] font-normal uppercase tracking-wider">
-                    {isRtl ? 'المرشد الفلكي' : 'AI Companion'}
-                  </span>
-                </h3>
-                <p className="text-[10px] text-slate-400 font-mono truncate max-w-[180px]">
-                  {targetName} ({cadenceSec.toFixed(1)}s cadence)
-                </p>
+          <div className="shrink-0 h-12 bg-white/5 border-b border-white/10 px-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <SpexPortrait mood={currentMood} size={26} />
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-100 truncate">{targetName}</div>
+                <div className="text-[10px] font-mono text-amber-300">
+                  {t.spexStoryBadge}: {completedStepsCount}/5
+                </div>
               </div>
             </div>
-
             <div className="flex items-center gap-1">
               {onOpenDictionary && (
                 <button
                   type="button"
                   onClick={() => onOpenDictionary()}
-                  className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-white/10 transition cursor-pointer text-xs font-mono"
-                  title={isRtl ? 'قاموس الفضاء' : 'Space Dictionary'}
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-amber-300 hover:bg-white/10 cursor-pointer"
+                  aria-label="Space Dictionary"
+                  title="Space Dictionary"
                 >
-                  <BookOpen className="w-4 h-4" />
+                  <BookOpen className="w-3.5 h-3.5" />
                 </button>
               )}
-
               <button
                 type="button"
                 onClick={onOpenTour}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-[#FFB900] hover:bg-white/10 transition cursor-pointer text-xs font-mono"
-                title={isRtl ? 'جولة توضيحية' : 'Start Tour'}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-[#FFB900] hover:bg-white/10 cursor-pointer"
+                aria-label={t.tourReplayBtn}
+                title={t.tourReplayBtn}
               >
-                <Compass className="w-4 h-4" />
+                <Compass className="w-3.5 h-3.5" />
               </button>
-
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOpen(false);
+                  setIsMinimized(true);
+                }}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label={t.spexMinimize}
+                title={t.spexMinimize}
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-                title={isRtl ? 'إغلاق' : 'Close'}
+                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer"
+                aria-label="Close"
+                title="Close"
               >
-                <X className="w-4 h-4" />
+                <X className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Conversation History */}
-          <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-3 font-sans text-xs sm:text-sm">
-            {/* Friendly Greeting Message if no history */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2.5 text-xs">
             {messages.length === 0 && (
-              <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-2 text-slate-200">
-                <div className="flex items-center gap-2 text-[#FFB900] font-mono text-[11px] font-bold">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isRtl ? 'أهلاً بيك يا باشا!' : 'Welcome Explorer!'}</span>
-                </div>
-                <p className="leading-relaxed">
-                  {isRtl
-                    ? `أنا SPEX، رفيقك الفلكي في استكشاف ${targetName}. اسألني عن أي حاجة شاغل بالك في الصورة أو دوس على أحد الأسئلة المقترحة!`
-                    : `I am SPEX, your astrophysics guide for ${targetName}. Ask me anything about this sky field, or tap any suggestion below!`}
-                </p>
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-slate-200 leading-relaxed">
+                {buildLocalGroundedFallback()}
               </div>
             )}
-
             {messages.map((m) => (
               <div
                 key={m.id}
-                className={`flex gap-2.5 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex gap-2 ${m.sender === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                {m.sender === 'spex' && (
-                  <div className="w-7 h-7 rounded-lg bg-[#FFB900]/20 border border-[#FFB900]/30 p-0.5 shrink-0">
-                    <SpexPortrait mood={m.mood || 'explaining'} size={24} />
-                  </div>
-                )}
-
+                {m.sender === 'spex' && <SpexPortrait mood={m.mood || 'explaining'} size={22} />}
                 <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 leading-relaxed ${
+                  className={`max-w-[84%] rounded-2xl px-3 py-2 leading-relaxed ${
                     m.sender === 'user'
-                      ? 'bg-[#FFB900] text-slate-950 font-medium rounded-br-xs'
-                      : 'bg-white/10 text-slate-100 border border-white/10 rounded-bl-xs'
+                      ? 'bg-[#FFB900] text-slate-950 font-medium'
+                      : 'bg-white/10 text-slate-100 border border-white/10'
                   }`}
                 >
                   <p>{m.text}</p>
-                  {m.action && onHighlightElement && (
-                    <button
-                      type="button"
-                      onClick={() => onHighlightElement(m.action!)}
-                      className="mt-2 text-[11px] font-mono text-[#00D3F3] hover:underline flex items-center gap-1 cursor-pointer font-bold"
-                    >
-                      <Sparkles className="w-3 h-3" />
-                      <span>{isRtl ? '👈 وريني المكان في الموقع!' : '👈 Point me to this control!'}</span>
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
-
             {isLoading && (
-              <div className="flex items-center gap-2 p-3 rounded-xl bg-white/5 text-xs text-amber-300 font-mono">
-                <Loader2 className="w-4 h-4 animate-spin text-[#FFB900]" />
-                <span>{isRtl ? 'سبيكس يحلل بيانات SPHEREx...' : 'SPEX is analyzing telescope data...'}</span>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-white/5 text-amber-300 font-mono">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>...</span>
               </div>
             )}
-
             <div ref={chatBottomRef} />
           </div>
 
-          {/* Quick Contextual Question Chips */}
-          <div className="shrink-0 px-3 py-2 bg-black/40 border-t border-white/5 overflow-x-auto flex gap-1.5 no-scrollbar">
-            {[
-              isRtl ? 'إزاي أشغل الوميض والتغيير؟' : 'How do I use Show changes & Blink?',
-              isRtl ? 'إيه الموجود في إعدادات متقدمة؟' : 'What is inside Advanced?',
-              isRtl ? 'إزاي أختار الكاشف D1–D6؟' : 'How do D1–D6 detectors work?',
-              isRtl ? 'فين منحنى الحركة والطيف؟' : 'Where are Centroid & Spectrum slots?',
-              isRtl ? 'إزاي أعمل بطاقة اكتشاف؟' : 'How do I export a snapshot?',
-            ].map((chip, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleSendMessage(chip)}
-                className="shrink-0 text-[11px] font-mono px-2.5 py-1 rounded-lg bg-white/5 hover:bg-[#FFB900]/20 hover:text-[#FFB900] text-slate-300 border border-white/10 transition cursor-pointer whitespace-nowrap"
-              >
-                {chip}
-              </button>
-            ))}
-          </div>
-
-          {/* Custom Message Input */}
-          <div className="shrink-0 p-3 bg-black/60 border-t border-white/10 flex items-center gap-2">
+          <div className="shrink-0 p-2.5 bg-black/50 border-t border-white/10 flex items-center gap-2">
             <input
               type="text"
-              placeholder={isRtl ? 'اكتب سؤالك لسبيكس...' : 'Ask SPEX anything about this sky...'}
+              placeholder={t.spexGuideInputPlaceholder}
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleSendMessage();
               }}
-              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#FFB900]"
+              className="flex-1 bg-white/5 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-400 focus:outline-none focus:border-[#FFB900]"
             />
             <button
               type="button"
               onClick={() => handleSendMessage()}
               disabled={isLoading || !inputQuery.trim()}
-              className="p-2.5 rounded-xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 font-bold transition disabled:opacity-40 cursor-pointer"
-              title={isRtl ? 'إرسال' : 'Send'}
+              aria-label="Send"
+              className="p-2 rounded-xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 disabled:opacity-40 cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 };

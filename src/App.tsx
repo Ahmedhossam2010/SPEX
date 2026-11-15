@@ -86,6 +86,9 @@ export function App() {
 
   // Navigate tab and synchronize browser history pathname
   const setActiveTab = (tab: AppTab, replace = false) => {
+    if (tab === 'explore' && activeTab !== 'explore') {
+      setExploreScreen('sky');
+    }
     setActiveTabState(tab);
     if (typeof window !== 'undefined') {
       const targetPath = tab === 'home' ? '/' : `/${tab}`;
@@ -130,7 +133,21 @@ export function App() {
       return false;
     }
   });
-  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>('hunt');
+  const [exploreScreen, setExploreScreen] = useState<'sky' | 'hunt'>(() => {
+    if (typeof window === 'undefined') return 'sky';
+    const params = new URLSearchParams(window.location.search);
+    const hasDeepLink = Boolean(
+      params.get('target') ||
+        params.get('case') ||
+        params.get('coords') ||
+        (params.get('ra') && params.get('dec')) ||
+        params.get('band') ||
+        params.get('detector') ||
+        params.get('fov') ||
+        params.get('embed') === '1'
+    );
+    return hasDeepLink ? 'hunt' : 'sky';
+  });
   const [selectedTarget, setSelectedTarget] = useState<ChallengeTarget | null>(null);
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeDetector, setActiveDetector] = useState<string | undefined>(() => {
@@ -296,10 +313,25 @@ export function App() {
             ? targetCaseFromSlug
             : data.find((c: any) => c.id === 'case-wise-0855')?.id || data[0]?.id || 'case-wise-0855';
         if (parsedCoords) {
+          setSelectedTarget({
+            id: targetCaseFromSlug || 'custom-coords',
+            name: `${parsedCoords.ra.toFixed(3)}°, ${parsedCoords.dec.toFixed(3)}°`,
+            ra: parsedCoords.ra,
+            dec: parsedCoords.dec,
+            constellation: '',
+            scienceType: 'Coordinate search',
+            description: 'Custom sky coordinates',
+            qr2Coverage: 'covered',
+            angularDistanceDegToNEP: 0,
+            recommendedBenchmarkId: targetCaseFromSlug || 'custom',
+            expectedBehavior: '',
+          });
           if (isScientistMode) {
             loadCase(targetCaseFromSlug || targetId, parsedCoords, { sizePix: sizePixParam, epochPair });
           } else if (targetCaseFromSlug) {
             setActiveCaseId(targetCaseFromSlug);
+          } else {
+            setActiveCaseId(null);
           }
         } else if (isScientistMode) {
           loadCase(targetId, undefined, { sizePix: sizePixParam, epochPair });
@@ -432,16 +464,53 @@ export function App() {
 
   const handleStartExplore = (caseId?: string) => {
     setFallbackQuery(null);
-    setExploreScreen('hunt');
+    setExploreScreen(caseId ? 'hunt' : 'sky');
     setExploreFromAcademy(false);
     if (caseId) {
+      setSelectedTarget(null);
       if (isScientistMode) {
         loadCase(caseId);
       } else {
         setActiveCaseId(caseId);
       }
     }
-    setActiveTab('explore');
+    setActiveTabState('explore');
+    if (typeof window !== 'undefined') {
+      const currentPath = window.location.pathname;
+      if (currentPath !== '/explore') {
+        window.history.pushState({ tab: 'explore' }, '', `/explore${window.location.search}`);
+      }
+    }
+  };
+
+  const handleOpenCoordsInExplore = (ra: number, dec: number) => {
+    setFallbackQuery(null);
+    setExploreFromAcademy(false);
+    setActiveCaseId(null);
+    setSelectedTarget({
+      id: 'custom-coords',
+      name: `${ra.toFixed(3)}°, ${dec.toFixed(3)}°`,
+      ra,
+      dec,
+      constellation: '',
+      scienceType: 'Coordinate search',
+      description: 'Custom sky coordinates',
+      qr2Coverage: 'covered',
+      angularDistanceDegToNEP: 0,
+      recommendedBenchmarkId: 'custom',
+      expectedBehavior: '',
+    });
+    setExploreScreen('hunt');
+    setActiveTabState('explore');
+    if (typeof window !== 'undefined') {
+      const p = new URLSearchParams(window.location.search);
+      p.set('ra', ra.toFixed(5));
+      p.set('dec', dec.toFixed(5));
+      p.delete('case');
+      p.delete('target');
+      window.history.pushState({ tab: 'explore' }, '', `/explore?${p.toString()}`);
+    }
+    loadCase('', { ra, dec });
   };
 
   const handleOpenExploreFromAcademy = (caseId: string) => {
@@ -671,6 +740,7 @@ export function App() {
             <HomeView
               onStartAcademy={() => setActiveTab('academy')}
               onStartExplore={handleStartExplore}
+              onSearchCoords={handleOpenCoordsInExplore}
               onQuickDemoWise={handleQuickDemoWise}
               onFlySelection={handleFlySelection}
               onOpenAbout={() => setActiveTab('about')}
@@ -755,23 +825,27 @@ export function App() {
                     setExploreScreen('hunt');
                     const tId = target.id.toLowerCase();
                     if (tId.includes('barnard')) {
+                      setActiveCaseId('case-barnards-star');
                       loadCase('case-barnards-star');
                     } else if (tId.includes('wise-0855') || tId.includes('0855')) {
+                      setActiveCaseId('case-wise-0855');
                       loadCase('case-wise-0855');
                     } else if (tId.includes('rw-aur')) {
+                      setActiveCaseId('case-rw-aur');
                       loadCase('case-rw-aur');
                     } else if (tId.includes('r-dra')) {
+                      setActiveCaseId('case-r-dra');
                       loadCase('case-r-dra');
                     } else if (tId.includes('epsilon-indi') || tId.includes('indi')) {
+                      setActiveCaseId('case-epsilon-indi');
                       loadCase('case-epsilon-indi');
                     } else {
+                      setActiveCaseId(null);
                       loadCase(target.id, { ra: target.ra, dec: target.dec });
                     }
                   }}
                   onSelectCoords={(ra, dec) => {
-                    setSelectedTarget(null);
-                    setExploreScreen('hunt');
-                    loadCase(cases[0]?.id || 'case-nep-var-01', { ra, dec });
+                    handleOpenCoordsInExplore(ra, dec);
                   }}
                 />
               ) : (

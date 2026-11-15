@@ -670,6 +670,69 @@ export interface TranslationDictionary {
   exploreReturnToAcademy: string;
   spectrumUnavailableFrame: string;
   academyContinueBtn: string;
+
+  // Addendum Phases A-E: Overlay Controls, Alignment Check, Findings, Tour/Companion, Simple Home & Sky Map
+  exploreBackToMap: string;
+  findingsBtn: string;
+  findingsDrawerTitle: string;
+  findingsSubtitle: string;
+  findingsVerdictConfirmed: string;
+  findingsVerdictCandidate: string;
+  findingsVerdictNone: string;
+  findingsSnapshotNote: string;
+  findingsColTarget: string;
+  findingsColSpan: string;
+  findingsColMotion: string;
+  findingsColPasses: string;
+  findingsColVerdict: string;
+  findingsOpenTarget: string;
+  findingsLoading: string;
+  coordSearchPlaceholder: string;
+  coordSearchError: string;
+  layerGroupTitle: string;
+  gridOverlayLabel: string;
+  epoch1CrosshairLabel: string;
+  alignmentCheckTitle: string;
+  alignmentUnalignedBadge: string;
+  alignmentAlignedCount: string;
+  alignmentFloorLabel: string;
+  alignmentRefStarsLabel: string;
+  alignmentWcsValid: string;
+  alignmentWcsWarning: string;
+  panelExpandAria: string;
+  zoomResetLabel: string;
+  zoomInLabel: string;
+  zoomOutLabel: string;
+  tourStepPlayTitle: string;
+  tourStepPlayBody: string;
+  tourStepTimelineTitle: string;
+  tourStepTimelineBody: string;
+  tourStepTelescopesTitle: string;
+  tourStepTelescopesBody: string;
+  tourStepPassTitle: string;
+  tourStepPassBody: string;
+  tourStepShareTitle: string;
+  tourStepShareBody: string;
+  tourStepHelpTitle: string;
+  tourStepHelpBody: string;
+  tourReplayBtn: string;
+  spexMinimize: string;
+  spexRestore: string;
+  spexStoryBadge: string;
+  spexStoryStep1: string;
+  spexStoryStep2: string;
+  spexStoryStep3: string;
+  spexStoryStep4: string;
+  spexStoryStep5: string;
+  homeHeadlineSimple: string;
+  homeNavExplore: string;
+  homeNavAcademy: string;
+  homeNavPlay: string;
+  homeCoordSearchBtn: string;
+  homeCoordHint: string;
+  skyPickStarTitle: string;
+  skyToggleAladin: string;
+  skyTapAnywhereHint: string;
 }
 
 export const translations: Record<Language, TranslationDictionary> = {
@@ -1364,6 +1427,69 @@ export const translations: Record<Language, TranslationDictionary> = {
     exploreReturnToAcademy: 'Back to Academy',
     spectrumUnavailableFrame: 'Spectrum unavailable for this frame',
     academyContinueBtn: 'Continue',
+
+    // Addendum Phases A-E: Overlay Controls, Alignment Check, Findings, Tour/Companion, Simple Home & Sky Map
+    exploreBackToMap: 'Back to map',
+    findingsBtn: 'Findings',
+    findingsDrawerTitle: 'Findings Summary',
+    findingsSubtitle: 'Real astrometric measurements across saved benchmark targets and searched fields.',
+    findingsVerdictConfirmed: 'Confirmed motion (matches known)',
+    findingsVerdictCandidate: 'Candidate - needs review',
+    findingsVerdictNone: 'No significant motion',
+    findingsSnapshotNote: 'reference result, not live discovery',
+    findingsColTarget: 'Target',
+    findingsColSpan: 'Date span',
+    findingsColMotion: 'Measured vs expected',
+    findingsColPasses: 'Survey passes',
+    findingsColVerdict: 'Verdict',
+    findingsOpenTarget: 'Inspect',
+    findingsLoading: 'Loading real snapshot astrometry...',
+    coordSearchPlaceholder: 'RA, Dec (e.g. 269.45, 4.69 or 17h57m48s +04d41m36s)',
+    coordSearchError: 'Enter RA and Dec as decimal degrees or sexagesimal hours/degrees.',
+    layerGroupTitle: 'Layers',
+    gridOverlayLabel: '6.2″ Grid',
+    epoch1CrosshairLabel: 'Epoch-1 crosshair',
+    alignmentCheckTitle: 'Alignment check',
+    alignmentUnalignedBadge: 'unaligned',
+    alignmentAlignedCount: 'Aligned frames',
+    alignmentFloorLabel: 'Astrometric floor',
+    alignmentRefStarsLabel: 'Ref stars / frame',
+    alignmentWcsValid: 'Reprojected onto North-up, East-left tangent WCS grid',
+    alignmentWcsWarning: 'One or more frames lack valid WCS; marked unaligned',
+    panelExpandAria: 'Toggle control panel',
+    zoomResetLabel: 'Reset view',
+    zoomInLabel: 'Zoom in',
+    zoomOutLabel: 'Zoom out',
+    tourStepPlayTitle: '1. Press Play',
+    tourStepPlayBody: 'Flip across real NASA infrared dates like a movie to catch objects that drift.',
+    tourStepTimelineTitle: '2. Scrub observation dates',
+    tourStepTimelineBody: 'Jump between real epochs along the bottom timeline strip.',
+    tourStepTelescopesTitle: '3. Compare other telescopes',
+    tourStepTelescopesBody: 'Toggle Gaia DR3, AllWISE, or Aladin to see what already lives at this sky spot.',
+    tourStepPassTitle: '4. Survey-pass compare',
+    tourStepPassBody: 'Group exposures by ~6-month sky pass or view every single exposure.',
+    tourStepShareTitle: '5. Share your view',
+    tourStepShareBody: 'Copy a deep link to this exact field and band, or open your Discovery Card.',
+    tourStepHelpTitle: '6. Need help anytime?',
+    tourStepHelpBody: 'Tap Help for the 4-step guide or to replay this tour anytime.',
+    tourReplayBtn: 'Replay tour',
+    spexMinimize: 'Minimize SPEX',
+    spexRestore: 'Ask SPEX',
+    spexStoryBadge: 'Exploration story',
+    spexStoryStep1: '1. Pick star',
+    spexStoryStep2: '2. Watch blink',
+    spexStoryStep3: '3. Spot mover',
+    spexStoryStep4: '4. Check telescopes',
+    spexStoryStep5: '5. Share',
+    homeHeadlineSimple: 'Spot stars in motion with real NASA infrared frames.',
+    homeNavExplore: 'Explore',
+    homeNavAcademy: 'Academy',
+    homeNavPlay: 'Play',
+    homeCoordSearchBtn: 'Go to coordinates',
+    homeCoordHint: 'Decimal (133.82, -7.25) or sexagesimal (08h55m10s -07d14m42s)',
+    skyPickStarTitle: 'Pick a star to start.',
+    skyToggleAladin: 'Sky survey view (Aladin)',
+    skyTapAnywhereHint: 'Click any star pin or tap anywhere on the sphere to inspect those sky coordinates.',
   },
   ar: {
     // Brand & Top Navigation
@@ -2056,5 +2182,68 @@ export const translations: Record<Language, TranslationDictionary> = {
     exploreReturnToAcademy: 'العودة إلى الأكاديمية',
     spectrumUnavailableFrame: 'الطيف غير متاح لهذا الإطار',
     academyContinueBtn: 'متابعة',
+
+    // Addendum Phases A-E: Overlay Controls, Alignment Check, Findings, Tour/Companion, Simple Home & Sky Map
+    exploreBackToMap: 'العودة للخريطة',
+    findingsBtn: 'النتائج',
+    findingsDrawerTitle: 'ملخص النتائج الرصدية',
+    findingsSubtitle: 'قياسات فلكية حقيقية عبر الأهداف المرجعية المحفوظة وأي إحداثيات تم البحث عنها.',
+    findingsVerdictConfirmed: 'حركة مؤكدة (تطابق المعروف)',
+    findingsVerdictCandidate: 'مرشح - يحتاج مراجعة',
+    findingsVerdictNone: 'لا توجد حركة دالة',
+    findingsSnapshotNote: 'نتيجة مرجعية وليست اكتشافاً مباشراً',
+    findingsColTarget: 'الهدف',
+    findingsColSpan: 'المدى الزمني',
+    findingsColMotion: 'المقاس مقابل المتوقع',
+    findingsColPasses: 'تمريرات المسح',
+    findingsColVerdict: 'النتيجة',
+    findingsOpenTarget: 'استعراض',
+    findingsLoading: 'جاري تحميل القياسات الحقيقية للقطات...',
+    coordSearchPlaceholder: 'RA, Dec (مثال: 269.45, 4.69 أو 17h57m48s +04d41m36s)',
+    coordSearchError: 'أدخل إحداثيات RA و Dec بالدرجات العشرية أو بالساعات والدرجات.',
+    layerGroupTitle: 'الطبقات',
+    gridOverlayLabel: 'شبكة 6.2″',
+    epoch1CrosshairLabel: 'مؤشر الحقبة الأولى',
+    alignmentCheckTitle: 'فحص المحاذاة',
+    alignmentUnalignedBadge: 'غير محاذى',
+    alignmentAlignedCount: 'الإطارات المحاذاة',
+    alignmentFloorLabel: 'الحد الأدنى للدقة الفلكية',
+    alignmentRefStarsLabel: 'نجوم المرجع / إطار',
+    alignmentWcsValid: 'تمت إعادة الإسقاط على شبكة الشمال للأعلى والشرق لليسار',
+    alignmentWcsWarning: 'يفتقد إطار واحد أو أكثر إلى إحداثيات WCS صالحة؛ وُسم غير محاذى',
+    panelExpandAria: 'تبديل لوحة التحكم',
+    zoomResetLabel: 'إعادة العرض',
+    zoomInLabel: 'تكبير',
+    zoomOutLabel: 'تصغير',
+    tourStepPlayTitle: '١. اضغط تشغيل',
+    tourStepPlayBody: 'قلّب تواريخ رصد ناسا الحقيقية كفيلم سريع لاكتشاف الأجرام المتحركة.',
+    tourStepTimelineTitle: '٢. تصفح التواريخ',
+    tourStepTimelineBody: 'انتقل بين الحقب الزمنية الحقيقية عبر الشريط الزمني في الأسفل.',
+    tourStepTelescopesTitle: '٣. قارن بتلسكوبات أخرى',
+    tourStepTelescopesBody: 'اعرض فهارس غايا ووايز أو علاء الدين لمطابقة الأجرام الموجودة في نفس البقعة.',
+    tourStepPassTitle: '٤. مقارنة تمريرات المسح',
+    tourStepPassBody: 'اجمع اللقطات بحسب تمريرة المسح (~6 أشهر) أو استعرض كل إطار منفرداً.',
+    tourStepShareTitle: '٥. شارك نتيجتك',
+    tourStepShareBody: 'انسخ رابطاً مباشراً لهذه الإحداثيات أو افتح بطاقة الاكتشاف.',
+    tourStepHelpTitle: '٦. تحتاج مساعدة لاحقاً؟',
+    tourStepHelpBody: 'اضغط زر المساعدة لعرض الخطوات الأربع أو إعادة هذه الجولة في أي وقت.',
+    tourReplayBtn: 'إعادة الجولة',
+    spexMinimize: 'تصغير سبيكس',
+    spexRestore: 'اسأل سبيكس',
+    spexStoryBadge: 'مسار الاستكشاف',
+    spexStoryStep1: '١. اختر نجماً',
+    spexStoryStep2: '٢. شاهد الوميض',
+    spexStoryStep3: '٣. التقط المتحرك',
+    spexStoryStep4: '٤. راجع التلسكوبات',
+    spexStoryStep5: '٥. شارك',
+    homeHeadlineSimple: 'اكتشف النجوم المتحركة عبر صور ناسا الحقيقية بالأشعة تحت الحمراء.',
+    homeNavExplore: 'استكشف',
+    homeNavAcademy: 'الأكاديمية',
+    homeNavPlay: 'العب',
+    homeCoordSearchBtn: 'انتقل للإحداثيات',
+    homeCoordHint: 'درجات عشرية (133.82, -7.25) أو ساعية (08h55m10s -07d14m42s)',
+    skyPickStarTitle: 'اختر نجماً للبدء.',
+    skyToggleAladin: 'خريطة المسح السماوي (علاء الدين)',
+    skyTapAnywhereHint: 'اضغط على أي نجم أو أي بقعة في القبة السماوية لفتح إحداثياتها.',
   },
 };

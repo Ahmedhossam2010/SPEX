@@ -5071,6 +5071,7 @@ async function startServer() {
       res.sendFile(path.join(process.cwd(), 'dist', 'index.html'));
     });
   } else {
+    app.use('/assets', express.static(path.join(process.cwd(), 'public', 'assets')));
     app.use('/assets', (_req: Request, res: Response) => {
       res.status(404).json({ error: 'Asset not found' });
     });

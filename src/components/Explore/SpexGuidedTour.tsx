@@ -1,138 +1,100 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  ChevronRight,
-  ChevronLeft,
-  X,
-  Sparkles,
-  Compass,
-  ArrowRight,
-  Check,
-} from 'lucide-react';
-import { Language } from '../../utils/translations';
+import { ChevronRight, ChevronLeft, X, Sparkles, Check } from 'lucide-react';
+import { Language, translations } from '../../utils/translations';
 import { SpexPortrait } from '../../spex/SpexPortrait';
 import { SPEXMood } from '../../spex/spexAssets';
 
 export interface TourStep {
   id: string;
   targetId: string;
-  titleEn: string;
-  titleAr: string;
-  descEn: string;
-  descAr: string;
+  title: string;
+  desc: string;
   mood: SPEXMood;
-  prepareAction?: () => void;
 }
 
 export interface SpexGuidedTourProps {
   isOpen: boolean;
   onClose: () => void;
   language: Language;
-  onActivateLens?: (lens: 'time' | 'colors' | 'doubt' | 'neighbors') => void;
-  onActivateCurtain?: (active: boolean) => void;
+  onStepComplete?: () => void;
 }
 
 export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
   isOpen,
   onClose,
   language,
-  onActivateLens,
-  onActivateCurtain,
+  onStepComplete,
 }) => {
   const isRtl = language === 'ar';
+  const t = translations[language];
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const [popupRect, setPopupRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const popupRef = useRef<HTMLDivElement | null>(null);
 
   const steps: TourStep[] = [
     {
-      id: 'step_targets',
-      targetId: 'explore_targets',
-      titleEn: 'Target Search & 5 Benchmark Presets',
-      titleAr: 'البحث بالإحداثيات والأهداف الخمسة المرجعية',
-      descEn:
-        'Pick one of the 5 challenge presets (Barnard’s Star, Epsilon Indi, WISE 0855, RW Aurigae, R Draconis) or enter any RA/Dec in decimal or sexagesimal.',
-      descAr:
-        'اختر أحد الأهداف الخمسة المرجعية أو أدخل أي إحداثيات RA/Dec لاستعراض السلسلة الزمنية الحقيقية من أرشيف IRSA.',
+      id: 'step_play',
+      targetId: 'play',
+      title: t.tourStepPlayTitle,
+      desc: t.tourStepPlayBody,
       mood: 'greeting',
     },
     {
-      id: 'step_viewport',
-      targetId: 'viewport_canvas',
-      titleEn: 'SPHEREx Multi-Epoch Flipbook Viewer',
-      titleAr: 'عارض التسلسل الزمني SPHEREx',
-      descEn:
-        'Watch real calibrated infrared exposures play across epochs. Switch Detector (Auto / D1–D6) or toggle Normal / Show changes (Epoch 1 difference).',
-      descAr:
-        'شاهد لقطات الأشعة تحت الحمراء الحقيقية عبر الزمن. اختر الكاشف (Auto أو D1–D6) أو بدّل بين «عادي» و«إظهار التغيرات» لطرح اللقطة الأولى.',
+      id: 'step_timeline',
+      targetId: 'timeline',
+      title: t.tourStepTimelineTitle,
+      desc: t.tourStepTimelineBody,
       mood: 'explaining',
     },
     {
-      id: 'step_wiseview_bar',
-      targetId: 'wiseview_bar',
-      titleEn: 'WiseView Control Bar & Shortcuts',
-      titleAr: 'شريط التحكم السريع والاختصارات',
-      descEn:
-        'Use Step/Play (Space), Speed slider, Loop (L), Blink 1↔Last (B), Contrast & Stretch, Zoom +/-, and icon toggles for Crosshair, Trail, Catalogs, DQ flags, and Grid.',
-      descAr:
-        'استخدم التشغيل (Space)، والتخطي (←/→)، والتكرار (L)، والوميض 1↔الأخير (B)، ومنزلق التباين والتكبير، وأيقونات الطبقات والشبكة.',
-      mood: 'thinking',
-    },
-    {
-      id: 'step_advanced',
-      targetId: 'advanced_drawer',
-      titleEn: 'Advanced Drawer (Display, Overlays, Analysis, Export)',
-      titleAr: 'قائمة الإعدادات المتقدمة',
-      descEn:
-        'Expand Advanced anytime for Display percentiles, Overlays, Diff vs Median / Co-add Stack / Wavelength Window / Frame Count (10/20/40) / FOV, and PNG Export.',
-      descAr:
-        'افتح «إعدادات متقدمة» للتحكم في Display و Overlays و Analysis (مثل Co-add والنافذة الطيفية وعدد الإطارات 10/20/40 ومجال الرؤية) والتصدير.',
-      mood: 'eureka',
-    },
-    {
-      id: 'step_slots',
-      targetId: 'collapsible_slots',
-      titleEn: 'Metadata, Centroid, Spectrum & Aladin Slots',
-      titleAr: 'الأقسام القابلة للطي: البيانات والمركز والطيف وعلاء الدين',
-      descEn:
-        'Expand the collapsible slots below and beside the viewer for Frame Metadata, Subpixel Centroid vs Time, Measured Spectrum, and Aladin Sky Context.',
-      descAr:
-        'افتح أو اطوِ أقسام شريط البيانات، ومنحنى إزاحة المركز مع الزمن، والطيف المقاس، وخريطة علاء الدين السماوية.',
+      id: 'step_telescopes',
+      targetId: 'other_telescopes',
+      title: t.tourStepTelescopesTitle,
+      desc: t.tourStepTelescopesBody,
       mood: 'discovery',
     },
     {
-      id: 'step_spex_companion',
-      targetId: 'spex_companion',
-      titleEn: 'SPEX Cat Companion',
-      titleAr: 'مرافقك الفلكي سبيكس',
-      descEn:
-        'I am always right here with you—and collapsible anytime! Click me to ask questions or get clear explanations in plain language.',
-      descAr:
-        'أنا هنا دائماً معك ويمكن طيي في أي وقت! اضغط عليا لتطرح سؤالك أو تطلب شرحاً مبسطاً لأي عنصر في الشاشة.',
-      mood: 'greeting',
+      id: 'step_survey_pass',
+      targetId: 'survey_pass',
+      title: t.tourStepPassTitle,
+      desc: t.tourStepPassBody,
+      mood: 'thinking',
     },
     {
-      id: 'step_postcard',
-      targetId: 'postcard_button',
-      titleEn: 'Discovery Postcard',
-      titleAr: 'بطاقة الاكتشاف والمشاركة',
-      descEn:
-        'Ready to share? Export a high-resolution PNG or generate an authentic Discovery Postcard with verified coordinates and provenance!',
-      descAr:
-        'جاهز للمشاركة؟ صدّر صورة PNG أو اصنع بطاقة اكتشاف موثقة بالإحداثيات ومصدر البيانات الحقيقي!',
+      id: 'step_share',
+      targetId: 'share',
+      title: t.tourStepShareTitle,
+      desc: t.tourStepShareBody,
       mood: 'proud',
+    },
+    {
+      id: 'step_help',
+      targetId: 'help',
+      title: t.tourStepHelpTitle,
+      desc: t.tourStepHelpBody,
+      mood: 'eureka',
     },
   ];
 
-  const currentStep = steps[currentStepIdx];
+  const currentStep = steps[currentStepIdx] || steps[0];
 
-  // Measure target bounding rect whenever step changes
-  const updateTargetRect = useCallback(() => {
-    if (!currentStep) return;
-    const el = document.querySelector(`[data-tour="${currentStep.targetId}"]`);
+  const measureRects = useCallback(() => {
+    if (!currentStep || typeof document === 'undefined') return;
+    const el = document.querySelector(`[data-tour="${currentStep.targetId}"]`) as HTMLElement | null;
     if (el) {
       const rect = el.getBoundingClientRect();
-      setTargetRect(rect);
+      if (rect.width > 0 && rect.height > 0) {
+        setTargetRect(rect);
+      } else {
+        setTargetRect(null);
+      }
     } else {
       setTargetRect(null);
+    }
+    if (popupRef.current) {
+      const pr = popupRef.current.getBoundingClientRect();
+      setPopupRect({ x: pr.left, y: pr.top, w: pr.width, h: pr.height });
     }
   }, [currentStep]);
 
@@ -144,28 +106,29 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
   useEffect(() => {
     if (!isOpen) return;
-
-    if (currentStep?.prepareAction) {
-      currentStep.prepareAction();
-    }
-
-    const timer = setTimeout(updateTargetRect, 150);
-    window.addEventListener('resize', updateTargetRect);
-    window.addEventListener('scroll', updateTargetRect);
-
+    const timer = setTimeout(measureRects, 80);
+    const raf = requestAnimationFrame(measureRects);
+    window.addEventListener('resize', measureRects);
+    window.addEventListener('scroll', measureRects, true);
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('resize', updateTargetRect);
-      window.removeEventListener('scroll', updateTargetRect);
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', measureRects);
+      window.removeEventListener('scroll', measureRects, true);
     };
-  }, [isOpen, currentStepIdx, currentStep, updateTargetRect]);
+  }, [isOpen, currentStepIdx, measureRects]);
 
   if (!isOpen) return null;
 
   const handleFinish = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('spex_tour_completed', 'true');
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('spex_tour_completed', 'true');
+      }
+    } catch {
+      // ignore storage errors
     }
+    onStepComplete?.();
     onClose();
   };
 
@@ -183,104 +146,159 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
     }
   };
 
-  // Determine popup placement relative to target
   let popupStyle: React.CSSProperties = {
     position: 'fixed',
     zIndex: 100,
   };
 
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+
   if (targetRect) {
-    const isMobile = window.innerWidth < 640;
-    const viewportHeight = window.innerHeight;
-    const viewportWidth = window.innerWidth;
-
-    if (isMobile) {
-      // Mobile: Always anchor either above or below target or bottom center
-      if (targetRect.top > viewportHeight / 2) {
-        popupStyle = {
-          ...popupStyle,
-          bottom: `${viewportHeight - targetRect.top + 16}px`,
-          left: '16px',
-          right: '16px',
-        };
-      } else {
-        popupStyle = {
-          ...popupStyle,
-          top: `${targetRect.bottom + 16}px`,
-          left: '16px',
-          right: '16px',
-        };
-      }
+    if (vw < 640) {
+      const placeAbove = targetRect.top > vh * 0.45;
+      popupStyle = {
+        ...popupStyle,
+        left: '12px',
+        right: '12px',
+        ...(placeAbove
+          ? { bottom: `${Math.min(vh - 140, Math.max(16, vh - targetRect.top + 20))}px` }
+          : { top: `${Math.min(vh - 220, Math.max(16, targetRect.bottom + 20))}px` }),
+      };
     } else {
-      // Desktop: place nearby with bounds check
-      const desiredTop = targetRect.top > viewportHeight - 260
-        ? targetRect.top - 200
-        : Math.max(80, targetRect.top);
+      const boxW = 340;
+      const boxH = 210;
+      let left = targetRect.left + targetRect.width / 2 - boxW / 2;
+      left = Math.max(16, Math.min(vw - boxW - 16, left));
 
-      let desiredLeft = targetRect.right + 20;
-      if (desiredLeft + 360 > viewportWidth) {
-        desiredLeft = Math.max(20, targetRect.left - 380);
+      let top = targetRect.bottom + 24;
+      if (top + boxH > vh - 16) {
+        top = Math.max(16, targetRect.top - boxH - 24);
       }
 
       popupStyle = {
         ...popupStyle,
-        top: `${desiredTop}px`,
-        left: `${desiredLeft}px`,
-        maxWidth: '380px',
+        top: `${top}px`,
+        left: `${left}px`,
+        width: `${boxW}px`,
       };
     }
   } else {
-    // Fallback: center in viewport
     popupStyle = {
       ...popupStyle,
       top: '50%',
       left: '50%',
       transform: 'translate(-50%, -50%)',
-      maxWidth: '400px',
+      maxWidth: '360px',
+      width: 'calc(100vw - 2rem)',
     };
   }
 
+  // Compute SVG arrow from popup border toward targetRect center
+  let arrowCoords: { x1: number; y1: number; x2: number; y2: number } | null = null;
+  if (targetRect && popupRect) {
+    const tx = targetRect.left + targetRect.width / 2;
+    const ty = targetRect.top + targetRect.height / 2;
+    const px = popupRect.x + popupRect.w / 2;
+    const py = popupRect.y + popupRect.h / 2;
+
+    const dx = tx - px;
+    const dy = ty - py;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 28) {
+      const startY = ty < py ? popupRect.y : ty > py + popupRect.h / 2 ? popupRect.y + popupRect.h : py;
+      const startX = Math.max(popupRect.x + 20, Math.min(popupRect.x + popupRect.w - 20, tx));
+      const pad = 10;
+      const ux = (tx - startX) / Math.max(1, Math.hypot(tx - startX, ty - startY));
+      const uy = (ty - startY) / Math.max(1, Math.hypot(tx - startX, ty - startY));
+      arrowCoords = {
+        x1: startX,
+        y1: startY,
+        x2: tx - ux * (Math.min(targetRect.width, targetRect.height) / 2 + pad),
+        y2: ty - uy * (Math.min(targetRect.height, targetRect.width) / 2 + pad),
+      };
+    }
+  }
+
   return (
-    <div className="fixed inset-0 z-50 pointer-events-auto select-none" dir={isRtl ? 'rtl' : 'ltr'}>
-      {/* Dimmed backdrop with smooth fade */}
+    <div
+      data-testid="spex-guided-tour"
+      className="fixed inset-0 z-50 pointer-events-auto select-none"
+      dir={isRtl ? 'rtl' : 'ltr'}
+    >
       <div
-        onClick={onClose}
-        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+        onClick={handleFinish}
+        className="fixed inset-0 bg-black/55 backdrop-blur-[2px] transition-opacity duration-200"
       />
 
-      {/* Target Element Spotlight Cutout */}
       {targetRect && (
         <div
-          className="fixed pointer-events-none rounded-2xl border-2 border-[#FFB900] shadow-[0_0_30px_rgba(255,185,0,0.7)] transition-all duration-300"
+          className="fixed pointer-events-none rounded-xl border-2 border-[#FFB900] shadow-[0_0_24px_rgba(255,185,0,0.75)] transition-all duration-200"
           style={{
-            top: `${Math.max(0, targetRect.top - 6)}px`,
-            left: `${Math.max(0, targetRect.left - 6)}px`,
-            width: `${targetRect.width + 12}px`,
-            height: `${targetRect.height + 12}px`,
+            top: `${Math.max(0, targetRect.top - 5)}px`,
+            left: `${Math.max(0, targetRect.left - 5)}px`,
+            width: `${targetRect.width + 10}px`,
+            height: `${targetRect.height + 10}px`,
+            zIndex: 92,
           }}
         >
-          <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[#FFB900] animate-ping" />
+          <span className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-[#FFB900] animate-ping" />
         </div>
       )}
 
-      {/* Floating SPEX Tour Dialog */}
+      {arrowCoords && (
+        <svg
+          className="fixed inset-0 w-full h-full pointer-events-none"
+          style={{ zIndex: 95 }}
+          aria-hidden="true"
+        >
+          <defs>
+            <marker
+              id="spex-tour-arrowhead"
+              markerWidth="10"
+              markerHeight="8"
+              refX="8"
+              refY="4"
+              orient="auto"
+            >
+              <polygon points="0 0, 10 4, 0 8" fill="#FFB900" />
+            </marker>
+          </defs>
+          <line
+            x1={arrowCoords.x1}
+            y1={arrowCoords.y1}
+            x2={arrowCoords.x2}
+            y2={arrowCoords.y2}
+            stroke="#FFB900"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            markerEnd="url(#spex-tour-arrowhead)"
+          />
+        </svg>
+      )}
+
       <div
+        ref={popupRef}
         style={popupStyle}
-        className="bg-[#0C0E14]/95 backdrop-blur-2xl border border-[#FFB900]/40 rounded-2xl p-4 sm:p-5 shadow-[0_16px_50px_rgba(0,0,0,0.9)] animate-scale-in text-slate-100 space-y-3.5"
+        role="dialog"
+        aria-modal="true"
+        aria-label={currentStep.title}
+        className="bg-[#090D18]/95 backdrop-blur-2xl border border-[#FFB900]/45 rounded-2xl p-4 shadow-[0_16px_50px_rgba(0,0,0,0.92)] text-slate-100 space-y-3"
       >
-        {/* Header: SPEX Mascot Avatar + Step Indicator + Close */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FFB900]/20 to-[#00D3F3]/20 border border-[#FFB900]/40 p-1 flex items-center justify-center shrink-0">
-              <SpexPortrait mood={currentStep.mood} size={32} />
+        <div className="flex items-center justify-between border-b border-white/10 pb-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#FFB900]/20 to-[#00D3F3]/20 border border-[#FFB900]/40 p-1 flex items-center justify-center shrink-0">
+              <SpexPortrait mood={currentStep.mood} size={28} />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#FFB900] font-bold tracking-wider uppercase">
-                <Sparkles className="w-3 h-3" />
-                <span>SPEX TOUR · {currentStepIdx + 1} / {steps.length}</span>
+                <Sparkles className="w-3 h-3 shrink-0" />
+                <span>
+                  {currentStepIdx + 1} / {steps.length}
+                </span>
               </div>
-              <h3 className="text-sm font-bold text-slate-100 leading-tight">
-                {isRtl ? currentStep.titleAr : currentStep.titleEn}
+              <h3 className="text-sm font-bold text-slate-100 leading-tight truncate">
+                {currentStep.title}
               </h3>
             </div>
           </div>
@@ -288,26 +306,24 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
           <button
             type="button"
             onClick={handleFinish}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
-            title={isRtl ? 'إغلاق الجولة' : 'Close Tour'}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
+            aria-label={t.tourSkip}
+            title={t.tourSkip}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Step Description */}
-        <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-sans">
-          {isRtl ? currentStep.descAr : currentStep.descEn}
-        </p>
+        <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">{currentStep.desc}</p>
 
-        {/* Controls: Back, Next, Skip */}
-        <div className="flex items-center justify-between pt-2 border-t border-white/10">
+        <div className="flex items-center justify-between pt-1.5 border-t border-white/10">
           <button
             type="button"
+            data-testid="tour-skip-btn"
             onClick={handleFinish}
-            className="text-[11px] font-mono text-slate-400 hover:text-slate-200 transition cursor-pointer px-2 py-1"
+            className="text-xs font-mono text-slate-400 hover:text-slate-200 transition cursor-pointer px-2 py-1"
           >
-            {isRtl ? 'تخطي الجولة' : 'Skip Tour'}
+            {t.tourSkip}
           </button>
 
           <div className="flex items-center gap-2">
@@ -315,7 +331,7 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
               <button
                 type="button"
                 onClick={handleBack}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-mono text-slate-300 transition cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 text-xs font-mono text-slate-200 transition cursor-pointer"
               >
                 <ChevronLeft className={`w-3.5 h-3.5 ${isRtl ? 'rotate-180' : ''}`} />
                 <span>{isRtl ? 'السابق' : 'Back'}</span>
@@ -324,14 +340,15 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
             <button
               type="button"
+              data-testid="tour-next-btn"
               onClick={handleNext}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#FFB900] hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition shadow-md cursor-pointer"
             >
               <span>
                 {currentStepIdx === steps.length - 1
                   ? isRtl
-                    ? 'ابدأ الاستكشاف!'
-                    : 'Start Exploring!'
+                    ? 'إنهاء'
+                    : 'Done'
                   : isRtl
                   ? 'التالي'
                   : 'Next'}
