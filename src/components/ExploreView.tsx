@@ -109,6 +109,7 @@ export interface ExploreViewProps {
   autoPlay?: boolean;
   onAutoPlayConsumed?: () => void;
   isEmbed?: boolean;
+  preferSnapshot?: boolean;
 }
 
 export const ExploreView: React.FC<ExploreViewProps> = ({
@@ -128,6 +129,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   autoPlay = false,
   onAutoPlayConsumed,
   isEmbed = false,
+  preferSnapshot = false,
 }) => {
   const isRtl = language === 'ar';
   const t = translations[language];
@@ -296,12 +298,16 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   useEffect(() => {
     if (isEmbed || tourAutoCheckedRef.current) return;
     if (!latestTimeSeriesMeta?.frames?.length) return;
-    tourAutoCheckedRef.current = true;
     try {
-      if (localStorage.getItem('spex_tour_completed') !== 'true') {
-        const timer = setTimeout(() => setShowTour(true), 450);
-        return () => clearTimeout(timer);
+      if (localStorage.getItem('spex_tour_completed') === 'true') {
+        tourAutoCheckedRef.current = true;
+        return;
       }
+      const timer = setTimeout(() => {
+        tourAutoCheckedRef.current = true;
+        setShowTour(true);
+      }, 450);
+      return () => clearTimeout(timer);
     } catch {
       // Ignore private browsing localStorage restrictions
     }
@@ -741,6 +747,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             onOpenDetectorStacking={() => setShowDetectorStacking(true)}
             autoPlay={autoPlay}
             onAutoPlayConsumed={onAutoPlayConsumed}
+            preferSnapshot={preferSnapshot}
             guidedStepAction={guidedDemoStep !== null ? GUIDED_DEMO_STEPS[guidedDemoStep].action : null}
             className="w-full h-full"
           />

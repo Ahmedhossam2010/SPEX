@@ -663,7 +663,13 @@ export interface TranslationDictionary {
   exploreErrorTitle: string;
   exploreErrorHint: string;
   exploreSnapshotBadge: string;
+  exploreLiveDataBadge: string;
   loadingScanningSlow: string;
+  surveyPassPlainNote: string;
+  showAllVisitsLabel: string;
+  surveyPassPrefix: string;
+  surveyPassMonthsUnit: string;
+  surveyPassDaysUnit: string;
   academyBoundaryTitle: string;
   academyBoundaryHint: string;
   academyBackToMapBtn: string;
@@ -1420,7 +1426,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     exploreErrorTitle: 'Could not load NASA sky images right now',
     exploreErrorHint: 'The archive may be busy or offline. Try again or load a saved NASA snapshot.',
     exploreSnapshotBadge: 'Showing saved snapshot',
+    exploreLiveDataBadge: 'Live data',
     loadingScanningSlow: 'NASA archive is taking a moment — will fall back to saved snapshot automatically.',
+    surveyPassPlainNote: 'Frames come from different SPHEREx survey passes, about six months apart, so real motion has time to add up.',
+    showAllVisitsLabel: 'Show all visits',
+    surveyPassPrefix: 'Pass',
+    surveyPassMonthsUnit: 'months',
+    surveyPassDaysUnit: 'days',
     academyBoundaryTitle: 'Academy lesson hit a display issue',
     academyBoundaryHint: 'Your XP and progress are saved safely. Return to the course map to continue.',
     academyBackToMapBtn: 'Back to course map',
@@ -2175,7 +2187,13 @@ export const translations: Record<Language, TranslationDictionary> = {
     exploreErrorTitle: 'تعذر تحميل صور السماء من ناسا حالياً',
     exploreErrorHint: 'قد يكون الأرشيف مشغولاً أو غير متصل. أعد المحاولة أو حمّل لقطة ناسا المحفوظة.',
     exploreSnapshotBadge: 'عرض لقطة محفوظة',
+    exploreLiveDataBadge: 'بيانات مباشرة',
     loadingScanningSlow: 'يستغرق أرشيف ناسا وقتاً إضافياً — سيتم التحويل إلى اللقطة المحفوظة تلقائياً.',
+    surveyPassPlainNote: 'تأتي اللقطات من تمريرات مسح مختلفة لتلسكوب SPHEREx، تفصلها نحو ستة أشهر، حتى يتراكم التحرك الحقيقي بوضوح.',
+    showAllVisitsLabel: 'إظهار جميع الزيارات',
+    surveyPassPrefix: 'تمريرة',
+    surveyPassMonthsUnit: 'أشهر',
+    surveyPassDaysUnit: 'أيام',
     academyBoundaryTitle: 'واجه درس الأكاديمية مشكلة في العرض',
     academyBoundaryHint: 'نقاطك وتقدمك محفوظان بأمان. عُد إلى خريطة الدروس للمتابعة.',
     academyBackToMapBtn: 'العودة إلى خريطة الدروس',

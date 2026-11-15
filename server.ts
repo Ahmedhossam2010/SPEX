@@ -1735,7 +1735,7 @@ app.get('/api/status', (_req: Request, res: Response) => {
   });
 });
 
-// API: Live Health & Release Readiness Check (B7)
+// API: Live Health & Release Readiness Check (B7 / C4)
 let cachedHealthPayload: { ts: number; data: any } | null = null;
 app.get('/api/health', async (req: Request, res: Response) => {
   const envVars = {
@@ -1746,10 +1746,33 @@ app.get('/api/health', async (req: Request, res: Response) => {
     SPHEREX_RELEASE_PREFERENCE: SPHEREX_RELEASE_PREFERENCE.join(','),
   };
 
-  if (process.env.SPHEREX_OFFLINE === '1') {
+  const cacheStats = fitsCache.getStats();
+  const cacheSummary = {
+    fileCount: cacheStats.fileCount,
+    totalBytes: cacheStats.totalBytes,
+    maxBytes: cacheStats.maxBytes,
+    maxMb: Number((cacheStats.maxBytes / (1024 * 1024)).toFixed(1)),
+  };
+  const isOfflineMode = process.env.SPHEREX_OFFLINE === '1';
+  const baseServices = {
+    gemini: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0),
+    aladinLite: true,
+    communityApi: true,
+    offlineMode: isOfflineMode,
+  };
+
+  if (isOfflineMode) {
     return res.json({
       status: 'offline_mode',
+      dataSourceMode: 'snapshot',
       irsaTapReachable: false,
+      services: {
+        ...baseServices,
+        irsaTap: false,
+        catalogLookup: false,
+      },
+      cache: cacheSummary,
+      cacheSize: cacheSummary.totalBytes,
       latestObservationMjd: null,
       latestObservationDate: null,
       availableReleases: [],
@@ -1759,86 +1782,132 @@ app.get('/api/health', async (req: Request, res: Response) => {
   }
 
   if (req.query.fresh !== '1' && cachedHealthPayload && Date.now() - cachedHealthPayload.ts < 5 * 60 * 1000) {
-    return res.json(cachedHealthPayload.data);
-  }
-
-  try {
-    const maxAdql = `SELECT MAX(p.time_bounds_upper) AS max_mjd FROM ${SPHEREX_PLANE_TABLE} p`;
-    const relAdql = `SELECT TOP 25 a.uri FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE p.time_bounds_upper > 60900`;
-    const maxUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(maxAdql)}&FORMAT=csv`;
-    const relUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(relAdql)}&FORMAT=csv`;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 45000);
-    const [maxRes, relRes] = await Promise.all([
-      fetch(maxUrl, {
-        headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-        signal: controller.signal,
-      }),
-      fetch(relUrl, {
-        headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-        signal: controller.signal,
-      }).catch(() => null),
-    ]);
-    clearTimeout(timer);
-
-    if (!maxRes.ok) {
-      return res.status(503).json({
-        status: 'degraded',
-        irsaTapReachable: false,
-        latestObservationMjd: null,
-        latestObservationDate: null,
-        availableReleases: [],
-        releaseId: SPHEREX_RELEASE_ID,
-        error: `IRSA TAP HTTP ${maxRes.status}`,
-        envVars,
-      });
-    }
-
-    const csv = await maxRes.text();
-    const lines = csv.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-    const rawMjd = lines.length > 1 ? parseFloat(lines[1].replace(/"/g, '').trim()) : NaN;
-    const latestObservationMjd = Number.isFinite(rawMjd) ? Number(rawMjd.toFixed(6)) : null;
-    const latestObservationDate =
-      latestObservationMjd !== null
-        ? new Date((latestObservationMjd - 40587) * 86400 * 1000).toISOString()
-        : null;
-
-    const releaseSet = new Set<string>();
-    if (relRes && relRes.ok) {
-      const relCsv = await relRes.text();
-      for (const row of parseCsvRows(relCsv)) {
-        const rel = parseReleaseFromUri(row.uri || '');
-        if (rel) releaseSet.add(rel);
-      }
-    }
-    const availableReleases = Array.from(releaseSet).sort(
-      (a, b) => releasePreferenceRank(a) - releasePreferenceRank(b)
-    );
-
-    const payload = {
-      status: 'ok',
-      irsaTapReachable: true,
-      latestObservationMjd,
-      latestObservationDate,
-      availableReleases,
-      releaseId: availableReleases[0] ? `SPHEREx-${availableReleases[0].toUpperCase()}-Level2B` : SPHEREX_RELEASE_ID,
-      envVars,
-    };
-    cachedHealthPayload = { ts: Date.now(), data: payload };
-    return res.json(payload);
-  } catch (err: any) {
-    return res.status(503).json({
-      status: 'degraded',
-      irsaTapReachable: false,
-      latestObservationMjd: null,
-      latestObservationDate: null,
-      availableReleases: [],
-      releaseId: SPHEREX_RELEASE_ID,
-      error: err?.message || 'IRSA TAP unreachable',
-      envVars,
+    return res.json({
+      ...cachedHealthPayload.data,
+      services: {
+        ...cachedHealthPayload.data.services,
+        gemini: baseServices.gemini,
+      },
+      cache: cacheSummary,
+      cacheSize: cacheSummary.totalBytes,
     });
   }
+
+  const maxAdql = `SELECT MAX(p.time_bounds_upper) AS max_mjd FROM ${SPHEREX_PLANE_TABLE} p`;
+  const relAdql = `SELECT TOP 25 a.uri FROM ${SPHEREX_ARTIFACT_TABLE} a JOIN ${SPHEREX_PLANE_TABLE} p ON a.planeid = p.planeid WHERE p.time_bounds_upper > 60900`;
+  const maxUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(maxAdql)}&FORMAT=csv`;
+  const relUrl = `${SPHEREX_IRSA_HOST}/TAP/sync?QUERY=${encodeURIComponent(relAdql)}&FORMAT=csv`;
+
+  let lastErr: any = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const [maxRes, relRes] = await Promise.all([
+        fetch(maxUrl, {
+          headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+          signal: controller.signal,
+        }),
+        fetch(relUrl, {
+          headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+          signal: controller.signal,
+        }).catch(() => null),
+      ]);
+      clearTimeout(timer);
+
+      if (!maxRes.ok) {
+        lastErr = new Error(`IRSA TAP HTTP ${maxRes.status}`);
+        if (attempt < 2 && maxRes.status >= 500) {
+          await new Promise((r) => setTimeout(r, 350));
+          continue;
+        }
+        return res.json({
+          status: 'degraded',
+          dataSourceMode: 'snapshot',
+          irsaTapReachable: false,
+          services: {
+            ...baseServices,
+            irsaTap: false,
+            catalogLookup: true,
+          },
+          cache: cacheSummary,
+          cacheSize: cacheSummary.totalBytes,
+          latestObservationMjd: null,
+          latestObservationDate: null,
+          availableReleases: [],
+          releaseId: SPHEREX_RELEASE_ID,
+          error: lastErr.message,
+          envVars,
+        });
+      }
+
+      const csv = await maxRes.text();
+      const lines = csv.trim().split('\n').map((l) => l.trim()).filter(Boolean);
+      const rawMjd = lines.length > 1 ? parseFloat(lines[1].replace(/"/g, '').trim()) : NaN;
+      const latestObservationMjd = Number.isFinite(rawMjd) ? Number(rawMjd.toFixed(6)) : null;
+      const latestObservationDate =
+        latestObservationMjd !== null
+          ? new Date((latestObservationMjd - 40587) * 86400 * 1000).toISOString()
+          : null;
+
+      const releaseSet = new Set<string>();
+      if (relRes && relRes.ok) {
+        const relCsv = await relRes.text();
+        for (const row of parseCsvRows(relCsv)) {
+          const rel = parseReleaseFromUri(row.uri || '');
+          if (rel) releaseSet.add(rel);
+        }
+      }
+      const availableReleases = Array.from(releaseSet).sort(
+        (a, b) => releasePreferenceRank(a) - releasePreferenceRank(b)
+      );
+
+      const payload = {
+        status: 'ok',
+        dataSourceMode: 'live',
+        irsaTapReachable: true,
+        services: {
+          ...baseServices,
+          irsaTap: true,
+          catalogLookup: true,
+        },
+        cache: cacheSummary,
+        cacheSize: cacheSummary.totalBytes,
+        latestObservationMjd,
+        latestObservationDate,
+        availableReleases,
+        releaseId: availableReleases[0] ? `SPHEREx-${availableReleases[0].toUpperCase()}-Level2B` : SPHEREX_RELEASE_ID,
+        envVars,
+      };
+      cachedHealthPayload = { ts: Date.now(), data: payload };
+      return res.json(payload);
+    } catch (err: any) {
+      clearTimeout(timer);
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+  }
+
+  return res.json({
+    status: 'degraded',
+    dataSourceMode: 'snapshot',
+    irsaTapReachable: false,
+    services: {
+      ...baseServices,
+      irsaTap: false,
+      catalogLookup: true,
+    },
+    cache: cacheSummary,
+    cacheSize: cacheSummary.totalBytes,
+    latestObservationMjd: null,
+    latestObservationDate: null,
+    availableReleases: [],
+    releaseId: SPHEREX_RELEASE_ID,
+    error: lastErr?.message || 'IRSA TAP unreachable',
+    envVars,
+  });
 });
 
 // API: Release Validation & Ingestion Engine (November 13 Challenge Release Readiness)
@@ -4888,122 +4957,152 @@ function loadCommunityStore(): CommunityStoreData {
   return seeded;
 }
 
-function saveCommunityStore(store: CommunityStoreData): void {
+function saveCommunityStore(store: CommunityStoreData): boolean {
   try {
     fs.mkdirSync(path.dirname(COMMUNITY_STORE_PATH), { recursive: true });
     atomicWriteFileSync(COMMUNITY_STORE_PATH, Buffer.from(JSON.stringify(store, null, 2), 'utf8'));
+    return true;
   } catch (err) {
-    console.warn('[Community] Unable to write community_store.json:', err);
+    console.warn('[Community] Unable to write community_store.json (continuing in memory):', err);
+    return false;
   }
 }
 
 let communityStore: CommunityStoreData = loadCommunityStore();
 
 app.get('/api/community/posts', (_req: Request, res: Response) => {
-  const visible = communityStore.posts
-    .filter((p) => (p.reports || 0) < 5)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 60);
-  return res.json({ posts: visible, totalCount: visible.length });
+  try {
+    const visible = communityStore.posts
+      .filter((p) => (p.reports || 0) < 5)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 60);
+    return res.json({ posts: visible, totalCount: visible.length });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to load community posts.' });
+  }
 });
 
 app.post('/api/community/posts', (req: Request, res: Response) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
-  if (!communityRateLimiter.checkAndRecord(clientIp, 8, 60_000)) {
-    return res.status(429).json({ error: 'Too many posts right now. Please wait a minute.' });
+  try {
+    const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+    if (!communityRateLimiter.checkAndRecord(clientIp, 8, 60_000)) {
+      return res.status(429).json({ error: 'Too many posts right now. Please wait a minute.' });
+    }
+    const validated = validatePostInput((req.body || {}) as Record<string, unknown>);
+    if (!validated.ok) {
+      return res.status(400).json({ error: validated.error });
+    }
+    const newPost: CommunityPost = {
+      id: `post-${crypto.randomBytes(4).toString('hex')}`,
+      ...validated.post,
+      createdAt: new Date().toISOString(),
+      reports: 0,
+      comments: [],
+    };
+    communityStore.posts.unshift(newPost);
+    if (communityStore.posts.length > 200) {
+      communityStore.posts.length = 200;
+    }
+    const persisted = saveCommunityStore(communityStore);
+    return res.status(201).json({ post: newPost, persisted });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to save community post.' });
   }
-  const validated = validatePostInput((req.body || {}) as Record<string, unknown>);
-  if (!validated.ok) {
-    return res.status(400).json({ error: validated.error });
-  }
-  const newPost: CommunityPost = {
-    id: `post-${crypto.randomBytes(4).toString('hex')}`,
-    ...validated.post,
-    createdAt: new Date().toISOString(),
-    reports: 0,
-    comments: [],
-  };
-  communityStore.posts.unshift(newPost);
-  if (communityStore.posts.length > 200) {
-    communityStore.posts.length = 200;
-  }
-  saveCommunityStore(communityStore);
-  return res.status(201).json({ post: newPost });
 });
 
 app.get('/api/community/posts/:id/comments', (req: Request, res: Response) => {
-  const post = communityStore.posts.find((p) => p.id === req.params.id);
-  if (!post) {
-    return res.status(404).json({ error: 'Post not found.' });
+  try {
+    const post = communityStore.posts.find((p) => p.id === req.params.id);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+    return res.json({ comments: post.comments || [] });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to load comments.' });
   }
-  return res.json({ comments: post.comments || [] });
 });
 
 app.post('/api/community/posts/:id/comments', (req: Request, res: Response) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
-  if (!communityRateLimiter.checkAndRecord(`comment:${clientIp}`, 15, 60_000)) {
-    return res.status(429).json({ error: 'Too many comments right now. Please wait a minute.' });
+  try {
+    const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+    if (!communityRateLimiter.checkAndRecord(`comment:${clientIp}`, 15, 60_000)) {
+      return res.status(429).json({ error: 'Too many comments right now. Please wait a minute.' });
+    }
+    const post = communityStore.posts.find((p) => p.id === req.params.id);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+    const validated = validateCommentInput((req.body || {}) as Record<string, unknown>);
+    if (!validated.ok) {
+      return res.status(400).json({ error: validated.error });
+    }
+    const comment: CommunityComment = {
+      id: `cmt-${crypto.randomBytes(4).toString('hex')}`,
+      nickname: validated.nickname,
+      text: validated.text,
+      createdAt: new Date().toISOString(),
+    };
+    post.comments = [...(post.comments || []), comment].slice(-50);
+    const persisted = saveCommunityStore(communityStore);
+    return res.status(201).json({ comment, persisted });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to post comment.' });
   }
-  const post = communityStore.posts.find((p) => p.id === req.params.id);
-  if (!post) {
-    return res.status(404).json({ error: 'Post not found.' });
-  }
-  const validated = validateCommentInput((req.body || {}) as Record<string, unknown>);
-  if (!validated.ok) {
-    return res.status(400).json({ error: validated.error });
-  }
-  const comment: CommunityComment = {
-    id: `cmt-${crypto.randomBytes(4).toString('hex')}`,
-    nickname: validated.nickname,
-    text: validated.text,
-    createdAt: new Date().toISOString(),
-  };
-  post.comments = [...(post.comments || []), comment].slice(-50);
-  saveCommunityStore(communityStore);
-  return res.status(201).json({ comment });
 });
 
 app.post('/api/community/posts/:id/report', (req: Request, res: Response) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
-  if (!communityRateLimiter.checkAndRecord(`report:${clientIp}:${req.params.id}`, 1, 300_000)) {
-    return res.status(429).json({ error: 'You already reported this note.' });
+  try {
+    const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+    if (!communityRateLimiter.checkAndRecord(`report:${clientIp}:${req.params.id}`, 1, 300_000)) {
+      return res.status(429).json({ error: 'You already reported this note.' });
+    }
+    const post = communityStore.posts.find((p) => p.id === req.params.id);
+    if (!post) {
+      return res.status(404).json({ error: 'Post not found.' });
+    }
+    post.reports = (post.reports || 0) + 1;
+    const persisted = saveCommunityStore(communityStore);
+    return res.json({ ok: true, reports: post.reports, persisted });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to submit report.' });
   }
-  const post = communityStore.posts.find((p) => p.id === req.params.id);
-  if (!post) {
-    return res.status(404).json({ error: 'Post not found.' });
-  }
-  post.reports = (post.reports || 0) + 1;
-  saveCommunityStore(communityStore);
-  return res.json({ ok: true, reports: post.reports });
 });
 
 app.get('/api/community/flags', (_req: Request, res: Response) => {
-  const flags = [...communityStore.flags]
-    .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
-    .slice(0, 100);
-  return res.json({ flags });
+  try {
+    const flags = [...communityStore.flags]
+      .sort((a, b) => b.reportedAt.localeCompare(a.reportedAt))
+      .slice(0, 100);
+    return res.json({ flags });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to load citizen flags.' });
+  }
 });
 
 app.post('/api/community/flags', (req: Request, res: Response) => {
-  const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
-  if (!communityRateLimiter.checkAndRecord(`flag:${clientIp}`, 20, 60_000)) {
-    return res.status(429).json({ error: 'Rate limit exceeded for bad-data reports.' });
+  try {
+    const clientIp = req.ip || req.socket?.remoteAddress || 'anon';
+    if (!communityRateLimiter.checkAndRecord(`flag:${clientIp}`, 20, 60_000)) {
+      return res.status(429).json({ error: 'Rate limit exceeded for bad-data reports.' });
+    }
+    const validated = validateFlagInput((req.body || {}) as Record<string, unknown>);
+    if (!validated.ok) {
+      return res.status(400).json({ error: validated.error });
+    }
+    const entry: CommunityFlagEntry = {
+      id: `flag-${crypto.randomBytes(4).toString('hex')}`,
+      ...validated.flag,
+      reportedAt: new Date().toISOString(),
+    };
+    communityStore.flags.unshift(entry);
+    if (communityStore.flags.length > 200) {
+      communityStore.flags.length = 200;
+    }
+    const persisted = saveCommunityStore(communityStore);
+    return res.status(201).json({ flag: entry, persisted });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Unable to submit flag.' });
   }
-  const validated = validateFlagInput((req.body || {}) as Record<string, unknown>);
-  if (!validated.ok) {
-    return res.status(400).json({ error: validated.error });
-  }
-  const entry: CommunityFlagEntry = {
-    id: `flag-${crypto.randomBytes(4).toString('hex')}`,
-    ...validated.flag,
-    reportedAt: new Date().toISOString(),
-  };
-  communityStore.flags.unshift(entry);
-  if (communityStore.flags.length > 200) {
-    communityStore.flags.length = 200;
-  }
-  saveCommunityStore(communityStore);
-  return res.status(201).json({ flag: entry });
 });
 
 // Ensure all unmatched API requests return JSON rather than falling through to Vite HTML

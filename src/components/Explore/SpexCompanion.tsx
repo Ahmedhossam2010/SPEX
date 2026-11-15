@@ -281,7 +281,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   if (isMinimized) {
     return (
       <div
-        className={`fixed bottom-20 z-40 pointer-events-none ${isRtl ? 'right-3' : 'left-3'} ${className}`}
+        className={`fixed bottom-[17rem] sm:bottom-44 z-40 pointer-events-none ${isRtl ? 'right-3' : 'left-3'} ${className}`}
         dir={isRtl ? 'rtl' : 'ltr'}
       >
         <button
@@ -307,7 +307,7 @@ export const SpexCompanion: React.FC<SpexCompanionProps> = ({
   return (
     <div className="pointer-events-none fixed inset-0 z-40" dir={isRtl ? 'rtl' : 'ltr'}>
       <div
-        className={`fixed bottom-24 sm:bottom-24 flex flex-col gap-2 pointer-events-none ${
+        className={`fixed bottom-[17rem] sm:bottom-44 flex flex-col gap-2 pointer-events-none ${
           isRtl ? 'right-3 sm:right-5 items-end' : 'left-3 sm:left-5 items-start'
         } ${className}`}
       >

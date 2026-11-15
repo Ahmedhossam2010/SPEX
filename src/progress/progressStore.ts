@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export type ExplorerRank = 'Cadet' | 'Observer' | 'Navigator' | 'Analyst' | 'Discoverer';
 export type XpSource = 'learning' | 'solving' | 'game';
@@ -329,7 +329,7 @@ export function migrateLegacyStorage(state: ProgressState, storage: StorageLike 
     migratedMilestones: Array.from(new Set([...state.migratedMilestones, ...newMilestones])),
     achievements: Array.from(new Set(newAchievements)),
     migratedLegacy: true,
-    updatedAt: new Date().toISOString(),
+    updatedAt: state.updatedAt,
   };
 }
 
@@ -643,7 +643,9 @@ export function useProgress() {
           prev.xp === next.xp &&
           prev.completedLevels.length === next.completedLevels.length &&
           prev.completedChapters.length === next.completedChapters.length &&
-          prev.completedMiniGames.length === next.completedMiniGames.length
+          prev.completedMiniGames.length === next.completedMiniGames.length &&
+          prev.achievements.length === next.achievements.length &&
+          prev.badDataReports.length === next.badDataReports.length
         ) {
           return prev;
         }
@@ -660,35 +662,85 @@ export function useProgress() {
     };
   }, []);
 
-  const rankInfo = getNextRankProgress(progress.xp);
-  const maxUnlockedChapter = getMaxUnlockedChapter(progress.xp);
+  const rankInfo = useMemo(() => getNextRankProgress(progress.xp), [progress.xp]);
+  const maxUnlockedChapter = useMemo(() => getMaxUnlockedChapter(progress.xp), [progress.xp]);
 
-  return {
-    progress,
-    rank: rankInfo.currentRank,
-    rankInfo,
-    maxUnlockedChapter,
-    awardXp: (amount: number, achievementId?: string, source: XpSource = 'solving') =>
-      setProgress(awardXp(amount, achievementId, undefined, source)),
-    completeAcademyLevel: (levelId: number, xpReward: number) => {
-      const res = completeAcademyLevel(levelId, xpReward);
-      setProgress(res.state);
-      return res;
+  const awardXpAction = useCallback(
+    (amount: number, achievementId?: string, source: XpSource = 'solving') => {
+      const next = awardXp(amount, achievementId, undefined, source);
+      setProgress(next);
+      return next;
     },
-    completeMiniGame: (gameId: string, xpReward: number) => {
-      const res = completeMiniGame(gameId, xpReward);
-      setProgress(res.state);
-      return res;
-    },
-    completeChapter: (chapterNum: number, xpReward: number, stars = 3) => {
+    []
+  );
+
+  const completeAcademyLevelAction = useCallback((levelId: number, xpReward: number) => {
+    const res = completeAcademyLevel(levelId, xpReward);
+    setProgress(res.state);
+    return res;
+  }, []);
+
+  const completeMiniGameAction = useCallback((gameId: string, xpReward: number) => {
+    const res = completeMiniGame(gameId, xpReward);
+    setProgress(res.state);
+    return res;
+  }, []);
+
+  const completeChapterAction = useCallback(
+    (chapterNum: number, xpReward: number, stars = 3) => {
       const res = completeChapter(chapterNum, xpReward, undefined, stars);
       setProgress(res.state);
       return res;
     },
-    recordViewerAction: (action: keyof ViewerActionsState) => setProgress(recordViewerAction(action)),
-    addBadDataReport: (report: Omit<BadDataReport, 'id' | 'reportedAt'>) =>
-      setProgress(addBadDataReport(report)),
-    unlockAchievement: (achievementId: string, xpBonus?: number, source: XpSource = 'solving') =>
-      setProgress(unlockAchievement(achievementId, xpBonus, undefined, source)),
-  };
+    []
+  );
+
+  const recordViewerActionCb = useCallback((action: keyof ViewerActionsState) => {
+    const next = recordViewerAction(action);
+    setProgress(next);
+    return next;
+  }, []);
+
+  const addBadDataReportCb = useCallback((report: Omit<BadDataReport, 'id' | 'reportedAt'>) => {
+    const next = addBadDataReport(report);
+    setProgress(next);
+    return next;
+  }, []);
+
+  const unlockAchievementCb = useCallback(
+    (achievementId: string, xpBonus?: number, source: XpSource = 'solving') => {
+      const next = unlockAchievement(achievementId, xpBonus, undefined, source);
+      setProgress(next);
+      return next;
+    },
+    []
+  );
+
+  return useMemo(
+    () => ({
+      progress,
+      rank: rankInfo.currentRank,
+      rankInfo,
+      maxUnlockedChapter,
+      awardXp: awardXpAction,
+      completeAcademyLevel: completeAcademyLevelAction,
+      completeMiniGame: completeMiniGameAction,
+      completeChapter: completeChapterAction,
+      recordViewerAction: recordViewerActionCb,
+      addBadDataReport: addBadDataReportCb,
+      unlockAchievement: unlockAchievementCb,
+    }),
+    [
+      progress,
+      rankInfo,
+      maxUnlockedChapter,
+      awardXpAction,
+      completeAcademyLevelAction,
+      completeMiniGameAction,
+      completeChapterAction,
+      recordViewerActionCb,
+      addBadDataReportCb,
+      unlockAchievementCb,
+    ]
+  );
 }

@@ -128,6 +128,7 @@ export interface FramePlayerProps {
   isEmbed?: boolean;
   autoPlay?: boolean;
   onAutoPlayConsumed?: () => void;
+  preferSnapshot?: boolean;
   guidedStepAction?: {
     play?: boolean;
     blinkFirstLast?: boolean;
@@ -335,6 +336,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   isEmbed = false,
   autoPlay = false,
   onAutoPlayConsumed,
+  preferSnapshot = false,
   guidedStepAction,
   className = '',
 }) => {
@@ -347,6 +349,29 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const [loadingElapsedSec, setLoadingElapsedSec] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<'OK' | 'ARCHIVE_ZERO_ROWS' | 'NETWORK_ERROR' | 'HTTP_ERROR'>('OK');
+  const [serverDataMode, setServerDataMode] = useState<'live' | 'snapshot' | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    fetch('/api/health', { signal: controller.signal })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((health) => {
+        if (health?.dataSourceMode === 'live' || health?.dataSourceMode === 'snapshot') {
+          setServerDataMode(health.dataSourceMode);
+        } else if (health?.status === 'offline_mode' || health?.irsaTapReachable === false) {
+          setServerDataMode('snapshot');
+        } else if (health?.irsaTapReachable === true) {
+          setServerDataMode('live');
+        }
+      })
+      .catch(() => {})
+      .finally(() => clearTimeout(timer));
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, []);
 
   // Playback & detector controls
   const [currentFrameIdx, setCurrentFrameIdx] = useState<number>(0);
@@ -523,6 +548,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   }, [caseId, ra, dec, sizePix, onDataLoaded]);
 
   const fetchTimeSeries = useCallback(async () => {
+    if (preferSnapshot) {
+      await handleUseOfflineDemo();
+      return;
+    }
     const cacheKey = `${ra.toFixed(5)}:${dec.toFixed(5)}:${caseId || ''}:${sizePix}:${selectedDetector || 'auto'}:${frameCount}`;
     const cached = timeSeriesCacheRef.current.get(cacheKey);
     if (cached && cached.frames?.length) {
@@ -547,7 +576,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     const hardTimeoutId = setTimeout(() => {
       timedOut = true;
       controller.abort();
-    }, 20000);
+    }, 12000);
 
     setLoading(true);
     setLoadingProgress(null);
@@ -652,7 +681,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         return;
       }
       setState('NETWORK_ERROR');
-      setError(timedOut ? 'NASA IRSA request timed out after 20 seconds.' : err?.message || 'Could not load time-series frames.');
+      setError(timedOut ? 'NASA IRSA request timed out after 12 seconds.' : err?.message || 'Could not load time-series frames.');
     } finally {
       clearTimeout(hardTimeoutId);
       if (activeFetchAbortRef.current === controller) {
@@ -660,7 +689,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
         setLoading(false);
       }
     }
-  }, [ra, dec, caseId, sizePix, selectedDetector, frameCount, handleUseOfflineDemo, onDataLoaded]);
+  }, [ra, dec, caseId, sizePix, selectedDetector, frameCount, preferSnapshot, handleUseOfflineDemo, onDataLoaded]);
 
   useEffect(() => {
     fetchTimeSeries();
@@ -695,7 +724,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
     if (!surveyPassMode) return alignedFrames;
     const combined = surveyPasses.map((p) => {
       const cf = p.combinedFrame as AlignedTimeSeriesFrame;
-      const rep = alignedFrames.find((af) => af.obsId === cf.obsId) || alignedFrames[0];
+      const rep =
+        alignedFrames.find((af) => af.dateObs && cf.dateObs && af.dateObs === cf.dateObs) ||
+        alignedFrames.find((af) => Math.abs(af.mjd - cf.mjd) < 30) ||
+        alignedFrames[0];
       return {
         ...cf,
         isUnaligned: Boolean(rep?.isUnaligned),
@@ -1559,11 +1591,55 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
   const effectiveDiscoveryEligible =
     typeof data.discoveryEligible === 'boolean' ? data.discoveryEligible : classificationMeta.discoveryEligible;
 
-  // Honest provenance badge text (ONLY one badge)
-  const provenanceBadgeLabel =
-    activeClassification === 'SAVED_BENCHMARK'
-      ? t.exploreSnapshotBadge
-      : classificationMeta.shortTag;
+  // Honest provenance badge text (ONLY one badge: live data vs saved snapshot)
+  const isSnapshotMode =
+    activeClassification === 'SAVED_BENCHMARK' ||
+    activeClassification === 'SYNTHETIC_DEMO' ||
+    Boolean(data.isSnapshot) ||
+    Boolean(data.isDemoCopy) ||
+    data.sourceMode === 'saved_benchmark' ||
+    (!effectiveDiscoveryEligible && serverDataMode === 'snapshot');
+  const provenanceBadgeLabel = isSnapshotMode
+    ? t.exploreSnapshotBadge
+    : activeClassification === 'LIVE_ARCHIVE_DATA' ||
+      activeClassification === 'VERIFIED_FITS_CACHE' ||
+      data.sourceMode === 'live'
+    ? t.exploreLiveDataBadge
+    : classificationMeta.shortTag;
+
+  const formatFrameMonthYear = (fr: AlignedTimeSeriesFrame): string => {
+    const iso = fr.dateObs;
+    let d: Date | null = null;
+    if (iso) {
+      const normalizedIso =
+        iso.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`;
+      const parsed = new Date(normalizedIso);
+      if (!Number.isNaN(parsed.getTime())) d = parsed;
+    }
+    if (!d && Number.isFinite(fr.mjd) && fr.mjd > 0) {
+      d = new Date((fr.mjd - 40587) * 86400_000);
+    }
+    if (!d) return `F${fr.index + 1}`;
+    return d.toLocaleDateString(isRtl ? 'ar-EG' : 'en-US', {
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+  };
+
+  const formatRealGapLabel = (
+    prev: AlignedTimeSeriesFrame | undefined,
+    cur: AlignedTimeSeriesFrame
+  ): string | null => {
+    if (!prev || !Number.isFinite(prev.mjd) || !Number.isFinite(cur.mjd)) return null;
+    const gapDays = cur.mjd - prev.mjd;
+    if (!Number.isFinite(gapDays) || gapDays <= 0.05) return null;
+    if (gapDays >= 45) {
+      const months = gapDays / 30.4375;
+      return `+${months.toFixed(1)} ${t.surveyPassMonthsUnit}`;
+    }
+    return `+${Math.round(gapDays)} ${t.surveyPassDaysUnit}`;
+  };
 
   // Motion trail points mapped onto displayWcs
   const epoch1Anchor = displayFrames[0]?.targetRefPixel || displayFrames[0]?.targetPixel;
@@ -1938,9 +2014,10 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
           <div className="pointer-events-auto flex flex-wrap items-center gap-1.5 bg-[#070B16]/82 backdrop-blur-xl border border-white/15 rounded-2xl px-2.5 py-1.5 shadow-xl">
             <span
               data-testid="explore-snapshot-badge"
+              data-source-mode={isSnapshotMode ? 'snapshot' : 'live'}
               title={classificationMeta.description}
               className={`px-2 py-1 rounded-lg border font-mono text-[11px] font-semibold ${
-                effectiveDiscoveryEligible
+                effectiveDiscoveryEligible && !isSnapshotMode
                   ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
                   : 'bg-indigo-500/20 border-indigo-400/40 text-indigo-200'
               }`}
@@ -2038,7 +2115,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       {!isEmbed && (
         <div
           data-gesture-ignore="true"
-          className={`absolute top-16 start-2.5 sm:start-4 z-20 flex flex-col items-start gap-2 max-h-[calc(100vh-14.5rem)] ${panelHiddenClass}`}
+          className={`absolute top-32 sm:top-16 start-2.5 sm:start-4 z-20 flex flex-col items-start gap-2 max-h-[calc(100vh-22rem)] sm:max-h-[calc(100vh-14.5rem)] ${panelHiddenClass}`}
         >
           {!leftRailOpen ? (
             <button
@@ -2266,6 +2343,22 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                         className="accent-sky-400 cursor-pointer"
                       />
                     </label>
+                    <label className="flex items-center justify-between text-slate-300 cursor-pointer">
+                      <span>{t.showAllVisitsLabel}</span>
+                      <input
+                        type="checkbox"
+                        data-testid="advanced-show-all-visits"
+                        checked={!surveyPassMode}
+                        onChange={(e) => {
+                          const showAll = e.target.checked;
+                          setSurveyPassMode(!showAll);
+                          if (!showAll) recordViewerAction('toggledSurveyPass');
+                          setCurrentFrameIdx(0);
+                          setIsPlaying(false);
+                        }}
+                        className="accent-sky-400 cursor-pointer"
+                      />
+                    </label>
                   </div>
 
                   {/* Alignment Check Summary */}
@@ -2366,7 +2459,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       {!isEmbed && (
         <div
           data-gesture-ignore="true"
-          className={`absolute top-16 end-2.5 sm:end-4 z-20 flex flex-col items-end gap-2 max-h-[calc(100vh-14.5rem)] ${panelHiddenClass}`}
+          className={`absolute top-32 sm:top-16 end-2.5 sm:end-4 z-20 flex flex-col items-end gap-2 max-h-[calc(100vh-22rem)] sm:max-h-[calc(100vh-14.5rem)] ${panelHiddenClass}`}
         >
           {!rightRailOpen ? (
             <button
@@ -2540,7 +2633,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
       {showAladinOverlay && (
         <div
           data-gesture-ignore="true"
-          className="absolute top-16 end-64 z-25 w-72 sm:w-80 rounded-2xl border border-white/20 bg-[#070B16]/95 backdrop-blur-xl p-2.5 shadow-2xl space-y-1.5"
+          className="absolute top-32 sm:top-16 end-2.5 sm:end-64 z-25 w-72 sm:w-80 rounded-2xl border border-white/20 bg-[#070B16]/95 backdrop-blur-xl p-2.5 shadow-2xl space-y-1.5"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-mono text-cyan-300">{t.otherTelescopesAladin}</span>
@@ -2663,15 +2756,22 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             )}
           </div>
 
-          {/* Timeline with real observation dates */}
+          {/* Timeline with real observation dates and real inter-pass gaps */}
           <div data-tour="timeline" className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
             {displayFrames.map((fr, idx) => {
               const active = idx === safeFrameIdx;
               const isFlagged = (fr.dqDecoded?.totalMaskedPixels ?? 0) > 0;
+              const prevFr = idx > 0 ? displayFrames[idx - 1] : undefined;
+              const gapLabel = formatRealGapLabel(prevFr, fr);
+              const exactDate = fr.dateObs?.slice(0, 10) || `F${idx + 1}`;
+              const labelText = surveyPassMode
+                ? `${t.surveyPassPrefix} ${idx + 1} · ${formatFrameMonthYear(fr)}${gapLabel ? ` · ${gapLabel}` : ''}`
+                : `${exactDate}${gapLabel ? ` · ${gapLabel}` : ''}`;
               return (
                 <button
                   key={`${fr.obsId}-${idx}`}
                   type="button"
+                  title={`${exactDate}${gapLabel ? ` (${gapLabel})` : ''}`}
                   onClick={() => {
                     setIsPlaying(false);
                     setCurrentFrameIdx(idx);
@@ -2683,7 +2783,7 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
                       : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
                   }`}
                 >
-                  <span>{fr.dateObs?.slice(0, 10) || `F${idx + 1}`}</span>
+                  <span>{labelText}</span>
                   {isFlagged && (
                     <AlertTriangle className={`w-3 h-3 ${active ? 'text-rose-800' : 'text-rose-400'}`} />
                   )}
@@ -2696,12 +2796,29 @@ export const FramePlayer: React.FC<FramePlayerProps> = ({
             </span>
           </div>
 
-          {/* Single short caption + Trail legend */}
+          {/* Honest fallback notice if fewer than 2 survey passes exist, else plain pass spacing note */}
+          <p
+            data-testid={surveyPasses.length < 2 ? 'survey-pass-fallback-notice' : 'survey-pass-plain-note'}
+            className={`text-[11px] leading-snug ${
+              surveyPasses.length < 2 ? 'text-amber-300' : 'text-slate-300'
+            }`}
+          >
+            {surveyPasses.length < 2 ? t.surveyPassFallbackNotice : t.surveyPassPlainNote}
+          </p>
+
+          {/* Single short caption (real date + gap) + Trail legend */}
           <div className="pt-1.5 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs">
             <p data-testid="explore-plain-caption" className="text-slate-100 font-medium">
-              {aSum?.motionSignificant && aSum.measuredDisplacementArcsec > 0.05
-                ? `${t.exploreCaptionMovedPrefix} ${aSum.measuredDisplacementArcsec.toFixed(2)} ${t.exploreCaptionMovedMiddle} ${displayFrames.length} (${sigmaVal.toFixed(1)}σ)`
-                : t.exploreCaptionStill}
+              {(() => {
+                const activePrev = safeFrameIdx > 0 ? displayFrames[safeFrameIdx - 1] : undefined;
+                const activeGap = formatRealGapLabel(activePrev, activeFrame);
+                const activePrefix = `${surveyPassMode ? `${t.surveyPassPrefix} ${safeFrameIdx + 1} · ` : ''}${activeFrame.dateObs?.slice(0, 10) || ''}${activeGap ? ` (${activeGap})` : ''}`;
+                const motionText =
+                  aSum?.motionSignificant && aSum.measuredDisplacementArcsec > 0.05
+                    ? `${t.exploreCaptionMovedPrefix} ${aSum.measuredDisplacementArcsec.toFixed(2)} ${t.exploreCaptionMovedMiddle} ${displayFrames.length} (${sigmaVal.toFixed(1)}σ)`
+                    : t.exploreCaptionStill;
+                return activePrefix ? `${activePrefix} — ${motionText}` : motionText;
+              })()}
             </p>
             <div className="flex items-center gap-2 text-[11px] text-slate-300 shrink-0">
               <span

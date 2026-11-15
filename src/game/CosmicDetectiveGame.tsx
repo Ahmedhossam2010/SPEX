@@ -567,12 +567,20 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
+    const width = 520;
+    const height = 280;
+    const dpr = getCanvasDpr();
+    const backedW = Math.round(width * dpr);
+    const backedH = Math.round(height * dpr);
+    if (canvas.width !== backedW || canvas.height !== backedH) {
+      canvas.width = backedW;
+      canvas.height = backedH;
+    }
 
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, backedW, backedH);
     ctx.fillStyle = '#060a14';
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, backedW, backedH);
 
     // Difference image simulation for this scenario (48x48 upsampled smoothly via bicubic Catmull-Rom)
     const imgs = generateSyntheticScenarioImages(currentScenario.id);
@@ -603,16 +611,21 @@ export const CosmicDetectiveGame: React.FC<CosmicDetectiveGameProps> = ({
       }
     }
 
-    const upsampled = bicubicUpsampleRgba(srcRgba, dW, dH, width, height);
+    const upsampled = bicubicUpsampleRgba(srcRgba, dW, dH, backedW, backedH);
     const clamped = new Uint8ClampedArray(upsampled.length);
     clamped.set(upsampled);
-    const imgData = new ImageData(clamped, width, height);
+    const imgData = new ImageData(clamped, backedW, backedH);
     ctx.putImageData(imgData, 0, 0);
 
-    // Scenario title banner
+    // Scenario title banner (scaled by DPR)
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.fillStyle = '#fbbf24';
     ctx.font = 'bold 11px monospace';
     ctx.fillText(`SCENARIO #${m4ScenarioIdx + 1}: ${currentScenario.title.toUpperCase()}`, 12, 22);
+    ctx.restore();
   }, [currentMission, m4ScenarioIdx, currentScenario]);
 
   // -------------------------------------------------------------

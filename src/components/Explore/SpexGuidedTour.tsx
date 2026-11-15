@@ -104,23 +104,7 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const timer = setTimeout(measureRects, 80);
-    const raf = requestAnimationFrame(measureRects);
-    window.addEventListener('resize', measureRects);
-    window.addEventListener('scroll', measureRects, true);
-    return () => {
-      clearTimeout(timer);
-      cancelAnimationFrame(raf);
-      window.removeEventListener('resize', measureRects);
-      window.removeEventListener('scroll', measureRects, true);
-    };
-  }, [isOpen, currentStepIdx, measureRects]);
-
-  if (!isOpen) return null;
-
-  const handleFinish = () => {
+  const handleFinish = useCallback(() => {
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
         localStorage.setItem('spex_tour_completed', 'true');
@@ -130,7 +114,31 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
     }
     onStepComplete?.();
     onClose();
-  };
+  }, [onClose, onStepComplete]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(measureRects, 80);
+    const raf = requestAnimationFrame(measureRects);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        handleFinish();
+      }
+    };
+    window.addEventListener('resize', measureRects);
+    window.addEventListener('scroll', measureRects, true);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', measureRects);
+      window.removeEventListener('scroll', measureRects, true);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen, currentStepIdx, measureRects, handleFinish]);
+
+  if (!isOpen) return null;
 
   const handleNext = () => {
     if (currentStepIdx < steps.length - 1) {
@@ -167,14 +175,15 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
       };
     } else {
       const boxW = 340;
-      const boxH = 210;
+      const boxH = 220;
       let left = targetRect.left + targetRect.width / 2 - boxW / 2;
       left = Math.max(16, Math.min(vw - boxW - 16, left));
 
       let top = targetRect.bottom + 24;
       if (top + boxH > vh - 16) {
-        top = Math.max(16, targetRect.top - boxH - 24);
+        top = targetRect.top - boxH - 24;
       }
+      top = Math.max(16, Math.min(vh - boxH - 16, top));
 
       popupStyle = {
         ...popupStyle,
@@ -223,12 +232,12 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
   return (
     <div
       data-testid="spex-guided-tour"
-      className="fixed inset-0 z-50 pointer-events-auto select-none"
+      className="fixed inset-0 z-50 pointer-events-none select-none"
       dir={isRtl ? 'rtl' : 'ltr'}
     >
       <div
-        onClick={handleFinish}
-        className="fixed inset-0 bg-black/55 backdrop-blur-[2px] transition-opacity duration-200"
+        aria-hidden="true"
+        className="fixed inset-0 bg-black/35 pointer-events-none transition-opacity duration-200"
       />
 
       {targetRect && (
@@ -281,9 +290,9 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
         ref={popupRef}
         style={popupStyle}
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-label={currentStep.title}
-        className="bg-[#090D18]/95 backdrop-blur-2xl border border-[#FFB900]/45 rounded-2xl p-4 shadow-[0_16px_50px_rgba(0,0,0,0.92)] text-slate-100 space-y-3"
+        className="pointer-events-auto bg-[#090D18]/95 backdrop-blur-2xl border border-[#FFB900]/45 rounded-2xl p-4 shadow-[0_16px_50px_rgba(0,0,0,0.92)] text-slate-100 space-y-3"
       >
         <div className="flex items-center justify-between border-b border-white/10 pb-2">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -305,6 +314,7 @@ export const SpexGuidedTour: React.FC<SpexGuidedTourProps> = ({
 
           <button
             type="button"
+            data-testid="tour-close-btn"
             onClick={handleFinish}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer shrink-0"
             aria-label={t.tourSkip}

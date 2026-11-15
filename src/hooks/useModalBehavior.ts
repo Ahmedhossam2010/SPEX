@@ -1,19 +1,22 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * Universal hook for predictable modal & drawer behavior:
  * - Listens for 'Escape' key to close
  * - Locks document body scroll while open
- * - Automatically cleans up on unmount or close
+ * - Uses an onClose ref so parent/store re-renders never re-lock scroll or tear down listeners
  */
 export function useModalBehavior(isOpen: boolean, onClose: () => void) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -26,5 +29,5 @@ export function useModalBehavior(isOpen: boolean, onClose: () => void) {
       window.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = prevOverflow;
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 }

@@ -28,10 +28,21 @@ Useful scripts:
 ```bash
 npm run check                      # Runs TypeScript type-check + full production build
 npm run lint                       # Runs tsc --noEmit
-SPHEREX_OFFLINE=1 npm test         # Runs unit & API validation suites offline (113/122; 5 legacy fixture + 4 live IRSA checks)
+npm test                           # Runs all 12 test suites (117/122 pass; 5 legacy FITS fixture failures in science.test.ts)
 npm run build                      # Builds Vite frontend + esbuild server.js
 npm start                          # Runs production server (node server.js, respects $PORT)
 ```
+
+---
+
+## Configuration
+
+SPEX works **out of the box with zero API keys**. Copy `.env.example` to `.env` only if you want to customize runtime behavior:
+
+- **Optional AI Guide (`GEMINI_API_KEY`, `GEMINI_MODEL`, `PRIMARY_MODEL`, `SECONDARY_MODEL`):** Enables optional Gemini explanations in Mr. SPEX (`POST /api/spex/explain`, `/api/spex/chat`) on the server only (get a key from Google AI Studio). Leaving `GEMINI_API_KEY` blank switches Mr. SPEX cleanly to deterministic offline explanations built from measured data with zero UI errors.
+- **Archive & Release Overrides (`SPHEREX_IRSA_HOST`, `SPHEREX_PLANE_TABLE`, `SPHEREX_ARTIFACT_TABLE`, `SPHEREX_RELEASE_PREFERENCE`, `SPHEREX_OFFLINE`):** Point TAP/cutout queries at newer IRSA releases without code edits, or set `SPHEREX_OFFLINE=1` to force bundled snapshot mode.
+- **Cache & Server (`PORT`, `SPHEREX_CACHE_DIR`, `SPHEREX_CACHE_MAX_MB`):** Configure HTTP port (default `3000`) and bounded FITS LRU cache capacity (default `256` MiB in `/tmp/spherex_cache`).
+- **Health Status (`GET /api/health`):** Returns server health, boolean optional-service availability (no key values), FITS cache byte/file stats, and current `dataSourceMode` (`live` vs `snapshot`).
 
 ---
 
@@ -101,13 +112,13 @@ When NASA/IPAC IRSA publishes new data drops or all-sky releases:
 
 ---
 
-## Future Work
+## Honest Limitations & Future Work
 
-- Splitting `server.ts` into modular route and pipeline service modules (`src/server/routes/*`, `src/server/tapClient.ts`).
-- Animated GIF / MP4 blink-sequence and time-lapse movie export directly from `FramePlayer`.
-- Full 2D `EPSF` BINTABLE forward-modeling photometry for crowded fields and blended binaries (such as resolving sub-arcsecond Epsilon Indi Ba/Bb components).
-- Automated multi-epoch shift-and-stack orbital search for Solar System NEOs and faint moving asteroids.
-- Persistent browser workspace bookmarks for custom discovered transient candidates.
+- **Live Archive Snapshot Fallback:** When NASA/IPAC IRSA TAP/IBE is unreachable or takes longer than ~12 seconds, Explore automatically switches benchmark targets to saved snapshots (`Showing saved snapshot`).
+- **Ephemeral Community Persistence:** Community posts, comments, and bad-data flags save to `data/community_store.json` locally and reset whenever stateless containers (such as Cloud Run) restart.
+- **5 Pre-Existing Science Fixture Failures:** `npm test` passes `117/122`; 5 assertions in `src/science/science.test.ts` (`1138`, `1376`, `2202`, `2445`, `2851`) expect older 7-HDU `5.1 MB` FITS fixtures instead of the newer `8.2 MB` 3-HDU cached fixtures.
+- **Large `server.ts`:** Backend routes and archive orchestration currently live in a single ~5,100-line `server.ts`; future cleanup splits this into `src/server/routes/*` and `src/server/tapClient.ts`.
+- **Upcoming Features:** Animated GIF/MP4 blink export, full 2D `EPSF` BINTABLE photometry for crowded binaries, automated NEO shift-and-stack search, and persistent browser bookmarks.
 
 ---
 

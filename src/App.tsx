@@ -120,6 +120,7 @@ export function App() {
   const [currentResult, setCurrentResult] = useState<InvestigationResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [explorePreferSnapshot, setExplorePreferSnapshot] = useState<boolean>(false);
 
   const [isScientistMode, setIsScientistMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -807,11 +808,13 @@ export function App() {
               resetKey={`${activeCaseId || ''}-${exploreScreen}-${exploreResetKey}`}
               onRetry={() => {
                 setErrorMsg(null);
+                setExplorePreferSnapshot(false);
                 setExploreResetKey((k) => k + 1);
                 loadCase(activeCaseId || 'case-wise-0855');
               }}
               onSecondary={() => {
                 setErrorMsg(null);
+                setExplorePreferSnapshot(true);
                 setExploreScreen('hunt');
                 setActiveCaseId('case-wise-0855');
                 setExploreResetKey((k) => k + 1);
@@ -821,6 +824,7 @@ export function App() {
                 <Screen1Sky
                   language={language}
                   onSelectTarget={(target) => {
+                    setExplorePreferSnapshot(false);
                     setSelectedTarget(target);
                     setExploreScreen('hunt');
                     const tId = target.id.toLowerCase();
@@ -845,6 +849,7 @@ export function App() {
                     }
                   }}
                   onSelectCoords={(ra, dec) => {
+                    setExplorePreferSnapshot(false);
                     handleOpenCoordsInExplore(ra, dec);
                   }}
                 />
@@ -871,6 +876,7 @@ export function App() {
                     autoPlay={autoPlayExplore}
                     onAutoPlayConsumed={() => setAutoPlayExplore(false)}
                     isEmbed={isEmbed}
+                    preferSnapshot={explorePreferSnapshot}
                   />
                 </div>
               )}

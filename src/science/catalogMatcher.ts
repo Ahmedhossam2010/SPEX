@@ -498,53 +498,75 @@ export class CatalogMatcher {
       const fetchEsaGaia = async (): Promise<string[][]> => {
         const gaiaAdql = `SELECT TOP 60 source_id, ra, dec, pmra, pmdec, phot_g_mean_mag FROM gaiadr3.gaia_source WHERE 1=CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',${ra.toFixed(6)},${dec.toFixed(6)},${radiusDeg.toFixed(5)})) AND phot_g_mean_mag < 19.5 ORDER BY phot_g_mean_mag ASC`;
         const url = `https://gea.esac.esa.int/tap-server/tap/sync?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=${encodeURIComponent(gaiaAdql)}`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        try {
-          const res = await fetch(url, {
-            signal: controller.signal,
-            headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-          });
-          clearTimeout(timeout);
-          if (!res.ok) return [];
-          const csv = await res.text();
-          if (csv.trim().startsWith('<')) return [];
-          return csv
-            .trim()
-            .split('\n')
-            .slice(1)
-            .filter(Boolean)
-            .map((line) => line.split(',').map((c) => c.trim().replace(/^"|"$/g, '')));
-        } catch {
-          clearTimeout(timeout);
-          return [];
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 7000);
+          try {
+            const res = await fetch(url, {
+              signal: controller.signal,
+              headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+            });
+            clearTimeout(timeout);
+            if (!res.ok) {
+              if (attempt < 2 && res.status >= 500) {
+                await new Promise((r) => setTimeout(r, 350));
+                continue;
+              }
+              return [];
+            }
+            const csv = await res.text();
+            if (csv.trim().startsWith('<')) return [];
+            return csv
+              .trim()
+              .split('\n')
+              .slice(1)
+              .filter(Boolean)
+              .map((line) => line.split(',').map((c) => c.trim().replace(/^"|"$/g, '')));
+          } catch {
+            clearTimeout(timeout);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 350));
+            }
+          }
         }
+        return [];
       };
 
       const fetchCfaWise = async (): Promise<string[][]> => {
         const rsArcsec = Math.max(30, Math.min(1800, Math.round(radiusArcsec)));
         const url = `https://vizier.cfa.harvard.edu/viz-bin/asu-tsv?-source=II/328/allwise&-c=${ra.toFixed(6)}+${dec >= 0 ? '+' : ''}${dec.toFixed(6)}&-c.rs=${rsArcsec}&-out.max=60&-out=AllWISE,RAJ2000,DEJ2000,W1mag,W2mag`;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000);
-        try {
-          const res = await fetch(url, {
-            signal: controller.signal,
-            headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
-          });
-          clearTimeout(timeout);
-          if (!res.ok) return [];
-          const tsv = await res.text();
-          const dataLines = tsv
-            .split('\n')
-            .map((l) => l.trimEnd())
-            .filter((l) => l.length > 0 && !l.startsWith('#'));
-          // Skip header, units, and dashed separator lines (first 3 non-comment lines)
-          if (dataLines.length <= 3) return [];
-          return dataLines.slice(3).map((l) => l.split('\t').map((c) => c.trim()));
-        } catch {
-          clearTimeout(timeout);
-          return [];
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 7000);
+          try {
+            const res = await fetch(url, {
+              signal: controller.signal,
+              headers: { 'User-Agent': 'SPHEREx-ChangingSky-SpaceApps/1.0' },
+            });
+            clearTimeout(timeout);
+            if (!res.ok) {
+              if (attempt < 2 && res.status >= 500) {
+                await new Promise((r) => setTimeout(r, 350));
+                continue;
+              }
+              return [];
+            }
+            const tsv = await res.text();
+            const dataLines = tsv
+              .split('\n')
+              .map((l) => l.trimEnd())
+              .filter((l) => l.length > 0 && !l.startsWith('#'));
+            // Skip header, units, and dashed separator lines (first 3 non-comment lines)
+            if (dataLines.length <= 3) return [];
+            return dataLines.slice(3).map((l) => l.split('\t').map((c) => c.trim()));
+          } catch {
+            clearTimeout(timeout);
+            if (attempt < 2) {
+              await new Promise((r) => setTimeout(r, 350));
+            }
+          }
         }
+        return [];
       };
 
       const [gaiaRows, wiseRows] = await Promise.all([

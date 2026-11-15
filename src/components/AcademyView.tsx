@@ -24,6 +24,7 @@ import { AcademyDiagram } from '../academy/AcademyDiagram';
 import { useProgress } from '../progress/progressStore';
 import { gameAudio } from '../game/utils/gameAudio';
 import { ScienceTerm } from './ScienceTerm';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Button } from '../design';
 
 interface AcademyViewProps {
@@ -213,6 +214,20 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
   const ForwardArrow = isRtl ? ArrowLeft : ArrowRight;
 
   return (
+    <ErrorBoundary
+      title={t.academyBoundaryTitle}
+      description={t.academyBoundaryHint}
+      retryLabel={t.academyBackToMapBtn}
+      resetKey={`${mode}-${selectedLevelId}-${lessonStep}`}
+      onRetry={() => {
+        try {
+          window.sessionStorage?.removeItem(ACADEMY_SESSION_KEY);
+        } catch {}
+        setLessonStep(0);
+        setSelectedLevelId(ACADEMY_LEVELS[0].levelId);
+        setMode('map');
+      }}
+    >
     <div
       className={`max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6 ${
         isRtl ? 'font-cairo' : 'font-sans'
@@ -999,5 +1014,6 @@ export const AcademyView: React.FC<AcademyViewProps> = ({
         </section>
       )}
     </div>
+    </ErrorBoundary>
   );
 };
